@@ -107,10 +107,29 @@ def generate_formatted_report(json_file: str, episode_name: str = None) -> str:
     # Basic stats
     file_duration = data.get('master_duration', 0)
     reliable_chunks = [t for t in timeline if t.get('reliable', False)]
-    
+
     report_lines.append(f"**File Duration:** {format_time_minutes(file_duration)}")
     report_lines.append(f"**Total Chunks Analyzed:** {total_chunks}")
     report_lines.append(f"**Reliable Chunks:** {len(reliable_chunks)}/{total_chunks} ({len(reliable_chunks)/total_chunks*100:.1f}%)")
+    report_lines.append("")
+
+    # Offset Summary
+    overall_offset = data.get('offset_seconds', 0)
+    drift_analysis = data.get('drift_analysis', {})
+    has_drift = drift_analysis.get('has_drift', False)
+    drift_magnitude = drift_analysis.get('drift_magnitude', 0)
+    offset_range = drift_analysis.get('offset_range', {})
+
+    report_lines.append("## 📊 **Sync Offset Summary:**")
+    report_lines.append("")
+    report_lines.append(f"**Overall Offset:** {overall_offset:+.3f}s ({abs(overall_offset)*24:+.0f}f @ 24fps)")
+    if has_drift and drift_magnitude > 0:
+        report_lines.append(f"**Drift Detected:** Yes - {drift_magnitude:.2f}s variation across file")
+        min_offset = offset_range.get('min', 0)
+        max_offset = offset_range.get('max', 0)
+        report_lines.append(f"**Offset Range:** {min_offset:+.2f}s to {max_offset:+.2f}s")
+    else:
+        report_lines.append(f"**Drift Detected:** No - constant offset throughout file")
     report_lines.append("")
     
     # Analyze phases
@@ -167,8 +186,14 @@ def generate_formatted_report(json_file: str, episode_name: str = None) -> str:
         # Show individual chunk details for problematic phases
         if phase['type'] in ['degraded_sync', 'poor_sync', 'critical_drift']:
             for i, chunk_num in enumerate(phase['chunks'][:10]):  # Show max 10 chunks
-                similarity = phase['similarities'][i]
-                report_lines.append(f"   - Chunk {chunk_num}: {similarity:.3f} ({classify_similarity(similarity)})")
+                chunk_idx = chunk_num - 1
+                if chunk_idx < len(timeline):
+                    chunk_data = timeline[chunk_idx]
+                    similarity = phase['similarities'][i]
+                    offset = chunk_data.get('offset_seconds', 0)
+                    offset_frames = int(abs(offset) * 24)
+                    offset_sign = "+" if offset >= 0 else "-"
+                    report_lines.append(f"   - Chunk {chunk_num}: {similarity:.3f} ({classify_similarity(similarity)}) | Offset: {offset_sign}{offset_frames}f ({offset:+.2f}s)")
             if len(phase['chunks']) > 10:
                 report_lines.append(f"   - ... and {len(phase['chunks']) - 10} more chunks")
         
