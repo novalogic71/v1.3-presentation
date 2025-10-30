@@ -284,6 +284,13 @@ def main_app():
     return send_from_directory(".", "app.html")
 
 
+@app.route("/PRESENTATION_GUIDE.md")
+def presentation_guide():
+    """Serve the presentation guide markdown file from parent directory"""
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return send_from_directory(parent_dir, "PRESENTATION_GUIDE.md", mimetype="text/markdown")
+
+
 @app.route("/<path:filename>")
 def serve_static(filename):
     """Serve static files"""
