@@ -182,9 +182,10 @@ def generate_formatted_report(json_file: str, episode_name: str = None) -> str:
             })
         
         report_lines.append(f"{phase_counter}. {icon} {description}")
-        
-        # Show individual chunk details for problematic phases
-        if phase['type'] in ['degraded_sync', 'poor_sync', 'critical_drift']:
+
+        # Show individual chunk details for problematic phases OR when drift is detected
+        show_chunks = (phase['type'] in ['degraded_sync', 'poor_sync', 'critical_drift']) or has_drift
+        if show_chunks:
             for i, chunk_num in enumerate(phase['chunks'][:10]):  # Show max 10 chunks
                 chunk_idx = chunk_num - 1
                 if chunk_idx < len(timeline):
