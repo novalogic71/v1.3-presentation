@@ -90,7 +90,7 @@ def process_csv_row(row_data):
         else:
             # Legacy continuous monitor
             cmd = [
-                'python', 'continuous_sync_monitor.py',
+                'python', '-m', 'scripts.monitoring.continuous_sync_monitor',
                 master_file, dub_file,
                 '--output', str(json_output),
                 '--chunk-size', str(chunk_size),
@@ -117,7 +117,7 @@ def process_csv_row(row_data):
         # Step 2: Generate formatted report
         if Path(json_output).exists():
             report_cmd = [
-                'python', 'sync_report_analyzer.py',
+                'python', '-m', 'scripts.repair.sync_report_analyzer',
                 str(json_output),
                 '--name', episode_name,
                 '--output', str(report_output)
@@ -311,15 +311,21 @@ Examples:
                        help='Directory for repair packages (default: ./repair_packages)')
 
     # Engine selection
-    parser.add_argument('--use-optimized-cli', action='store_true',
-                       help='Use GPU-accelerated optimized CLI for analysis')
+    parser.add_argument('--use-optimized-cli', action='store_true', default=True,
+                       help='Use GPU-accelerated optimized CLI for analysis (default: True)')
+    parser.add_argument('--use-legacy-monitor', action='store_true',
+                       help='Use legacy continuous_sync_monitor instead of optimized CLI')
     parser.add_argument('--gpu', action='store_true',
-                       help='Enable GPU acceleration (with --use-optimized-cli)')
+                       help='Enable GPU acceleration (with optimized CLI)')
     parser.add_argument('--max-chunks', type=int,
                        help='Max chunks for optimized CLI (default per tool)')
     
     args = parser.parse_args()
-    
+
+    # Override optimized CLI if legacy monitor explicitly requested
+    if args.use_legacy_monitor:
+        args.use_optimized_cli = False
+
     if not os.path.exists(args.csv_file):
         print(f"Error: CSV file not found: {args.csv_file}")
         sys.exit(1)
