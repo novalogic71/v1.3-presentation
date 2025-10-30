@@ -1,0 +1,39 @@
+# Virtual environments
+venv/
+fastapi_app/fastapi_venv/
+**/venv/
+**/__pycache__/
+
+# Node modules
+node_modules/
+web_ui/react/node_modules/
+
+# Large Python packages that don't need watching
+**/site-packages/torch/
+**/site-packages/tensorflow/
+**/site-packages/mypy/
+
+# Git objects (already handled by .gitignore)
+.git/
+
+# Build artifacts
+**/build/
+**/dist/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/__pycache__/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
+
+
+
+

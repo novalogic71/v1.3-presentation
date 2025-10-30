@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  sync-analyzer-api:
+    build: .
+    container_name: sync-analyzer-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./ai_models:/app/ai_models
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - /mnt/data:/mnt/data:ro  # Mount your data directory
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - MOUNT_PATH=/mnt/data
+      - UPLOAD_DIR=/app/uploads
+      - AI_MODEL_CACHE_DIR=/app/ai_models
+      - LOG_FILE=/app/logs/app.log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - sync-analyzer-network
+
+  # Optional: Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: sync-analyzer-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - sync-analyzer-network
+
+  # Optional: Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: sync-analyzer-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - sync-analyzer-api
+    restart: unless-stopped
+    networks:
+      - sync-analyzer-network
+
+volumes:
+  redis_data:
+
+networks:
+  sync-analyzer-network:
+    driver: bridge

@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific
+# Temporary analysis files
+temp_audio_*
+*.temp.wav
+*.temp.mp3
+
+# Output directories
+sync_reports/
+ui_sync_reports/
+repaired_sync_files/
+output/
+reports/
+
+# Log files
+*.log
+logs/
+
+# Test files
+test_files/
+sample_media/
+
+# Configuration
+config.local.py
+.env
+.env.local
+
+# Backup files
+*.backup
+*.bak
+
+# Audio/Video files (large files)
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.wav
+*.mp3
+*.flac
+*.aac
+*.m4a
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+ai_models/

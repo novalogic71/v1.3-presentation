@@ -1,0 +1,420 @@
+{
+  "analysis_date": "2025-09-13T01:33:25.006798",
+  "sync_status": "Major Sync Issues",
+  "confidence": 0.0508950911462307,
+  "offset_seconds": -15.606984126984127,
+  "offset_milliseconds": -15606.984126984127,
+  "similarity_score": 0.45877751882956025,
+  "quality": "Poor",
+  "chunks_analyzed": 11,
+  "chunks_reliable": 1,
+  "recommendation": "Major sync offset of -15.607s requires immediate correction",
+  "master_duration": 1382.964943,
+  "dub_duration": 1384.966939,
+  "duration_difference": 2.001995999999963,
+  "drift_analysis": {
+    "has_drift": false,
+    "drift_magnitude": 0.0,
+    "drift_magnitude_ms": 0.0,
+    "median_offset": -15.606984126984127,
+    "offset_range": {
+      "min": -15.606984126984127,
+      "max": -15.606984126984127
+    },
+    "timeline": [
+      {
+        "start_time": 0.0,
+        "end_time": 45.0,
+        "offset_seconds": -10.502766439909298,
+        "confidence": 0.0309834573417902,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 135.0,
+        "end_time": 180.0,
+        "offset_seconds": -9.23514739229025,
+        "confidence": 0.02293776534497738,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 270.0,
+        "end_time": 315.0,
+        "offset_seconds": 15.379047619047618,
+        "confidence": 0.027476996183395386,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 405.0,
+        "end_time": 450.0,
+        "offset_seconds": 25.99501133786848,
+        "confidence": 0.028177428990602493,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 540.0,
+        "end_time": 585.0,
+        "offset_seconds": 9.902902494331066,
+        "confidence": 0.03780859708786011,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 675.0,
+        "end_time": 720.0,
+        "offset_seconds": 16.28453514739229,
+        "confidence": 0.03378789871931076,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 810.0,
+        "end_time": 855.0,
+        "offset_seconds": -8.33297052154195,
+        "confidence": 0.02938522957265377,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 945.0,
+        "end_time": 990.0,
+        "offset_seconds": -16.094603174603176,
+        "confidence": 0.028583485633134842,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 1080.0,
+        "end_time": 1125.0,
+        "offset_seconds": -34.13265306122449,
+        "confidence": 0.024254897609353065,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 1215.0,
+        "end_time": 1260.0,
+        "offset_seconds": -23.724580498866214,
+        "confidence": 0.02781016193330288,
+        "reliable": false,
+        "quality": "Poor"
+      },
+      {
+        "start_time": 1350.0,
+        "end_time": 1382.964943,
+        "offset_seconds": -15.606984126984127,
+        "confidence": 0.0508950911462307,
+        "reliable": true,
+        "quality": "Poor"
+      }
+    ],
+    "drift_regions": [],
+    "drift_summary": "Consistent sync across file (drift: 0.0ms)",
+    "total_reliable_chunks": 1
+  },
+  "timeline": [
+    {
+      "start_time": 0.0,
+      "end_time": 45.0,
+      "offset_seconds": -10.502766439909298,
+      "confidence": 0.0309834573417902,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 135.0,
+      "end_time": 180.0,
+      "offset_seconds": -9.23514739229025,
+      "confidence": 0.02293776534497738,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 270.0,
+      "end_time": 315.0,
+      "offset_seconds": 15.379047619047618,
+      "confidence": 0.027476996183395386,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 405.0,
+      "end_time": 450.0,
+      "offset_seconds": 25.99501133786848,
+      "confidence": 0.028177428990602493,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 540.0,
+      "end_time": 585.0,
+      "offset_seconds": 9.902902494331066,
+      "confidence": 0.03780859708786011,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 675.0,
+      "end_time": 720.0,
+      "offset_seconds": 16.28453514739229,
+      "confidence": 0.03378789871931076,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 810.0,
+      "end_time": 855.0,
+      "offset_seconds": -8.33297052154195,
+      "confidence": 0.02938522957265377,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 945.0,
+      "end_time": 990.0,
+      "offset_seconds": -16.094603174603176,
+      "confidence": 0.028583485633134842,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 1080.0,
+      "end_time": 1125.0,
+      "offset_seconds": -34.13265306122449,
+      "confidence": 0.024254897609353065,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 1215.0,
+      "end_time": 1260.0,
+      "offset_seconds": -23.724580498866214,
+      "confidence": 0.02781016193330288,
+      "reliable": false,
+      "quality": "Poor"
+    },
+    {
+      "start_time": 1350.0,
+      "end_time": 1382.964943,
+      "offset_seconds": -15.606984126984127,
+      "confidence": 0.0508950911462307,
+      "reliable": true,
+      "quality": "Poor"
+    }
+  ],
+  "gpu_used": true,
+  "chunk_details": [
+    {
+      "chunk_index": 0,
+      "start_time": 0.0,
+      "end_time": 45.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": -10.502766439909298,
+        "offset_samples": -231586,
+        "confidence": 0.0309834573417902,
+        "correlation_peak": 72.81539154052734,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 1,
+      "start_time": 135.0,
+      "end_time": 180.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": -9.23514739229025,
+        "offset_samples": -203635,
+        "confidence": 0.02293776534497738,
+        "correlation_peak": 38.13631820678711,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 2,
+      "start_time": 270.0,
+      "end_time": 315.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 0.9999999999999998,
+        "rms": 0.0,
+        "overall": 0.7999999999999998
+      },
+      "offset_detection": {
+        "offset_seconds": 15.379047619047618,
+        "offset_samples": 339108,
+        "confidence": 0.027476996183395386,
+        "correlation_peak": 53.985836029052734,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 3,
+      "start_time": 405.0,
+      "end_time": 450.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": 25.99501133786848,
+        "offset_samples": 573190,
+        "confidence": 0.028177428990602493,
+        "correlation_peak": 33.87122344970703,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 4,
+      "start_time": 540.0,
+      "end_time": 585.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": 9.902902494331066,
+        "offset_samples": 218359,
+        "confidence": 0.03780859708786011,
+        "correlation_peak": 73.8739013671875,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 5,
+      "start_time": 675.0,
+      "end_time": 720.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 0.9999999999999998,
+        "rms": 0.0,
+        "overall": 0.7999999999999998
+      },
+      "offset_detection": {
+        "offset_seconds": 16.28453514739229,
+        "offset_samples": 359074,
+        "confidence": 0.03378789871931076,
+        "correlation_peak": 53.29084777832031,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 6,
+      "start_time": 810.0,
+      "end_time": 855.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 0.9999999999999998,
+        "rms": 0.0,
+        "overall": 0.7999999999999998
+      },
+      "offset_detection": {
+        "offset_seconds": -8.33297052154195,
+        "offset_samples": -183742,
+        "confidence": 0.02938522957265377,
+        "correlation_peak": 73.60408020019531,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 7,
+      "start_time": 945.0,
+      "end_time": 990.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 0.9999999999999998,
+        "rms": 0.0,
+        "overall": 0.7999999999999998
+      },
+      "offset_detection": {
+        "offset_seconds": -16.094603174603176,
+        "offset_samples": -354886,
+        "confidence": 0.028583485633134842,
+        "correlation_peak": 38.542659759521484,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 8,
+      "start_time": 1080.0,
+      "end_time": 1125.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": -34.13265306122449,
+        "offset_samples": -752625,
+        "confidence": 0.024254897609353065,
+        "correlation_peak": 56.41697311401367,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 9,
+      "start_time": 1215.0,
+      "end_time": 1260.0,
+      "duration": 45.0,
+      "similarities": {
+        "mfcc": 1.0,
+        "rms": 0.0,
+        "overall": 0.7999999999999999
+      },
+      "offset_detection": {
+        "offset_seconds": -23.724580498866214,
+        "offset_samples": -523127,
+        "confidence": 0.02781016193330288,
+        "correlation_peak": 42.53091049194336,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    },
+    {
+      "chunk_index": 10,
+      "start_time": 1350.0,
+      "end_time": 1382.964943,
+      "duration": 32.96494299999995,
+      "similarities": {
+        "mfcc": 0.5734718985369504,
+        "rms": 0.0,
+        "overall": 0.45877751882956025
+      },
+      "offset_detection": {
+        "offset_seconds": -15.606984126984127,
+        "offset_samples": -344134,
+        "confidence": 0.0508950911462307,
+        "correlation_peak": 74.13618469238281,
+        "gpu_used": true
+      },
+      "quality": "Poor"
+    }
+  ]
+}

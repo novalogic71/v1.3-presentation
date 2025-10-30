@@ -1,0 +1,4 @@
+master_file,dub_file,methods,ai_model,description,tags
+/mnt/data/amcmurray/_insync_master_files/DunkirkEC_InsideTheCockpit_ProRes.mov,/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_InsideTheCockpit_ProRes_15sec.mov,"mfcc,ai",wav2vec2,Dunkirk Inside Cockpit sync test,"test,dunkirk,cockpit"
+/mnt/data/amcmurray/_insync_master_files/DunkirkEC_TakingToTheAir2_ProRes.mov,/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TakingToTheAir2_ProRes_15sec.mov,"onset,spectral",,Dunkirk Taking to Air sync test,"test,dunkirk,air"
+/mnt/data/amcmurray/_insync_master_files/DunkirkEC_TheInCameraApproach1_ProRes.mov,/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TheInCameraApproach1_ProRes_15sec.mov,ai,wav2vec2,Dunkirk In Camera Approach sync test,"test,dunkirk,camera"

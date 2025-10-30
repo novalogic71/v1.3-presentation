@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Audio Sync Analyzer - v1.3</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #1a1a1a;
+            --bg-panel: #2d3748;
+            --border-color: #4a5568;
+            --text-primary: #e0e0e0;
+            --text-white: #ffffff;
+            --accent-green: #38a169;
+            --accent-green-light: #86efac;
+            --accent-cyan: #22d3ee;
+            --accent-violet: #a78bfa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0a0a 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+        }
+
+        .splash-container {
+            max-width: 1200px;
+            width: 90%;
+            padding: 3rem 2rem;
+            animation: fadeIn 0.8s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Header Section */
+        .header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .logo-wrapper {
+            display: inline-block;
+            margin-bottom: 2rem;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .logo-wrapper:hover {
+            transform: scale(1.05);
+        }
+
+        .waveform-logo {
+            width: 120px;
+            height: 120px;
+            filter: drop-shadow(0 4px 20px rgba(56, 161, 105, 0.5));
+        }
+
+        .waveform-path {
+            stroke: url(#waveGradient);
+            stroke-width: 3;
+            fill: none;
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawWave 2.5s ease-in-out infinite;
+        }
+
+        @keyframes drawWave {
+            0%, 100% { stroke-dashoffset: 1000; }
+            50% { stroke-dashoffset: 0; }
+        }
+
+        .app-title {
+            font-size: 3rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green-light), var(--accent-violet));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .app-subtitle {
+            font-size: 1.3rem;
+            color: var(--text-primary);
+            font-weight: 300;
+            margin-bottom: 1rem;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3);
+        }
+
+        /* Features Grid */
+        .features-section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            font-weight: 300;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            color: var(--text-white);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .feature-card {
+            background: rgba(45, 55, 72, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-green);
+            box-shadow: 0 8px 24px rgba(56, 161, 105, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            color: var(--accent-green);
+            margin-bottom: 1rem;
+        }
+
+        .feature-title {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-white);
+        }
+
+        .feature-description {
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* Quick Start Section */
+        .quickstart-section {
+            background: rgba(45, 55, 72, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .quickstart-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+
+        .step {
+            text-align: center;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            border-radius: 50%;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.4);
+        }
+
+        .step-title {
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-white);
+        }
+
+        .step-description {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        /* Action Buttons */
+        .actions {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+            font-weight: 500;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            color: white;
+            box-shadow: 0 4px 16px rgba(56, 161, 105, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(56, 161, 105, 0.6);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid var(--border-color);
+            color: var(--text-white);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            transform: translateY(-2px);
+        }
+
+        .keyboard-hint {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            opacity: 0.7;
+        }
+
+        .keyboard-hint kbd {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            font-family: monospace;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-title {
+                font-size: 2rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .quickstart-steps {
+                grid-template-columns: 1fr;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Pulse Animation for Logo */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .logo-wrapper:hover .waveform-logo {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="splash-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo-wrapper" onclick="enterApp()">
+                <svg class="waveform-logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
+                            <stop offset="50%" style="stop-color:#38a169;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <path class="waveform-path" d="M 20,100 L 40,80 L 60,120 L 80,60 L 100,140 L 120,70 L 140,110 L 160,90 L 180,100" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path class="waveform-path" d="M 20,100 L 40,110 L 60,90 L 80,130 L 100,70 L 120,120 L 140,85 L 160,105 L 180,100" stroke-linecap="round" stroke-linejoin="round" style="animation-delay: 0.5s;"/>
+                    <circle cx="100" cy="100" r="85" stroke="url(#waveGradient)" stroke-width="2" fill="none" opacity="0.3"/>
+                </svg>
+            </div>
+            <h1 class="app-title">Professional Audio Sync Analyzer</h1>
+            <p class="app-subtitle">Frame-Perfect Sync Detection • AI-Powered • Multi-GPU Accelerated</p>
+            <span class="version-badge"><i class="fas fa-tag"></i> Version 1.3</span>
+        </div>
+
+        <!-- Features Section -->
+        <section class="features-section">
+            <h2 class="section-title">Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-crosshairs"></i></div>
+                    <h3 class="feature-title">Sub-Frame Accuracy</h3>
+                    <p class="feature-description">98% accuracy improvement with frame-perfect timing. Displays exact offsets like "-240f @ 23.976fps" for precise sync correction.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-microchip"></i></div>
+                    <h3 class="feature-title">Multi-GPU Acceleration</h3>
+                    <p class="feature-description">Automatic workload distribution across all available GPUs with round-robin load balancing. Process 15-20 files per hour.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-brain"></i></div>
+                    <h3 class="feature-title">AI-Powered Detection</h3>
+                    <p class="feature-description">Wav2Vec2, YAMNet, and custom models with 768-1024 dimensional embeddings for complex sync scenarios.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-film"></i></div>
+                    <h3 class="feature-title">Frame Rate Detection</h3>
+                    <p class="feature-description">Uses ffprobe to detect actual video frame rates (23.976, 24, 29.97 fps, etc.) for accurate frame count displays.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-layer-group"></i></div>
+                    <h3 class="feature-title">Batch Processing</h3>
+                    <p class="feature-description">CSV-based workflows with 1-8 parallel workers. Process up to 100 file pairs with real-time progress monitoring.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-wrench"></i></div>
+                    <h3 class="feature-title">Automated Repair</h3>
+                    <p class="feature-description">One-click sync correction with A/B preview comparison before applying repairs. Includes comprehensive packaging.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Start Section -->
+        <section class="quickstart-section">
+            <h2 class="section-title">Quick Start Guide</h2>
+            <div class="quickstart-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3 class="step-title">Select Files</h3>
+                    <p class="step-description">Browse to your media files and select master (reference) and dub files using the file browser.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3 class="step-title">Configure Analysis</h3>
+                    <p class="step-description">Choose detection methods (MFCC, Onset, Spectral, AI) and configure parameters. Defaults work great for most cases.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3 class="step-title">Analyze & Review</h3>
+                    <p class="step-description">Click "Start Analysis" to detect sync offset. Review results in QC interface and apply repairs if needed.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Action Buttons -->
+        <div class="actions">
+            <button class="btn btn-primary" onclick="enterApp()">
+                <i class="fas fa-play"></i>
+                Enter Application
+            </button>
+            <a href="PRESENTATION_GUIDE.md" class="btn btn-secondary" target="_blank">
+                <i class="fas fa-book"></i>
+                Presentation Guide
+            </a>
+            <a href="http://localhost:8000/docs" class="btn btn-secondary" target="_blank">
+                <i class="fas fa-code"></i>
+                API Documentation
+            </a>
+        </div>
+
+        <p class="keyboard-hint">
+            <i class="fas fa-lightbulb"></i>
+            Press <kbd>Enter</kbd> or click the logo to start
+        </p>
+    </div>
+
+    <script>
+        function enterApp() {
+            window.location.href = '/app';
+        }
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                enterApp();
+            }
+        });
+
+        // Fade-in animation on load
+        window.addEventListener('load', function() {
+            document.querySelector('.splash-container').style.opacity = '0';
+            setTimeout(() => {
+                document.querySelector('.splash-container').style.opacity = '1';
+            }, 100);
+        });
+    </script>
+</body>
+</html>

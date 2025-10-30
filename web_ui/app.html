@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Audio Sync Analyzer</title>
+    <link rel="stylesheet" href="style.css?v=20250829-8">
+    <link rel="stylesheet" href="waveform-styles.css?v=20250828-0100">
+    <link rel="stylesheet" href="qc-styles.css?v=20250829-1">
+    <link rel="stylesheet" href="repair-qc-styles.css?v=20250902-1">
+    <link rel="stylesheet" href="repair-preview-styles.css?v=20250912-1">
+    <link rel="stylesheet" href="operator-console.css?v=20250115-1">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Batch table UX improvements */
+        .batch-table thead th { position: sticky; top: 0; z-index: 2; background: #0f172a; }
+        .file-cell .file-name { display: inline-block; max-width: 28ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: bottom; }
+        .progress-container { display:flex; align-items:center; gap:8px; }
+        .progress-bar { position: relative; width: 120px; height: 6px; background:#1f2937; border-radius: 999px; overflow:hidden; }
+        .progress-fill { height:100%; background: linear-gradient(90deg,#22c55e,#10b981); transition: width .2s ease; }
+        .progress-text { font-variant-numeric: tabular-nums; opacity:.8; }
+
+        /* Result pill */
+        .result-cell .result-pill { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; font-variant-numeric: tabular-nums; }
+        .result-pill.advanced { background:#1e3a8a1a; color:#60a5fa; }
+        .result-pill.delayed  { background:#7f1d1d1a; color:#f87171; }
+        .result-pill.good     { border:1px solid #22c55e44; }
+        .result-pill.warning  { border:1px solid #f59e0b44; }
+        .result-pill.critical { border:1px solid #ef444444; }
+
+        /* Status badges */
+        .status-badge.completed  { background:#16a34a1a; color:#86efac; }
+        .status-badge.processing { background:#1d4ed81a; color:#93c5fd; }
+        .status-badge.failed     { background:#7f1d1d1a; color:#fca5a5; }
+
+        /* Fullscreen details */
+        .batch-details.fullscreen { position: fixed; left:0; top:0; right:0; bottom:0; width:100vw; height:100vh; z-index: 9999; background: rgba(11,18,32,0.98); padding: 16px 24px; overflow: auto; }
+        .batch-details.fullscreen .details-content { max-width: 1400px; margin: 0 auto; }
+        .details-layout { display: block; }
+        .batch-details.fullscreen .details-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+        .details-main, .details-side { min-width: 0; }
+        body.no-scroll { overflow: hidden; }
+        .details-actions #toggle-fullscreen-btn .fa-expand { display: inline-block; }
+        .details-actions #toggle-fullscreen-btn.fs-active .fa-expand { display: none; }
+        .details-actions #toggle-fullscreen-btn.fs-active::before { content: '\f066'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 6px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fas fa-waveform-path"></i> Professional Audio Sync Analyzer</h1>
+        <div class="status-indicator">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Ready</span>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <!-- Left Quadrant: File System Browser -->
+        <div class="quadrant file-browser">
+            <div class="quadrant-header">
+                <h2><i class="fas fa-folder-tree"></i> File System</h2>
+                <div class="path-breadcrumb">
+                    <span id="current-path">/mnt/data</span>
+                </div>
+            </div>
+            <div class="quadrant-content">
+                <div class="file-tree" id="file-tree">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i> Loading files...
+                    </div>
+                </div>
+                <div class="selected-files">
+                    <h3>Selected Files</h3>
+                    <div class="file-selection">
+                        <div class="file-slot" id="master-slot">
+                            <label>Master File:</label>
+                            <div class="file-placeholder">
+                                <i class="fas fa-file-audio"></i>
+                                <span>Click to select master file</span>
+                            </div>
+                        </div>
+                        <div class="file-slot" id="dub-slot">
+                            <label>Dub File:</label>
+                            <div class="file-placeholder">
+                                <i class="fas fa-file-audio"></i>
+                                <span>Click to select dub file</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="analyze-btn" id="analyze-btn" disabled>
+                        <i class="fas fa-play"></i> Start Analysis
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Top Right Quadrants -->
+        <div class="quadrant configuration">
+            <div class="quadrant-header">
+                <h2><i class="fas fa-cogs"></i> Analysis Configuration</h2>
+                <button class="reset-config-btn" id="reset-config-btn" title="Reset to defaults">
+                    <i class="fas fa-undo"></i> Reset
+                </button>
+            </div>
+            <div class="quadrant-content">
+                <!-- Analysis Methods -->
+                <div class="config-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-microscope"></i> Detection Methods</h3>
+                    </div>
+                    <div class="method-selection">
+                        <div class="method-row">
+                            <div class="method-item">
+                                <div class="method-header">
+                                    <span class="method-name">MFCC</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="method-mfcc" value="mfcc" checked>
+                                        <label for="method-mfcc" class="toggle-slider"></label>
+                                    </div>
+                                </div>
+                                <span class="method-desc">Mel-frequency coefficients</span>
+                            </div>
+                            <div class="method-item">
+                                <div class="method-header">
+                                    <span class="method-name">Onset</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="method-onset" value="onset" checked>
+                                        <label for="method-onset" class="toggle-slider"></label>
+                                    </div>
+                                </div>
+                                <span class="method-desc">Transient detection</span>
+                            </div>
+                        </div>
+                        <div class="method-row">
+                            <div class="method-item">
+                                <div class="method-header">
+                                    <span class="method-name">Spectral</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="method-spectral" value="spectral" checked>
+                                        <label for="method-spectral" class="toggle-slider"></label>
+                                    </div>
+                                </div>
+                                <span class="method-desc">Frequency correlation</span>
+                            </div>
+                            <div class="method-item">
+                                <div class="method-header">
+                                    <span class="method-name">AI Neural</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="method-ai" value="ai" checked>
+                                        <label for="method-ai" class="toggle-slider"></label>
+                                    </div>
+                                </div>
+                                <span class="method-desc">Neural features</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Analysis Parameters -->
+                <div class="config-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-sliders-h"></i> Parameters</h3>
+                    </div>
+                    <div class="parameter-grid compact">
+                        <div class="param-row">
+                            <div class="param-item">
+                                <label for="sample-rate">Sample Rate</label>
+                                <select id="sample-rate">
+                                    <option value="16000">16kHz</option>
+                                    <option value="22050">22kHz</option>
+                                    <option value="44100">44kHz</option>
+                                    <option value="48000" selected>48kHz</option>
+                                </select>
+                            </div>
+                            <div class="param-item">
+                                <label for="window-size">Window (s)</label>
+                                <input type="number" id="window-size" value="30" min="10" max="120" step="5">
+                            </div>
+                        </div>
+                        <div class="param-row">
+                            <div class="param-item">
+                                <label for="confidence-threshold">Confidence</label>
+                                <div class="range-container">
+                                    <input type="range" id="confidence-threshold" min="0.1" max="1.0" step="0.05" value="0.7">
+                                    <span class="range-value" id="confidence-value">70%</span>
+                                </div>
+                            </div>
+                            <div class="param-item">
+                                <label for="n-mfcc">MFCC Coeff</label>
+                                <input type="number" id="n-mfcc" value="13" min="8" max="20" step="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Channel Strategy -->
+                <div class="config-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-project-diagram"></i> Channels</h3>
+                    </div>
+                    <div class="parameter-grid compact">
+                        <div class="param-row">
+                            <div class="param-item">
+                                <label for="channel-strategy">Channel Strategy</label>
+                                <select id="channel-strategy">
+                                    <option value="mono_downmix" selected>Mono Downmix (default)</option>
+                                    <option value="per_channel">Per-Channel Analysis</option>
+                                </select>
+                            </div>
+                            <div class="param-item">
+                                <label for="target-channels">Target Channels</label>
+                                <input type="text" id="target-channels" placeholder="e.g., FL,FR,FC">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Output Options -->
+                <div class="config-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-file-export"></i> Output Options</h3>
+                    </div>
+                    <div class="output-options compact">
+                        <div class="toggle-grid">
+                            <div class="toggle-item">
+                                <span class="toggle-label">JSON Reports</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="generate-json" checked>
+                                    <label for="generate-json" class="toggle-slider"></label>
+                                </div>
+                            </div>
+                            <div class="toggle-item">
+                                <span class="toggle-label">Visualizations</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="generate-visualizations">
+                                    <label for="generate-visualizations" class="toggle-slider"></label>
+                                </div>
+                            </div>
+                            <div class="toggle-item">
+                                <span class="toggle-label">Operator Mode</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="operator-mode" checked>
+                                    <label for="operator-mode" class="toggle-slider"></label>
+                                </div>
+                            </div>
+                            <div class="toggle-item">
+                                <span class="toggle-label">GPU Accel</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="enable-gpu" checked>
+                                    <label for="enable-gpu" class="toggle-slider"></label>
+                                </div>
+                            </div>
+                            <div class="toggle-item">
+                                <span class="toggle-label">Verbose Log</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="verbose-logging">
+                                    <label for="verbose-logging" class="toggle-slider"></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="output-dir-row">
+                            <label for="output-directory">Output Directory</label>
+                            <input type="text" id="output-directory" value="./ui_sync_reports/" placeholder="Enter path...">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI Model Selection (shown when AI is enabled) -->
+                <div class="config-section ai-section" id="ai-config" style="display: none;">
+                    <div class="config-header">
+                        <h3><i class="fas fa-brain"></i> AI Model</h3>
+                    </div>
+                    <div class="ai-model-selection compact">
+                        <div class="model-grid">
+                            <label class="ai-model-option">
+                                <input type="radio" name="ai-model" value="wav2vec2" checked>
+                                <div class="model-info">
+                                    <span class="model-name">Wav2Vec2</span>
+                                    <span class="model-desc">Facebook speech model</span>
+                                </div>
+                            </label>
+                            <label class="ai-model-option">
+                                <input type="radio" name="ai-model" value="yamnet">
+                                <div class="model-info">
+                                    <span class="model-name">YAMNet</span>
+                                    <span class="model-desc">Google audio classifier</span>
+                                </div>
+                            </label>
+                            <label class="ai-model-option">
+                                <input type="radio" name="ai-model" value="spectral">
+                                <div class="model-info">
+                                    <span class="model-name">Spectral CNN</span>
+                                    <span class="model-desc">Custom spectral model</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Right: Console Status -->
+        <div class="quadrant console-status">
+            <div class="quadrant-header">
+                <h2><i class="fas fa-terminal"></i> Console Status</h2>
+                <div class="log-toolbar">
+                    <button id="clear-logs-btn" title="Clear log entries"><i class="fas fa-broom"></i> Clear</button>
+                    <button id="auto-scroll-btn" title="Toggle auto-scroll"><i class="fas fa-arrow-down"></i> Auto-scroll</button>
+                </div>
+            </div>
+            <div class="quadrant-content">
+                <div id="log-container" class="log-container">
+                    <div class="log-empty">Logs will appear here…</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Bottom Right Quadrant: Batch Processing -->
+        <div class="quadrant batch-processing">
+            <div class="quadrant-header">
+                <h2><i class="fas fa-list-check"></i> Batch Processing Queue</h2>
+                <div class="batch-controls">
+                    <button id="add-to-batch" title="Add selected files to batch">
+                        <i class="fas fa-plus"></i> Add to Batch
+                    </button>
+                    <button id="process-batch" title="Process all files in batch">
+                        <i class="fas fa-play"></i> Process Batch
+                    </button>
+                    <button id="clear-batch" title="Clear batch queue">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div class="quadrant-content">
+                <div class="batch-summary">
+                    <div class="summary-item">
+                        <span class="summary-label">Queue:</span>
+                        <span class="summary-value" id="queue-count">0 pairs</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Completed:</span>
+                        <span class="summary-value" id="completed-count">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Processing:</span>
+                        <span class="summary-value" id="processing-status">Ready</span>
+                    </div>
+                </div>
+                
+                <div class="batch-table-container">
+                    <table class="batch-table" id="batch-table">
+                        <thead>
+                            <tr>
+                                <th class="expand-col"><i class="fas fa-eye"></i></th>
+                                <th class="file-col">Master File</th>
+                                <th class="file-col">Dub File</th>
+                                <th class="status-col">Status</th>
+                                <th class="progress-col">Progress</th>
+                                <th class="result-col">Result</th>
+                                <th class="actions-col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-table-body">
+                            <tr class="empty-state">
+                                <td colspan="7">
+                                    <div class="empty-message">
+                                        <i class="fas fa-inbox"></i>
+                                        <p>No files in batch queue</p>
+                                        <p>Select master and dub files, then click "Add to Batch"</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Enhanced expandable details section -->
+                <div class="batch-details" id="batch-details" style="display: none;">
+                    <div class="details-header">
+                        <div class="details-title">
+                            <h3><i class="fas fa-microscope"></i> Analysis Details</h3>
+                            <span class="details-subtitle" id="details-subtitle">Complete analysis results and actions</span>
+                        </div>
+                        <div class="details-actions">
+                            <button class="detail-action-btn" id="toggle-fullscreen-btn" title="Expand details">
+                                <i class="fas fa-expand"></i> Expand
+                            </button>
+                            <button class="detail-action-btn" id="export-results-btn" title="Export results">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                            <button class="detail-action-btn" id="compare-results-btn" title="Compare with other results">
+                                <i class="fas fa-balance-scale"></i> Compare
+                            </button>
+                            <button id="close-details" class="close-details-btn" title="Close details">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="details-content" id="details-content">
+                        <!-- Dynamic content will be inserted here -->
+                        <div class="details-loading" id="details-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Loading analysis details...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Repair Preview Interface Container -->
+    <div id="repair-preview-container" style="display: none;"></div>
+    
+    <script src="core-audio-engine.js?v=20250902-1"></script>
+    <script src="waveform-visualizer.js?v=20250902-1"></script>
+    <script src="enhanced-waveform.js?v=20250902-1"></script>
+    <script src="qc-interface.js?v=20250913-5"></script>
+    <script src="repair-qc-interface.js?v=20250913-5"></script>
+    <script src="smart-playback-engine.js?v=20250912-1"></script>
+    <script src="repair-preview-interface.js?v=20250912-1"></script>
+    <script src="operator-console.js?v=20250115-1"></script>
+    <script src="app.js?v=20250902-1"></script>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

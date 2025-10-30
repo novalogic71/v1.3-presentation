@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QC Interface Audio Debug</title>
+    <link rel="stylesheet" href="qc-styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: white; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #333; border-radius: 5px; }
+        .debug-button { background: #007bff; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 3px; cursor: pointer; }
+        .debug-button:hover { background: #0056b3; }
+        .debug-output { background: #2a2a2a; padding: 10px; border-radius: 3px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .status { padding: 5px 10px; margin: 5px; border-radius: 3px; }
+        .status.success { background: #28a745; }
+        .status.error { background: #dc3545; }
+        .status.warning { background: #ffc107; color: black; }
+    </style>
+</head>
+<body>
+    <h1>QC Interface Audio Debug Tool</h1>
+    
+    <div class="debug-section">
+        <h2>Audio Context Test</h2>
+        <button class="debug-button" onclick="testAudioContext()">Test Audio Context</button>
+        <button class="debug-button" onclick="resumeAudioContext()">Resume Audio Context</button>
+        <div id="audio-context-status" class="status">Not tested</div>
+        <div id="audio-context-output" class="debug-output"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>QC Interface Test</h2>
+        <button class="debug-button" onclick="testQCInterface()">Initialize QC Interface</button>
+        <button class="debug-button" onclick="openTestQC()">Open Test QC Modal</button>
+        <button class="debug-button" onclick="debugQCState()">Debug QC State</button>
+        <div id="qc-status" class="status">Not initialized</div>
+        <div id="qc-output" class="debug-output"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Audio File Test</h2>
+        <button class="debug-button" onclick="testAudioUrls()">Test Audio URLs</button>
+        <button class="debug-button" onclick="testDirectPlayback()">Test Direct Playback</button>
+        <div id="audio-test-status" class="status">Not tested</div>
+        <div id="audio-test-output" class="debug-output"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Server Connection Test</h2>
+        <button class="debug-button" onclick="testServerConnection()">Test Server</button>
+        <button class="debug-button" onclick="testFileEndpoints()">Test File Endpoints</button>
+        <div id="server-status" class="status">Not tested</div>
+        <div id="server-output" class="debug-output"></div>
+    </div>
+
+    <!-- Load QC Interface scripts -->
+    <script src="core-audio-engine.js"></script>
+    <script src="qc-interface.js"></script>
+    
+    <script>
+        let qcInterface = null;
+        let audioEngine = null;
+        
+        function log(section, message, isError = false) {
+            const output = document.getElementById(section + '-output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.textContent += `[${timestamp}] ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+            console.log(`${section}: ${message}`);
+            if (isError) console.error(message);
+        }
+        
+        function setStatus(section, status, type = 'success') {
+            const statusEl = document.getElementById(section + '-status');
+            statusEl.textContent = status;
+            statusEl.className = `status ${type}`;
+        }
+        
+        async function testAudioContext() {
+            try {
+                log('audio-context', 'Testing audio context initialization...');
+                audioEngine = new CoreAudioEngine();
+                
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                const status = audioEngine.getStatus();
+                log('audio-context', 'Audio engine status: ' + JSON.stringify(status, null, 2));
+                
+                if (audioEngine.audioContext) {
+                    log('audio-context', `Audio context state: ${audioEngine.audioContext.state}`);
+                    log('audio-context', `Audio context sample rate: ${audioEngine.audioContext.sampleRate}`);
+                    setStatus('audio-context', `AudioContext: ${audioEngine.audioContext.state}`, 
+                             audioEngine.audioContext.state === 'running' ? 'success' : 'warning');
+                } else {
+                    log('audio-context', 'Audio context not created!', true);
+                    setStatus('audio-context', 'AudioContext: Failed', 'error');
+                }
+            } catch (error) {
+                log('audio-context', 'Error: ' + error.message, true);
+                setStatus('audio-context', 'Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function resumeAudioContext() {
+            if (!audioEngine || !audioEngine.audioContext) {
+                log('audio-context', 'No audio context to resume', true);
+                return;
+            }
+            
+            try {
+                log('audio-context', 'Resuming audio context...');
+                await audioEngine.audioContext.resume();
+                log('audio-context', `Audio context resumed: ${audioEngine.audioContext.state}`);
+                setStatus('audio-context', `AudioContext: ${audioEngine.audioContext.state}`, 
+                         audioEngine.audioContext.state === 'running' ? 'success' : 'warning');
+            } catch (error) {
+                log('audio-context', 'Resume error: ' + error.message, true);
+                setStatus('audio-context', 'Resume failed', 'error');
+            }
+        }
+        
+        async function testQCInterface() {
+            try {
+                log('qc', 'Initializing QC Interface...');
+                qcInterface = new QCInterface();
+                
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                if (qcInterface) {
+                    log('qc', 'QC Interface created successfully');
+                    const debugInfo = qcInterface.getDebugInfo();
+                    log('qc', 'QC Debug Info: ' + JSON.stringify(debugInfo, null, 2));
+                    setStatus('qc', 'Initialized', 'success');
+                } else {
+                    log('qc', 'QC Interface creation failed', true);
+                    setStatus('qc', 'Failed to initialize', 'error');
+                }
+            } catch (error) {
+                log('qc', 'Error: ' + error.message, true);
+                setStatus('qc', 'Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function openTestQC() {
+            if (!qcInterface) {
+                log('qc', 'QC Interface not initialized. Initializing now...', true);
+                await testQCInterface();
+            }
+            
+            try {
+                log('qc', 'Opening test QC modal...');
+                const testData = {
+                    masterFile: 'test-master.wav',
+                    dubFile: 'test-dub.wav',
+                    detectedOffset: 0.123,
+                    confidence: 0.85,
+                    masterUrl: '/api/v1/files/proxy-audio?path=/mnt/data/test-master.wav&format=wav',
+                    dubUrl: '/api/v1/files/proxy-audio?path=/mnt/data/test-dub.wav&format=wav'
+                };
+                
+                await qcInterface.open(testData);
+                log('qc', 'QC Modal opened successfully');
+                setStatus('qc', 'Modal opened', 'success');
+            } catch (error) {
+                log('qc', 'Error opening modal: ' + error.message, true);
+                setStatus('qc', 'Modal error', 'error');
+            }
+        }
+        
+        function debugQCState() {
+            if (!qcInterface) {
+                log('qc', 'QC Interface not initialized', true);
+                return;
+            }
+            
+            try {
+                const debugInfo = qcInterface.getDebugInfo();
+                log('qc', 'Current QC State: ' + JSON.stringify(debugInfo, null, 2));
+                
+                if (qcInterface.audioEngine) {
+                    const audioStatus = qcInterface.audioEngine.getStatus();
+                    log('qc', 'QC Audio Engine Status: ' + JSON.stringify(audioStatus, null, 2));
+                }
+                
+                setStatus('qc', 'Debug info logged', 'success');
+            } catch (error) {
+                log('qc', 'Debug error: ' + error.message, true);
+                setStatus('qc', 'Debug failed', 'error');
+            }
+        }
+        
+        async function testAudioUrls() {
+            try {
+                log('audio-test', 'Testing audio URL generation...');
+                
+                // Test proxy-audio endpoint
+                const proxyUrl = '/api/v1/files/proxy-audio?path=/mnt/data/test.wav&format=wav';
+                log('audio-test', 'Generated proxy URL: ' + proxyUrl);
+                
+                // Test raw endpoint
+                const rawUrl = '/api/v1/files/raw?path=/mnt/data/test.wav';
+                log('audio-test', 'Generated raw URL: ' + rawUrl);
+                
+                setStatus('audio-test', 'URLs generated', 'success');
+            } catch (error) {
+                log('audio-test', 'URL test error: ' + error.message, true);
+                setStatus('audio-test', 'URL test failed', 'error');
+            }
+        }
+        
+        async function testDirectPlayback() {
+            try {
+                log('audio-test', 'Testing direct HTML5 audio playback...');
+                
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.preload = 'auto';
+                
+                // Test with a simple tone or known audio file
+                const testUrl = '/api/v1/files/proxy-audio?path=/mnt/data/test.wav&format=wav';
+                audio.src = testUrl;
+                
+                audio.addEventListener('loadstart', () => log('audio-test', 'Audio load started'));
+                audio.addEventListener('canplay', () => log('audio-test', 'Audio can play'));
+                audio.addEventListener('error', (e) => log('audio-test', 'Audio error: ' + e.message, true));
+                
+                document.body.appendChild(audio);
+                
+                log('audio-test', 'HTML5 audio element created with URL: ' + testUrl);
+                setStatus('audio-test', 'Direct playback test running', 'warning');
+                
+            } catch (error) {
+                log('audio-test', 'Direct playback test error: ' + error.message, true);
+                setStatus('audio-test', 'Direct playback failed', 'error');
+            }
+        }
+        
+        async function testServerConnection() {
+            try {
+                log('server', 'Testing server connection...');
+                
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                log('server', 'Server health response: ' + JSON.stringify(data, null, 2));
+                
+                if (response.ok) {
+                    setStatus('server', 'Connected', 'success');
+                } else {
+                    setStatus('server', 'Server error', 'error');
+                }
+            } catch (error) {
+                log('server', 'Server connection error: ' + error.message, true);
+                setStatus('server', 'Connection failed', 'error');
+            }
+        }
+        
+        async function testFileEndpoints() {
+            try {
+                log('server', 'Testing file endpoints...');
+                
+                // Test file listing
+                const listResponse = await fetch('/api/v1/files/?path=/mnt/data');
+                const listData = await listResponse.json();
+                log('server', 'File list response status: ' + listResponse.status);
+                log('server', 'File list success: ' + listData.success);
+                
+                // Test a specific file probe if any files exist
+                if (listData.files && listData.files.length > 0) {
+                    const testFile = listData.files[0];
+                    log('server', 'Testing probe on file: ' + testFile.path);
+                    
+                    const probeResponse = await fetch(`/api/v1/files/probe?path=${encodeURIComponent(testFile.path)}`);
+                    const probeData = await probeResponse.json();
+                    log('server', 'Probe response: ' + JSON.stringify(probeData, null, 2));
+                }
+                
+                setStatus('server', 'File endpoints tested', 'success');
+            } catch (error) {
+                log('server', 'File endpoint test error: ' + error.message, true);
+                setStatus('server', 'File endpoints failed', 'error');
+            }
+        }
+        
+        // Auto-run basic tests on load
+        window.addEventListener('load', async () => {
+            log('audio-context', 'Page loaded, running basic tests...');
+            await testServerConnection();
+        });
+    </script>
+</body>
+</html>

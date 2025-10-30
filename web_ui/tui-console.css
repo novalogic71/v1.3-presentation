@@ -1,0 +1,476 @@
+/* Professional TUI Console Styling */
+
+.tui-console {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    overflow: hidden;
+}
+
+/* TUI Box Components */
+.tui-box {
+    background: #0f0f0f;
+    border: 1px solid #333;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.tui-box-header {
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    padding: 6px 12px;
+    font-weight: 600;
+    font-size: 11px;
+    color: #60a5fa;
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tui-box-content {
+    padding: 8px 12px;
+    color: #e2e8f0;
+}
+
+/* System Status Section */
+.tui-system-status {
+    flex-shrink: 0;
+}
+
+.tui-status-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.status-indicator {
+    font-size: 16px;
+    animation: pulse 2s infinite;
+}
+
+.status-text {
+    font-weight: 600;
+    min-width: 80px;
+}
+
+.status-text.ready { color: #22c55e; }
+.status-text.processing { color: #f59e0b; }
+.status-text.completed { color: #10b981; }
+.status-text.error { color: #ef4444; }
+.status-text.warning { color: #f97316; }
+
+.status-detail {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.status-memory {
+    color: #64748b;
+    font-size: 11px;
+    margin-left: auto;
+}
+
+.tui-overall-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.tui-console .progress-label {
+    font-size: 11px;
+    color: #94a3b8;
+    min-width: 120px;
+}
+
+.tui-progress-bar {
+    flex: 1;
+    position: relative;
+    height: 16px;
+    display: flex;
+    align-items: center;
+}
+
+.tui-console .progress-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: #1f2937;
+    border-radius: 3px;
+    border: 1px solid #374151;
+}
+
+.tui-console .progress-fill {
+    position: absolute;
+    left: 0;
+    height: 6px;
+    background: linear-gradient(90deg, #10b981, #22c55e);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.3);
+}
+
+.tui-console .progress-text {
+    position: absolute;
+    right: 0;
+    font-size: 10px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+.tui-chunk-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #64748b;
+}
+
+/* Progress Stages Section */
+.tui-progress-stages {
+    flex-shrink: 0;
+    max-height: 140px;
+}
+
+.tui-stage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    padding: 2px 0;
+}
+
+.stage-status {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+}
+
+.stage-status.animate {
+    animation: processing-pulse 1s ease-in-out;
+}
+
+.stage-name {
+    min-width: 120px;
+    font-size: 11px;
+    color: #cbd5e0;
+}
+
+.stage-progress {
+    flex: 1;
+    font-family: monospace;
+    font-size: 10px;
+    color: #10b981;
+    letter-spacing: -1px;
+}
+
+.stage-percent {
+    font-size: 10px;
+    color: #94a3b8;
+    min-width: 30px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.tui-stage.completed .stage-progress {
+    color: #22c55e;
+}
+
+.tui-stage.processing .stage-progress {
+    color: #f59e0b;
+}
+
+.tui-stage.error .stage-progress {
+    color: #ef4444;
+}
+
+.tui-stage-placeholder {
+    color: #64748b;
+    font-style: italic;
+    text-align: center;
+    padding: 16px;
+}
+
+/* Activity Log Section */
+.tui-activity-log {
+    flex: 1;
+    min-height: 120px;
+    overflow: hidden;
+}
+
+.tui-log-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.tui-btn {
+    background: #374151;
+    border: 1px solid #4b5563;
+    color: #d1d5db;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.tui-btn:hover {
+    background: #4b5563;
+}
+
+.tui-btn.active {
+    background: #1e40af;
+    border-color: #3b82f6;
+    color: #dbeafe;
+}
+
+.tui-log-container {
+    max-height: 100px;
+    overflow-y: auto;
+    padding: 4px 8px !important;
+}
+
+.tui-log-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.log-time {
+    color: #6b7280;
+    font-size: 10px;
+    min-width: 65px;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-icon {
+    font-size: 12px;
+    width: 16px;
+    text-align: center;
+}
+
+.log-message {
+    flex: 1;
+    color: #e5e7eb;
+}
+
+.tui-log-entry.info { border-left: 2px solid #3b82f6; padding-left: 4px; }
+.tui-log-entry.success { border-left: 2px solid #10b981; padding-left: 4px; }
+.tui-log-entry.warning { border-left: 2px solid #f59e0b; padding-left: 4px; }
+.tui-log-entry.error { border-left: 2px solid #ef4444; padding-left: 4px; }
+.tui-log-entry.progress { border-left: 2px solid #8b5cf6; padding-left: 4px; }
+.tui-log-entry.chunk { border-left: 2px solid #06b6d4; padding-left: 4px; }
+.tui-log-entry.startup { border-left: 2px solid #22c55e; padding-left: 4px; }
+
+/* Visualization Section */
+.tui-visualization {
+    flex-shrink: 0;
+    max-height: 100px;
+}
+
+.tui-timeline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.timeline-label {
+    font-size: 11px;
+    color: #94a3b8;
+    min-width: 60px;
+}
+
+.timeline-bar {
+    flex: 1;
+    display: flex;
+    gap: 1px;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 4px;
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 3px;
+}
+
+.timeline-chunk {
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.timeline-chunk:hover {
+    transform: scale(1.2);
+}
+
+.timeline-chunk.pending { opacity: 0.4; }
+.timeline-chunk.processing { animation: processing-glow 1s infinite; }
+.timeline-chunk.completed { filter: brightness(1.2); }
+.timeline-chunk.error { filter: hue-rotate(0deg) saturate(2); }
+
+.timeline-placeholder {
+    color: #6b7280;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.timeline-duration {
+    font-size: 10px;
+    color: #6b7280;
+    min-width: 80px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.tui-quality-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.quality-label {
+    font-size: 11px;
+    color: #94a3b8;
+    min-width: 60px;
+}
+
+.quality-meter {
+    flex: 1;
+    position: relative;
+    height: 12px;
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.quality-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+    transition: width 0.3s ease;
+}
+
+.quality-text {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: #000;
+    font-weight: 600;
+    text-shadow: 0 0 2px rgba(255,255,255,0.5);
+    font-variant-numeric: tabular-nums;
+}
+
+.tui-status-summary {
+    font-size: 11px;
+    color: #64748b;
+    text-align: center;
+}
+
+/* Animations */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@keyframes processing-pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes processing-glow {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.5) drop-shadow(0 0 2px currentColor); }
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .tui-console {
+        font-size: 11px;
+    }
+    
+    .status-detail {
+        display: none;
+    }
+    
+    .timeline-duration {
+        display: none;
+    }
+    
+    .stage-name {
+        min-width: 100px;
+    }
+}
+
+@media (max-width: 800px) {
+    .tui-console {
+        font-size: 10px;
+    }
+    
+    .tui-progress-stages {
+        max-height: 100px;
+    }
+    
+    .tui-activity-log .tui-log-container {
+        max-height: 80px;
+    }
+    
+    .status-memory {
+        display: none;
+    }
+}
+
+/* Scrollbar styling for log container */
+.tui-log-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.tui-log-container::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 2px;
+}
+
+.tui-log-container::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 2px;
+}
+
+.tui-log-container::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* Dark theme enhancements */
+.tui-box {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.tui-box-header {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.tui-console .progress-fill {
+    box-shadow: 
+        0 0 4px rgba(16, 185, 129, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Scope additional generic classnames to the console to avoid UI collisions */
+.tui-console .quality-fill { }
+.tui-console .quality-text { }
+.tui-console .timeline-bar { }
+.tui-console .timeline-placeholder { }

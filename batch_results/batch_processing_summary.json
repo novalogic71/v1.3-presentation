@@ -1,0 +1,100 @@
+{
+  "processing_summary": {
+    "csv_file": "Rubble.csv",
+    "total_episodes": 3,
+    "successful": 3,
+    "drift_detected": 0,
+    "failed": 0,
+    "total_time_seconds": 2679.091624736786,
+    "average_time_per_episode": 893.0305415789286,
+    "throughput_episodes_per_minute": 0.06718695185263944,
+    "gpu_count": 3,
+    "max_workers": 2
+  },
+  "episode_results": [
+    {
+      "episode": "RubbleAndCrew Episode 101",
+      "master_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_Original_NoOffset.mov",
+      "dub_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v1.1.mov",
+      "status": "SUCCESS",
+      "duration": 1566.7242267131805,
+      "json_output": "batch_results/sync_report_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_a109bb6e_005838.json",
+      "plot_output": null,
+      "report_output": "batch_results/RubbleAndCrew_Episode_101_formatted_report.md",
+      "return_code": 2,
+      "repaired_output": "repaired_sync_files/RubbleAndCrew_Episode_101_REPAIRED.mov",
+      "package": {
+        "package_name": "RubbleAndCrew Episode 101_sync_repair_20250913_010403",
+        "package_directory": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403",
+        "created_timestamp": "20250913_010403",
+        "episode_name": "RubbleAndCrew Episode 101",
+        "files": {
+          "original": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/original_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v1.1.mov",
+          "repaired": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/repaired_RubbleAndCrew_Episode_101_REPAIRED.mov",
+          "analysis_json": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/analysis_report.json",
+          "repair_locations": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/repair_locations.json",
+          "repair_report": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/repair_report.md",
+          "visualization": "repair_packages/RubbleAndCrew Episode 101_sync_repair_20250913_010403/RubbleAndCrew Episode 101_sync_repair_20250913_010403_sync_visualization.png"
+        },
+        "success": false,
+        "error": "'total_files'"
+      }
+    },
+    {
+      "episode": "RubbleAndCrew Episode 101_1_2",
+      "master_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_Original_NoOffset.mov",
+      "dub_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v1.2.mov",
+      "status": "SUCCESS",
+      "duration": 1777.5464498996735,
+      "json_output": "batch_results/sync_report_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_9d06b50c_005848.json",
+      "plot_output": null,
+      "report_output": "batch_results/RubbleAndCrew_Episode_101_1_2_formatted_report.md",
+      "return_code": 2,
+      "repaired_output": "repaired_sync_files/RubbleAndCrew_Episode_101_1_2_REPAIRED.mov",
+      "package": {
+        "package_name": "RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411",
+        "package_directory": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411",
+        "created_timestamp": "20250913_010411",
+        "episode_name": "RubbleAndCrew Episode 101_1_2",
+        "files": {
+          "original": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/original_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v1.2.mov",
+          "repaired": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/repaired_RubbleAndCrew_Episode_101_1_2_REPAIRED.mov",
+          "analysis_json": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/analysis_report.json",
+          "repair_locations": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/repair_locations.json",
+          "repair_report": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/repair_report.md",
+          "visualization": "repair_packages/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411/RubbleAndCrew Episode 101_1_2_sync_repair_20250913_010411_sync_visualization.png"
+        },
+        "success": false,
+        "error": "'total_files'"
+      }
+    },
+    {
+      "episode": "RubbleAndCrew Episode 101_2_0",
+      "master_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_Original_NoOffset.mov",
+      "dub_file": "/mnt/data/dubsync/New_TEST_FIles/Test1/CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v2.0.mov",
+      "status": "SUCCESS",
+      "duration": 1112.3508532047272,
+      "json_output": "batch_results/sync_report_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheC_7986364c_013319.json",
+      "plot_output": null,
+      "report_output": "batch_results/RubbleAndCrew_Episode_101_2_0_formatted_report.md",
+      "return_code": 2,
+      "repaired_output": "repaired_sync_files/RubbleAndCrew_Episode_101_2_0_REPAIRED.mov",
+      "package": {
+        "package_name": "RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539",
+        "package_directory": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539",
+        "created_timestamp": "20250913_013539",
+        "episode_name": "RubbleAndCrew Episode 101_2_0",
+        "files": {
+          "original": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/original_CENT_TV_297558_ASP1203379_RubbleAndCrew_Ep101_TheCrewBuildsABridge_OT_en-CA_178_1080_23976_DefaultValue_ProxyKM_v2.0.mov",
+          "repaired": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/repaired_RubbleAndCrew_Episode_101_2_0_REPAIRED.mov",
+          "analysis_json": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/analysis_report.json",
+          "repair_locations": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/repair_locations.json",
+          "repair_report": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/repair_report.md",
+          "visualization": "repair_packages/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539/RubbleAndCrew Episode 101_2_0_sync_repair_20250913_013539_sync_visualization.png"
+        },
+        "success": false,
+        "error": "'total_files'"
+      }
+    }
+  ]
+}
