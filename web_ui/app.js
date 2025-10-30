@@ -2484,7 +2484,8 @@ class SyncAnalyzerUI {
             console.warn('Failed to load persisted batch queue:', e);
         }
         // Optional: add demo entry only if nothing restored
-        try { this.addTestBatchEntry(); } catch {}
+        // DISABLED: Remove test entries for production - users want to see only their actual results
+        // try { this.addTestBatchEntry(); } catch {}
     }
 
     async persistBatchQueue() {
