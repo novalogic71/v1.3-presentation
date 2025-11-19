@@ -33,6 +33,8 @@ def is_atmos_file(file_path: str) -> bool:
     Supported formats:
     - .ec3, .eac3 (E-AC-3 bitstreams)
     - .adm (ADM BWF WAV)
+    - .iab (IAB - Immersive Audio Bitstream)
+    - .mxf (MXF containers with Atmos/IAB)
     - .wav with Atmos codec
     - .mp4, .mov with Atmos audio
 
@@ -47,7 +49,7 @@ def is_atmos_file(file_path: str) -> bool:
 
         # Check extension first
         ext = file_path.suffix.lower()
-        if ext in ['.ec3', '.eac3', '.adm']:
+        if ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']:
             return True
 
         # For other extensions, probe with ffprobe
@@ -116,6 +118,12 @@ def convert_atmos_to_mp4(
         if ext in ['.ec3', '.eac3']:
             # EC3/EAC3 bitstream - needs decoding and re-encoding
             mp4_path = _convert_ec3_to_mp4(str(atmos_path), output_path, fps, resolution)
+        elif ext == '.iab':
+            # IAB (Immersive Audio Bitstream) - SMPTE ST 2098-2
+            mp4_path = _convert_iab_to_mp4(str(atmos_path), output_path, fps, resolution)
+        elif ext == '.mxf':
+            # MXF container with Atmos/IAB
+            mp4_path = _convert_mxf_to_mp4(str(atmos_path), output_path, fps, resolution)
         elif ext == '.adm' or (ext == '.wav' and metadata.is_adm_wav):
             # ADM BWF WAV - can be copied directly
             mp4_path = _convert_adm_wav_to_mp4(str(atmos_path), output_path, fps, resolution)
@@ -238,6 +246,115 @@ def _convert_adm_wav_to_mp4(
 
     except Exception as e:
         logger.error(f"ADM WAV to MP4 conversion failed: {e}")
+        return None
+
+
+def _convert_iab_to_mp4(
+    iab_path: str,
+    output_path: Optional[str],
+    fps: float,
+    resolution: str
+) -> Optional[str]:
+    """
+    Convert IAB (Immersive Audio Bitstream) to MP4 with black video
+
+    IAB is SMPTE ST 2098-2 object-based audio format.
+    FFmpeg may have limited IAB support, so this uses best-effort conversion.
+
+    Args:
+        iab_path: Path to IAB file
+        output_path: Output MP4 path
+        fps: Video frame rate
+        resolution: Video resolution
+
+    Returns:
+        Path to MP4 file or None
+    """
+    try:
+        if output_path is None:
+            output_path = tempfile.mktemp(suffix=".mp4", prefix="atmos_iab_")
+
+        logger.info(f"Converting IAB to MP4: {iab_path}")
+
+        # IAB files are typically PCM-based with object metadata
+        # Best approach is to extract as PCM and encode to EAC3 or AAC
+        mp4_path = generate_black_video_with_audio(
+            iab_path,
+            output_path,
+            fps=fps,
+            resolution=resolution,
+            audio_codec="aac"  # AAC for broad compatibility
+        )
+
+        return mp4_path
+
+    except Exception as e:
+        logger.error(f"IAB to MP4 conversion failed: {e}")
+        return None
+
+
+def _convert_mxf_to_mp4(
+    mxf_path: str,
+    output_path: Optional[str],
+    fps: float,
+    resolution: str
+) -> Optional[str]:
+    """
+    Convert MXF container to MP4
+
+    MXF may already have video; extract audio and add black video if needed.
+
+    Args:
+        mxf_path: Path to MXF file
+        output_path: Output MP4 path
+        fps: Video frame rate
+        resolution: Video resolution
+
+    Returns:
+        Path to MP4 file or None
+    """
+    try:
+        if output_path is None:
+            output_path = tempfile.mktemp(suffix=".mp4", prefix="atmos_mxf_")
+
+        logger.info(f"Converting MXF to MP4: {mxf_path}")
+
+        # Extract audio from MXF
+        temp_audio = tempfile.mktemp(suffix=".audio.m4a")
+
+        # Extract audio track (preserve codec if possible)
+        extract_cmd = [
+            "ffmpeg",
+            "-i", mxf_path,
+            "-vn",  # No video
+            "-c:a", "copy",  # Try to copy audio codec
+            "-y",
+            temp_audio
+        ]
+
+        result = subprocess.run(extract_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.warning("Failed to copy audio codec, re-encoding to AAC")
+            # Fallback: re-encode to AAC
+            extract_cmd[-2] = "aac"
+            subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
+
+        # Generate MP4 with black video and extracted audio
+        mp4_path = generate_black_video_with_audio(
+            temp_audio,
+            output_path,
+            fps=fps,
+            resolution=resolution,
+            audio_codec="copy"
+        )
+
+        # Clean up temp audio
+        Path(temp_audio).unlink(missing_ok=True)
+
+        return mp4_path
+
+    except Exception as e:
+        logger.error(f"MXF to MP4 conversion failed: {e}")
         return None
 
 

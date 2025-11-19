@@ -66,7 +66,7 @@ class ErrorResponse(BaseResponse):
 # Dolby Atmos Models
 class AtmosMetadata(BaseModel):
     """Dolby Atmos metadata."""
-    codec: str = Field(..., description="Audio codec (ec3, eac3, truehd)")
+    codec: str = Field(..., description="Audio codec (ec3, eac3, truehd, iab)")
     bed_configuration: str = Field(..., description="Bed configuration (7.1, 7.1.2, 7.1.4, etc.)")
     channels: int = Field(..., description="Total channel count")
     channel_layout: str = Field(..., description="FFmpeg channel layout string")
@@ -75,6 +75,8 @@ class AtmosMetadata(BaseModel):
     object_count: Optional[int] = Field(None, description="Number of audio objects")
     max_objects: int = Field(default=128, description="Maximum objects (Atmos spec)")
     is_adm_wav: bool = Field(default=False, description="Whether file is ADM BWF WAV")
+    is_iab: bool = Field(default=False, description="Whether file is IAB (Immersive Audio Bitstream)")
+    is_mxf: bool = Field(default=False, description="Whether file is MXF container")
 
     class Config:
         json_schema_extra = {
@@ -87,7 +89,9 @@ class AtmosMetadata(BaseModel):
                 "bit_rate": 768000,
                 "object_count": 48,
                 "max_objects": 128,
-                "is_adm_wav": False
+                "is_adm_wav": False,
+                "is_iab": False,
+                "is_mxf": False
             }
         }
 

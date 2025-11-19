@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = Field(default=1024 * 1024 * 1024, env="MAX_FILE_SIZE")  # 1GB
     ALLOWED_EXTENSIONS: List[str] = Field(
         default=[".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".mov", ".mp4", ".avi", ".mkv",
-                 ".ec3", ".eac3", ".adm"],  # Added Dolby Atmos formats
+                 ".ec3", ".eac3", ".adm",  # Dolby Atmos formats
+                 ".iab", ".mxf"],  # IAB and MXF professional formats
         env="ALLOWED_EXTENSIONS"
     )
 
@@ -234,7 +235,7 @@ def get_file_type_info() -> dict:
     return {
         "audio": [".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg"],
         "video": [".mov", ".mp4", ".avi", ".mkv", ".wmv"],
-        "atmos": [".ec3", ".eac3", ".adm"],  # Dolby Atmos formats
+        "atmos": [".ec3", ".eac3", ".adm", ".iab", ".mxf"],  # Dolby Atmos formats (includes IAB and MXF)
         "all": settings.ALLOWED_EXTENSIONS
     }
 

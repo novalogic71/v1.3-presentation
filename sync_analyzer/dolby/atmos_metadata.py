@@ -23,7 +23,7 @@ class AtmosMetadata:
     """Dolby Atmos metadata container"""
 
     file_path: str
-    codec: str  # ec3, eac3, truehd, etc.
+    codec: str  # ec3, eac3, truehd, iab, etc.
     bed_configuration: str  # "7.1", "7.1.2", "7.1.4", "9.1.6", etc.
     channels: int  # Total channel count
     channel_layout: str  # FFmpeg channel layout string
@@ -33,7 +33,11 @@ class AtmosMetadata:
     max_objects: int = 128  # Dolby Atmos spec maximum
     duration: Optional[float] = None
     is_adm_wav: bool = False
+    is_iab: bool = False  # IAB (Immersive Audio Bitstream)
+    is_mxf: bool = False  # MXF container
     adm_metadata: Optional[Dict[str, Any]] = None
+    iab_metadata: Optional[Dict[str, Any]] = None
+    mxf_metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -49,7 +53,7 @@ def extract_atmos_metadata(file_path: str) -> Optional[AtmosMetadata]:
     Extract Dolby Atmos metadata from audio file
 
     Args:
-        file_path: Path to Atmos audio file (EC3, EAC3, ADM WAV, or MP4 with Atmos)
+        file_path: Path to Atmos audio file (EC3, EAC3, ADM WAV, IAB, MXF, or MP4 with Atmos)
 
     Returns:
         AtmosMetadata object or None if extraction fails
@@ -65,13 +69,16 @@ def extract_atmos_metadata(file_path: str) -> Optional[AtmosMetadata]:
         if not metadata:
             return None
 
-        # Check if it's an ADM BWF WAV file
+        # Check file format specifics
         is_adm = _check_adm_wav(str(file_path))
+        is_iab = _check_iab_stream(str(file_path))
+        is_mxf = _check_mxf_container(str(file_path))
 
         # Parse metadata
-        atmos_meta = _parse_atmos_metadata(metadata, str(file_path), is_adm)
+        atmos_meta = _parse_atmos_metadata(metadata, str(file_path), is_adm, is_iab, is_mxf)
 
-        logger.info(f"Extracted Atmos metadata from {file_path.name}: "
+        format_type = "IAB" if is_iab else "ADM" if is_adm else "MXF" if is_mxf else "Atmos"
+        logger.info(f"Extracted {format_type} metadata from {file_path.name}: "
                    f"{atmos_meta.bed_configuration} @ {atmos_meta.sample_rate}Hz")
 
         return atmos_meta
@@ -167,7 +174,122 @@ def _check_adm_wav(file_path: str) -> bool:
         return False
 
 
-def _parse_atmos_metadata(probe_data: Dict[str, Any], file_path: str, is_adm: bool) -> AtmosMetadata:
+def _check_iab_stream(file_path: str) -> bool:
+    """
+    Check if file contains IAB (Immersive Audio Bitstream)
+
+    IAB is Dolby's SMPTE ST 2098-2 format for object-based audio.
+    Can be in standalone .iab files or embedded in MXF/MP4 containers.
+
+    Args:
+        file_path: Path to audio/video file
+
+    Returns:
+        True if file contains IAB, False otherwise
+    """
+    try:
+        # Check file extension first
+        if file_path.lower().endswith('.iab'):
+            return True
+
+        # Check for IAB codec in streams
+        cmd = [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            file_path
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        data = json.loads(result.stdout)
+
+        # Check for IAB codec or SMPTE ST 2098-2 references
+        for stream in data.get("streams", []):
+            if stream.get("codec_type") == "audio":
+                codec = stream.get("codec_name", "").lower()
+                codec_long = stream.get("codec_long_name", "").lower()
+
+                # IAB may be reported as pcm_s24le or other PCM variants
+                # with specific metadata indicating IAB
+                if "iab" in codec or "iab" in codec_long:
+                    return True
+
+                # Check tags for IAB/SMPTE references
+                tags = stream.get("tags", {})
+                for key, value in tags.items():
+                    if "iab" in key.lower() or "iab" in str(value).lower():
+                        return True
+                    if "2098" in str(value):  # SMPTE ST 2098-2
+                        return True
+
+        return False
+
+    except Exception as e:
+        logger.debug(f"IAB check failed: {e}")
+        return False
+
+
+def _check_mxf_container(file_path: str) -> bool:
+    """
+    Check if file is MXF (Material eXchange Format) container
+
+    MXF is a professional broadcast container that can contain Atmos/IAB audio.
+
+    Args:
+        file_path: Path to file
+
+    Returns:
+        True if file is MXF container, False otherwise
+    """
+    try:
+        # Check file extension
+        if file_path.lower().endswith('.mxf'):
+            return True
+
+        # Check container format
+        cmd = [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            file_path
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        data = json.loads(result.stdout)
+        format_name = data.get("format", {}).get("format_name", "").lower()
+
+        # FFmpeg reports MXF as "mxf" or "mxf_*"
+        if "mxf" in format_name:
+            return True
+
+        return False
+
+    except Exception as e:
+        logger.debug(f"MXF check failed: {e}")
+        return False
+
+
+def _parse_atmos_metadata(
+    probe_data: Dict[str, Any],
+    file_path: str,
+    is_adm: bool,
+    is_iab: bool = False,
+    is_mxf: bool = False
+) -> AtmosMetadata:
     """
     Parse ffprobe data into AtmosMetadata object
 
@@ -213,13 +335,28 @@ def _parse_atmos_metadata(probe_data: Dict[str, Any], file_path: str, is_adm: bo
     # Parse object count if available (would be in codec-specific metadata)
     object_count = _parse_object_count(audio_stream)
 
-    # ADM-specific metadata
+    # Format-specific metadata extraction
     adm_metadata = None
+    iab_metadata = None
+    mxf_metadata = None
+
     if is_adm:
         adm_metadata = _extract_adm_metadata(probe_data)
         # ADM files may have explicit object counts
         if adm_metadata and "objects" in adm_metadata:
             object_count = adm_metadata["objects"]
+
+    if is_iab:
+        iab_metadata = _extract_iab_metadata(probe_data)
+        # IAB files have object-based audio
+        if iab_metadata and "objects" in iab_metadata:
+            object_count = iab_metadata["objects"]
+        # Override codec for clarity
+        codec = "iab"
+
+    if is_mxf:
+        mxf_metadata = _extract_mxf_metadata(probe_data)
+        # MXF may contain additional technical metadata
 
     return AtmosMetadata(
         file_path=file_path,
@@ -232,7 +369,11 @@ def _parse_atmos_metadata(probe_data: Dict[str, Any], file_path: str, is_adm: bo
         object_count=object_count,
         duration=duration,
         is_adm_wav=is_adm,
-        adm_metadata=adm_metadata
+        is_iab=is_iab,
+        is_mxf=is_mxf,
+        adm_metadata=adm_metadata,
+        iab_metadata=iab_metadata,
+        mxf_metadata=mxf_metadata
     )
 
 
@@ -332,6 +473,77 @@ def _extract_adm_metadata(probe_data: Dict[str, Any]) -> Optional[Dict[str, Any]
     return adm_data if adm_data else None
 
 
+def _extract_iab_metadata(probe_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Extract IAB-specific metadata from probe data
+
+    Args:
+        probe_data: ffprobe JSON output
+
+    Returns:
+        Dictionary with IAB metadata or None
+    """
+    iab_data = {}
+
+    # Parse IAB-related tags from streams
+    for stream in probe_data.get("streams", []):
+        if stream.get("codec_type") == "audio":
+            tags = stream.get("tags", {})
+            for key, value in tags.items():
+                if "iab" in key.lower() or "smpte" in key.lower() or "2098" in str(value):
+                    iab_data[key] = value
+
+            # IAB-specific attributes
+            if "iab" in stream.get("codec_name", "").lower():
+                iab_data["codec"] = stream.get("codec_name")
+                iab_data["codec_long_name"] = stream.get("codec_long_name")
+
+    # Estimate object count for IAB (if not explicitly available)
+    # IAB can contain up to 128 objects per SMPTE ST 2098-2
+    if iab_data and "objects" not in iab_data:
+        iab_data["objects"] = None  # Unknown without parsing bitstream
+        iab_data["max_objects"] = 128  # SMPTE spec maximum
+
+    return iab_data if iab_data else None
+
+
+def _extract_mxf_metadata(probe_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Extract MXF-specific metadata from probe data
+
+    Args:
+        probe_data: ffprobe JSON output
+
+    Returns:
+        Dictionary with MXF metadata or None
+    """
+    mxf_data = {}
+
+    # MXF format-level metadata
+    format_info = probe_data.get("format", {})
+    if "mxf" in format_info.get("format_name", "").lower():
+        mxf_data["format_name"] = format_info.get("format_name")
+        mxf_data["format_long_name"] = format_info.get("format_long_name")
+
+        # MXF-specific tags
+        tags = format_info.get("tags", {})
+        for key, value in tags.items():
+            # Common MXF metadata fields
+            if any(field in key.lower() for field in ["uid", "material_package", "operational_pattern", "essence"]):
+                mxf_data[key] = value
+
+    # MXF operational pattern and essence descriptors
+    for stream in probe_data.get("streams", []):
+        if stream.get("codec_type") == "audio":
+            tags = stream.get("tags", {})
+            # Extract MXF audio essence metadata
+            for key, value in tags.items():
+                if "mxf" in key.lower() or "essence" in key.lower():
+                    mxf_data[key] = value
+
+    return mxf_data if mxf_data else None
+
+
 def is_atmos_codec(codec: str) -> bool:
     """
     Check if codec is Dolby Atmos compatible
@@ -348,6 +560,7 @@ def is_atmos_codec(codec: str) -> bool:
         "ac3",   # AC-3 may have Atmos
         "truehd",  # TrueHD with Atmos
         "mlp",   # MLP lossless (TrueHD base)
+        "iab",   # IAB (Immersive Audio Bitstream)
     ]
 
     return codec.lower() in atmos_codecs
