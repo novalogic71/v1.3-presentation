@@ -248,7 +248,10 @@ def is_atmos_file(file_path: str) -> bool:
 
         metadata = extract_atmos_metadata(file_path)
         if metadata:
-            return is_atmos_codec(metadata.codec)
+            # ADM WAV files have is_adm_wav flag set (they use PCM codec)
+            # IAB files have is_iab flag set
+            # Other Atmos formats are detected by codec
+            return metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf or is_atmos_codec(metadata.codec)
         return False
     except ImportError:
         # Fallback if dolby module not available
