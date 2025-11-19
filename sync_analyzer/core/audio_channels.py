@@ -323,11 +323,26 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     logger = logging.getLogger(__name__)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Check file extension to determine format
+    # Check if file is actually Atmos (not just by extension)
+    # This handles .wav files with ADM metadata (72 channels, etc.)
     ext = Path(input_path).suffix.lower()
-
-    # Atmos formats that need conversion to MP4 first
-    needs_conversion = ext in ['.ec3', '.eac3', '.adm', '.iab']
+    
+    # Check if this is an Atmos file that needs conversion
+    needs_conversion = False
+    
+    # Always convert EC3, EAC3, IAB files
+    if ext in ['.ec3', '.eac3', '.adm', '.iab']:
+        needs_conversion = True
+    # For .wav files, check if they're actually ADM/Atmos
+    elif ext == '.wav':
+        try:
+            from ..dolby.atmos_metadata import extract_atmos_metadata
+            metadata = extract_atmos_metadata(input_path)
+            if metadata and metadata.is_adm_wav:
+                needs_conversion = True
+                logger.info(f"Detected ADM WAV file (not .adm extension): {input_path}")
+        except Exception as e:
+            logger.debug(f"Metadata check failed, assuming standard WAV: {e}")
 
     if needs_conversion:
         # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
@@ -442,11 +457,26 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     logger = logging.getLogger(__name__)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Check file extension to determine format
+    # Check if file is actually Atmos (not just by extension)
+    # This handles .wav files with ADM metadata (72 channels, etc.)
     ext = Path(input_path).suffix.lower()
-
-    # Atmos formats that need conversion to MP4 first
-    needs_conversion = ext in ['.ec3', '.eac3', '.adm', '.iab']
+    
+    # Check if this is an Atmos file that needs conversion
+    needs_conversion = False
+    
+    # Always convert EC3, EAC3, IAB files
+    if ext in ['.ec3', '.eac3', '.adm', '.iab']:
+        needs_conversion = True
+    # For .wav files, check if they're actually ADM/Atmos
+    elif ext == '.wav':
+        try:
+            from ..dolby.atmos_metadata import extract_atmos_metadata
+            metadata = extract_atmos_metadata(input_path)
+            if metadata and metadata.is_adm_wav:
+                needs_conversion = True
+                logger.info(f"Detected ADM WAV file (not .adm extension): {input_path}")
+        except Exception as e:
+            logger.debug(f"Metadata check failed, assuming standard WAV: {e}")
 
     if needs_conversion:
         # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
