@@ -327,22 +327,33 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     # This handles .wav files with ADM metadata (72 channels, etc.)
     ext = Path(input_path).suffix.lower()
     
+    logger.info(f"[ATMOS PIPELINE CHECK] File: {Path(input_path).name}, Extension: {ext}")
+    
     # Check if this is an Atmos file that needs conversion
     needs_conversion = False
     
     # Always convert EC3, EAC3, IAB files
     if ext in ['.ec3', '.eac3', '.adm', '.iab']:
         needs_conversion = True
+        logger.info(f"[ATMOS PIPELINE] Format {ext} requires conversion")
     # For .wav files, check if they're actually ADM/Atmos
     elif ext == '.wav':
+        logger.info(f"[ATMOS PIPELINE] .wav file detected, checking for ADM metadata...")
         try:
             from ..dolby.atmos_metadata import extract_atmos_metadata
             metadata = extract_atmos_metadata(input_path)
+            logger.info(f"[ATMOS PIPELINE] Metadata extracted: is_adm_wav={metadata.is_adm_wav if metadata else 'None'}, channels={metadata.channels if metadata else 'None'}")
             if metadata and metadata.is_adm_wav:
                 needs_conversion = True
-                logger.info(f"Detected ADM WAV file (not .adm extension): {input_path}")
+                logger.info(f"[ATMOS PIPELINE] ✅ ADM WAV DETECTED - TRIGGERING PIPELINE: {input_path}")
+            else:
+                logger.info(f"[ATMOS PIPELINE] Not ADM WAV, using standard extraction")
         except Exception as e:
-            logger.debug(f"Metadata check failed, assuming standard WAV: {e}")
+            logger.warning(f"[ATMOS PIPELINE] Metadata check failed: {e}")
+            import traceback
+            logger.warning(f"[ATMOS PIPELINE] Traceback: {traceback.format_exc()}")
+    
+    logger.info(f"[ATMOS PIPELINE] needs_conversion = {needs_conversion}")
 
     if needs_conversion:
         # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
@@ -461,22 +472,33 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     # This handles .wav files with ADM metadata (72 channels, etc.)
     ext = Path(input_path).suffix.lower()
     
+    logger.info(f"[ATMOS PIPELINE CHECK] File: {Path(input_path).name}, Extension: {ext}")
+    
     # Check if this is an Atmos file that needs conversion
     needs_conversion = False
     
     # Always convert EC3, EAC3, IAB files
     if ext in ['.ec3', '.eac3', '.adm', '.iab']:
         needs_conversion = True
+        logger.info(f"[ATMOS PIPELINE] Format {ext} requires conversion")
     # For .wav files, check if they're actually ADM/Atmos
     elif ext == '.wav':
+        logger.info(f"[ATMOS PIPELINE] .wav file detected, checking for ADM metadata...")
         try:
             from ..dolby.atmos_metadata import extract_atmos_metadata
             metadata = extract_atmos_metadata(input_path)
+            logger.info(f"[ATMOS PIPELINE] Metadata extracted: is_adm_wav={metadata.is_adm_wav if metadata else 'None'}, channels={metadata.channels if metadata else 'None'}")
             if metadata and metadata.is_adm_wav:
                 needs_conversion = True
-                logger.info(f"Detected ADM WAV file (not .adm extension): {input_path}")
+                logger.info(f"[ATMOS PIPELINE] ✅ ADM WAV DETECTED - TRIGGERING PIPELINE: {input_path}")
+            else:
+                logger.info(f"[ATMOS PIPELINE] Not ADM WAV, using standard extraction")
         except Exception as e:
-            logger.debug(f"Metadata check failed, assuming standard WAV: {e}")
+            logger.warning(f"[ATMOS PIPELINE] Metadata check failed: {e}")
+            import traceback
+            logger.warning(f"[ATMOS PIPELINE] Traceback: {traceback.format_exc()}")
+    
+    logger.info(f"[ATMOS PIPELINE] needs_conversion = {needs_conversion}")
 
     if needs_conversion:
         # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
