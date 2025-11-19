@@ -301,23 +301,50 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     """
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        input_path,
-        "-vn",  # No video
-        "-ac",
-        "2",  # Stereo downmix
-        "-ar",
-        str(sample_rate),
-        "-c:a",
-        "pcm_s16le",
-        output_path,
-    ]
+    # Check if this is an ADM WAV file
+    ext = Path(input_path).suffix.lower()
+    is_adm_wav = ext in ['.adm', '.wav']
+
+    if is_adm_wav:
+        # For ADM WAV: explicitly map first audio stream and avoid timestamp issues
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            input_path,
+            "-map", "0:a:0",  # Explicitly map first audio stream only
+            "-vn",  # No video
+            "-ac",
+            "2",  # Stereo downmix
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            "pcm_s16le",
+            "-avoid_negative_ts", "make_zero",  # Ensure no negative timestamps
+            output_path,
+        ]
+    else:
+        # For EC3/EAC3/other compressed Atmos formats
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            input_path,
+            "-vn",  # No video
+            "-ac",
+            "2",  # Stereo downmix
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            "pcm_s16le",
+            output_path,
+        ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
@@ -340,23 +367,55 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     """
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        input_path,
-        "-vn",  # No video
-        "-ac",
-        "1",  # Mono downmix
-        "-ar",
-        str(sample_rate),
-        "-c:a",
-        "pcm_s16le",
-        output_path,
-    ]
+    # Check if this is an ADM WAV file
+    ext = Path(input_path).suffix.lower()
+    is_adm_wav = ext in ['.adm', '.wav']
+
+    # ADM WAV files are standard PCM audio with BWF metadata chunks
+    # They should be extracted like regular WAV files, not as compressed Atmos
+    # The ADM metadata is just object/spatial metadata, not audio data
+
+    if is_adm_wav:
+        # For ADM WAV: Use map 0:a:0 to explicitly select first audio stream only
+        # This avoids any issues with BWF chunk interpretation
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            input_path,
+            "-map", "0:a:0",  # Explicitly map first audio stream only
+            "-vn",  # No video
+            "-ac",
+            "1",  # Mono downmix
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            "pcm_s16le",
+            "-avoid_negative_ts", "make_zero",  # Ensure no negative timestamps
+            output_path,
+        ]
+    else:
+        # For EC3/EAC3/other compressed Atmos formats
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            input_path,
+            "-vn",  # No video
+            "-ac",
+            "1",  # Mono downmix
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            "pcm_s16le",
+            output_path,
+        ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
