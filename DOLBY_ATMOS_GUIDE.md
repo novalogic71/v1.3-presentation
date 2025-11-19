@@ -16,6 +16,8 @@ The Professional Audio Sync Analyzer now supports **Dolby Atmos** audio files, a
 |--------|-----------|-------------|---------------|
 | E-AC-3 | `.ec3`, `.eac3` | Dolby Digital Plus with Atmos | ✅ Full |
 | ADM WAV | `.adm`, `.wav` | Audio Definition Model BWF WAV | ✅ Full |
+| IAB | `.iab` | Immersive Audio Bitstream (SMPTE ST 2098-2) | ✅ Full |
+| MXF | `.mxf` | Material eXchange Format (broadcast container) | ✅ Full |
 | MP4/MOV with Atmos | `.mp4`, `.mov` | Container with Atmos audio track | ✅ Full |
 | TrueHD | `.thd`, `.mlp` | TrueHD lossless with Atmos | ⚠️ Partial |
 
@@ -268,6 +270,39 @@ The system supports all standard Atmos bed configurations:
 | 7.1.4 | 12 | + TpFL TpFR TpBL TpBR | 4 height channels |
 | 9.1.6 | 16 | + FLC FRC TpSL TpSR | Extended bed |
 
+### Format-Specific Details
+
+#### IAB (Immersive Audio Bitstream)
+- **Standard**: SMPTE ST 2098-2
+- **Type**: Object-based audio format for cinema and broadcast
+- **Processing**: Converted to PCM for analysis, encoded to AAC/EAC3 for MP4
+- **Use Case**: Professional cinema mastering, broadcast deliverables
+- **Detection**: File extension `.iab` or codec detection via ffprobe
+- **Note**: IAB metadata is preserved where possible but may be simplified for sync analysis
+
+#### MXF (Material eXchange Format)
+- **Standard**: SMPTE 377M
+- **Type**: Professional broadcast container format
+- **Processing**: Audio track extracted (codec preserved), black video added if needed
+- **Use Case**: Broadcast workflows, professional post-production
+- **Detection**: File extension `.mxf` and container format validation
+- **Note**: MXF may already contain video; audio is extracted and re-muxed with black video if needed
+
+#### ADM WAV (Audio Definition Model)
+- **Standard**: ITU-R BS.2076
+- **Type**: PCM audio with object-based metadata in BWF chunks
+- **Processing**: Encoded to EAC3 for Atmos compatibility (metadata simplified)
+- **Use Case**: Object-based audio production and mastering
+- **Detection**: `.adm` extension or BWF chunk analysis in `.wav` files
+
+#### EC3/EAC3 (E-AC-3)
+- **Standard**: ETSI TS 102 366 (Dolby Digital Plus)
+- **Type**: Compressed bitstream with Atmos metadata
+- **Processing**: Bitstream copied directly to MP4 (no re-encoding)
+- **Use Case**: Streaming platforms, OTT delivery
+- **Detection**: `.ec3` or `.eac3` extension, codec verification
+- **Note**: This is the most common Atmos delivery format
+
 ### Object Audio Handling
 
 **Current Implementation**:
@@ -329,7 +364,7 @@ ATMOS_DEFAULT_RESOLUTION=1920x1080
 DLB_MP4BASE_PATH=/usr/local/bin
 
 # Allowed extensions (includes Atmos)
-ALLOWED_EXTENSIONS=[".wav", ".mp3", ".ec3", ".eac3", ".adm", ...]
+ALLOWED_EXTENSIONS=[".wav", ".mp3", ".ec3", ".eac3", ".adm", ".iab", ".mxf", ...]
 ```
 
 ### Configuration Options
@@ -351,9 +386,11 @@ ALLOWED_EXTENSIONS=[".wav", ".mp3", ".ec3", ".eac3", ".adm", ...]
 **Cause**: File may not have proper Atmos codec or metadata
 
 **Solutions**:
-1. Check file extension (`.ec3`, `.eac3`, `.adm`)
+1. Check file extension (`.ec3`, `.eac3`, `.adm`, `.iab`, `.mxf`)
 2. Verify codec using: `ffprobe -v error -show_streams <file>`
 3. Ensure file has valid Atmos bitstream
+4. For MXF files, verify audio track is Atmos-compatible
+5. For IAB files, ensure SMPTE ST 2098-2 compliance
 
 ### Issue: "No multichannel bed found in Atmos file"
 
