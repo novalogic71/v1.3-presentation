@@ -55,6 +55,10 @@ def is_atmos_file(file_path: str) -> bool:
         # For other extensions, probe with ffprobe
         metadata = extract_atmos_metadata(str(file_path))
         if metadata:
+            # Check if it's ADM WAV, IAB, or MXF (even with .wav extension)
+            if metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf:
+                return True
+            # Also check codec (for EC3/EAC3 in MP4/MOV containers)
             return is_atmos_codec(metadata.codec)
 
         return False
@@ -213,7 +217,7 @@ def _convert_adm_wav_to_mp4(
     Convert ADM BWF WAV to MP4 with black video
 
     ADM WAV files contain PCM audio with ADM metadata in BWF chunks.
-    We'll encode to AAC or EAC3 for MP4 container.
+    We'll downmix the bed channels to stereo, then encode to AAC for MP4.
 
     Args:
         adm_path: Path to ADM WAV file
@@ -230,19 +234,133 @@ def _convert_adm_wav_to_mp4(
 
         logger.info(f"Converting ADM WAV to MP4: {adm_path}")
 
-        # Encode ADM WAV to EAC3 for Atmos compatibility
-        # Note: This will lose ADM metadata, which is acceptable for sync analysis
-        # For production, would use dolby_audio_bridge or similar tool
+        # Step 1: Downmix multichannel ADM WAV to stereo
+        # ADM files can have 72+ channels, FFmpeg can't encode these directly to EAC3
+        # We extract the bed (typically first 8-16 channels) and downmix to stereo
+        
+        temp_stereo = tempfile.mktemp(suffix=".wav", prefix="adm_stereo_")
+        
+        logger.info(f"Extracting first 2 channels from ADM WAV (typically L/R bed)...")
+        # Use Python wave module to extract channels (handles any channel count)
+        try:
+            import wave
+            import struct
+            
+            with wave.open(adm_path, 'rb') as wav_in:
+                params = wav_in.getparams()
+                logger.info(f"ADM WAV: {params.nchannels} channels, {params.framerate} Hz, {params.sampwidth} bytes/sample")
+                
+                if params.nchannels < 2:
+                    logger.error(f"ADM WAV has only {params.nchannels} channel(s), need at least 2")
+                    return None
+                
+                # Read all frames
+                frames = wav_in.readframes(params.nframes)
+                
+                # Extract first 2 channels
+                bytes_per_sample = params.sampwidth
+                total_channels = params.nchannels
+                frame_size = bytes_per_sample * total_channels
+                
+                stereo_data = bytearray()
+                for i in range(0, len(frames), frame_size):
+                    # Extract first 2 channels from this frame
+                    ch1 = frames[i:i+bytes_per_sample]
+                    ch2 = frames[i+bytes_per_sample:i+2*bytes_per_sample]
+                    stereo_data.extend(ch1)
+                    stereo_data.extend(ch2)
+                
+                # Write stereo WAV
+                with wave.open(temp_stereo, 'wb') as wav_out:
+                    wav_out.setnchannels(2)
+                    wav_out.setsampwidth(params.sampwidth)
+                    wav_out.setframerate(params.framerate)
+                    wav_out.writeframes(bytes(stereo_data))
+                
+                logger.info(f"Extracted stereo to: {temp_stereo} ({len(stereo_data)/(1024*1024):.2f} MB)")
+                
+        except Exception as e:
+            logger.error(f"Failed to extract channels: {e}")
+            return None
+        
+        # Step 2: Encode stereo WAV to EC-3
+        temp_ec3 = tempfile.mktemp(suffix=".ec3", prefix="adm_ec3_")
+        logger.info(f"Encoding stereo WAV to EC-3...")
+        
+        ec3_cmd = [
+            "ffmpeg",
+            "-i", temp_stereo,
+            "-c:a", "eac3",
+            "-b:a", "192k",
+            "-y",
+            temp_ec3
+        ]
+        
+        result = subprocess.run(ec3_cmd, capture_output=True, text=True)
+        if result.returncode != 0 or not Path(temp_ec3).exists():
+            logger.error(f"Failed to encode EC-3: {result.stderr}")
+            return None
+        
+        logger.info(f"EC-3 created: {temp_ec3}")
+        
+        # Step 3: Use dlb_mp4base mp4muxer to create MP4
+        temp_mp4_audio_only = tempfile.mktemp(suffix=".mp4", prefix="atmos_audio_")
+        logger.info(f"Creating MP4 with dlb_mp4base mp4muxer...")
+        
+        mp4muxer_cmd = [
+            "mp4muxer",
+            "-i", temp_ec3,
+            "-o", temp_mp4_audio_only,
+            "--mpeg4-comp-brand", "mp42,iso6,isom,msdh,dby1",
+            "--overwrite"
+        ]
+        
+        result = subprocess.run(mp4muxer_cmd, capture_output=True, text=True)
+        if result.returncode != 0 or not Path(temp_mp4_audio_only).exists():
+            logger.error(f"mp4muxer failed: {result.stderr}")
+            return None
+        
+        logger.info(f"MP4 (audio-only) created: {temp_mp4_audio_only}")
+        
+        # Step 4: Add black video track
+        logger.info(f"Adding black video track...")
+        
+        # Get audio duration
+        duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                       "-of", "default=noprint_wrappers=1:nokey=1", temp_mp4_audio_only]
+        duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+        duration = float(duration_result.stdout.strip())
+        
+        width, height = resolution.split('x')
+        
+        video_cmd = [
+            "ffmpeg",
+            "-f", "lavfi",
+            "-i", f"color=black:{width}x{height}:d={duration}:r={fps}",
+            "-i", temp_mp4_audio_only,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-c:a", "copy",
+            "-shortest",
+            "-y",
+            output_path
+        ]
+        
+        result = subprocess.run(video_cmd, capture_output=True, text=True)
+        if result.returncode != 0 or not Path(output_path).exists():
+            logger.error(f"Failed to add black video: {result.stderr}")
+            return None
+        
+        logger.info(f"✅ Final MP4 created: {output_path}")
+        
+        # Clean up temp files
+        for temp_file in [temp_stereo, temp_ec3, temp_mp4_audio_only]:
+            try:
+                Path(temp_file).unlink()
+            except:
+                pass
 
-        mp4_path = generate_black_video_with_audio(
-            adm_path,
-            output_path,
-            fps=fps,
-            resolution=resolution,
-            audio_codec="eac3"  # Encode to EAC3 for Atmos
-        )
-
-        return mp4_path
+        return output_path
 
     except Exception as e:
         logger.error(f"ADM WAV to MP4 conversion failed: {e}")
