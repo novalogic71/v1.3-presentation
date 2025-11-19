@@ -129,20 +129,25 @@ def _check_adm_wav(file_path: str) -> bool:
     """
     Check if file is an ADM BWF WAV file
 
-    ADM WAV files contain an 'axml' chunk with Audio Definition Model metadata
+    ADM WAV files contain an 'axml' chunk with Audio Definition Model metadata.
+    Also detects multichannel WAV files (6+ channels) which are likely Atmos/ADM.
 
     Args:
         file_path: Path to WAV file
 
     Returns:
-        True if file is ADM WAV, False otherwise
+        True if file is ADM WAV or multichannel WAV, False otherwise
     """
     try:
-        # Check file extension first
-        if not file_path.lower().endswith(('.wav', '.adm')):
+        # Check file extension - .adm extension means it's ADM WAV
+        if file_path.lower().endswith('.adm'):
+            return True
+
+        # For .wav extension, check metadata
+        if not file_path.lower().endswith('.wav'):
             return False
 
-        # Use ffprobe to check for ADM metadata
+        # Use ffprobe to check for ADM metadata and channel count
         cmd = [
             "ffprobe",
             "-v", "quiet",
@@ -160,12 +165,19 @@ def _check_adm_wav(file_path: str) -> bool:
 
         data = json.loads(result.stdout)
 
-        # Check if any stream has ADM-related metadata
+        # Check audio streams
         for stream in data.get("streams", []):
-            tags = stream.get("tags", {})
-            # ADM WAV files may have specific BWF tags or axml references
-            if any("adm" in key.lower() or "axml" in key.lower() for key in tags.keys()):
-                return True
+            if stream.get("codec_type") == "audio":
+                # Check for ADM metadata tags
+                tags = stream.get("tags", {})
+                if any("adm" in key.lower() or "axml" in key.lower() for key in tags.keys()):
+                    return True
+
+                # Check for multichannel audio (6+ channels = likely Atmos/ADM)
+                channels = stream.get("channels", 0)
+                if channels >= 6:
+                    logger.info(f"Detected multichannel WAV ({channels} channels), treating as ADM/Atmos")
+                    return True
 
         return False
 
