@@ -40,9 +40,18 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = Field(default="./uploads", env="UPLOAD_DIR")
     MAX_FILE_SIZE: int = Field(default=1024 * 1024 * 1024, env="MAX_FILE_SIZE")  # 1GB
     ALLOWED_EXTENSIONS: List[str] = Field(
-        default=[".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".mov", ".mp4", ".avi", ".mkv"],
+        default=[".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".mov", ".mp4", ".avi", ".mkv",
+                 ".ec3", ".eac3", ".adm"],  # Added Dolby Atmos formats
         env="ALLOWED_EXTENSIONS"
     )
+
+    # Dolby Atmos settings
+    ATMOS_TEMP_DIR: str = Field(default="./temp/atmos", env="ATMOS_TEMP_DIR")
+    ATMOS_AUTO_CONVERT: bool = Field(default=True, env="ATMOS_AUTO_CONVERT")
+    ATMOS_PRESERVE_ORIGINAL: bool = Field(default=True, env="ATMOS_PRESERVE_ORIGINAL")
+    ATMOS_DEFAULT_FPS: float = Field(default=24.0, env="ATMOS_DEFAULT_FPS")
+    ATMOS_DEFAULT_RESOLUTION: str = Field(default="1920x1080", env="ATMOS_DEFAULT_RESOLUTION")
+    DLB_MP4BASE_PATH: Optional[str] = Field(default=None, env="DLB_MP4BASE_PATH")
     
     # Analysis settings
     ENABLED_METHODS: List[str] = Field(
@@ -159,6 +168,30 @@ class Settings(BaseSettings):
             pass
         path.mkdir(parents=True, exist_ok=True)
         return str(path.resolve())
+
+    @validator("ATMOS_TEMP_DIR")
+    def validate_atmos_temp_dir(cls, v):
+        """Create Atmos temp directory if it doesn't exist."""
+        path = Path(v)
+        # Relocate outside code dir in DEBUG to avoid reload loops
+        try:
+            code_dir = Path(__file__).resolve().parents[2]
+            if not path.is_absolute():
+                abs_path = (Path.cwd() / path)
+            else:
+                abs_path = path
+            try:
+                abs_path.resolve().relative_to(code_dir)
+                if str(os.getenv("DEBUG", str(False))).lower() in {"1", "true", "yes"}:
+                    safe_dir = code_dir.parent / abs_path.name
+                    logging.warning(f"Relocating ATMOS_TEMP_DIR to {safe_dir} to avoid reload loops")
+                    path = safe_dir
+            except Exception:
+                pass
+        except Exception:
+            pass
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path.resolve())
     
     @validator("ALLOWED_EXTENSIONS")
     def validate_extensions(cls, v):
@@ -201,6 +234,7 @@ def get_file_type_info() -> dict:
     return {
         "audio": [".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg"],
         "video": [".mov", ".mp4", ".avi", ".mkv", ".wmv"],
+        "atmos": [".ec3", ".eac3", ".adm"],  # Dolby Atmos formats
         "all": settings.ALLOWED_EXTENSIONS
     }
 

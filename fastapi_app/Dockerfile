@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install system dependencies including build tools for dlb_mp4base
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
@@ -15,7 +15,22 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     gcc \
     g++ \
+    cmake \
+    make \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Build and install dlb_mp4base library
+RUN git clone https://github.com/DolbyLaboratories/dlb_mp4base.git /tmp/dlb_mp4base && \
+    cd /tmp/dlb_mp4base && \
+    mkdir -p build && \
+    cd build && \
+    cmake .. && \
+    make && \
+    make install && \
+    ldconfig && \
+    cd / && \
+    rm -rf /tmp/dlb_mp4base
 
 # Set work directory
 WORKDIR /app
