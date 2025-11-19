@@ -23,6 +23,10 @@ class ChannelStrategy(str, Enum):
     MONO_DOWNMIX = "mono_downmix"
     PER_CHANNEL = "per_channel"
     SELECTED = "selected"
+    # Dolby Atmos strategies
+    ATMOS_BED_MONO = "atmos_bed_mono"  # Extract Atmos bed as mono downmix
+    ATMOS_BED_STEREO = "atmos_bed_stereo"  # Extract Atmos bed as stereo downmix
+    ATMOS_BED_CHANNELS = "atmos_bed_channels"  # Extract individual Atmos bed channels
 
 class AIModel(str, Enum):
     """Available AI models."""
@@ -34,6 +38,7 @@ class FileType(str, Enum):
     """File types."""
     AUDIO = "audio"
     VIDEO = "video"
+    ATMOS = "atmos"  # Dolby Atmos audio (EC3/EAC3/ADM WAV)
     UNKNOWN = "unknown"
 
 class AnalysisStatus(str, Enum):
@@ -58,6 +63,34 @@ class ErrorResponse(BaseResponse):
     error_code: str
     details: Optional[Dict[str, Any]] = None
 
+# Dolby Atmos Models
+class AtmosMetadata(BaseModel):
+    """Dolby Atmos metadata."""
+    codec: str = Field(..., description="Audio codec (ec3, eac3, truehd)")
+    bed_configuration: str = Field(..., description="Bed configuration (7.1, 7.1.2, 7.1.4, etc.)")
+    channels: int = Field(..., description="Total channel count")
+    channel_layout: str = Field(..., description="FFmpeg channel layout string")
+    sample_rate: int = Field(..., description="Sample rate in Hz")
+    bit_rate: Optional[int] = Field(None, description="Bitrate in bps")
+    object_count: Optional[int] = Field(None, description="Number of audio objects")
+    max_objects: int = Field(default=128, description="Maximum objects (Atmos spec)")
+    is_adm_wav: bool = Field(default=False, description="Whether file is ADM BWF WAV")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "codec": "eac3",
+                "bed_configuration": "7.1.2",
+                "channels": 10,
+                "channel_layout": "7.1.2(FL FR FC LFE SL SR BL BR TpFL TpFR)",
+                "sample_rate": 48000,
+                "bit_rate": 768000,
+                "object_count": 48,
+                "max_objects": 128,
+                "is_adm_wav": False
+            }
+        }
+
 # File Models
 class FileInfo(BaseModel):
     """File information model."""
@@ -73,7 +106,12 @@ class FileInfo(BaseModel):
     sample_rate: Optional[int] = None
     bit_depth: Optional[int] = None
     channels: Optional[int] = None
-    
+    # Dolby Atmos metadata (if applicable)
+    atmos_metadata: Optional[AtmosMetadata] = Field(
+        None,
+        description="Dolby Atmos metadata if file is Atmos format"
+    )
+
     class Config:
         json_json_schema_extra = {
             "example": {
