@@ -242,6 +242,9 @@ def is_atmos_file(file_path: str) -> bool:
     Returns:
         True if file has Atmos audio, False otherwise
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
         # Import here to avoid circular dependency
         from ..dolby.atmos_metadata import extract_atmos_metadata, is_atmos_codec
@@ -251,13 +254,22 @@ def is_atmos_file(file_path: str) -> bool:
             # ADM WAV files have is_adm_wav flag set (they use PCM codec)
             # IAB files have is_iab flag set
             # Other Atmos formats are detected by codec
-            return metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf or is_atmos_codec(metadata.codec)
-        return False
-    except ImportError:
+            is_atmos = metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf or is_atmos_codec(metadata.codec)
+            logger.info(f"Atmos detection for {Path(file_path).name}: is_adm_wav={metadata.is_adm_wav}, "
+                       f"is_iab={metadata.is_iab}, is_mxf={metadata.is_mxf}, "
+                       f"codec={metadata.codec}, result={is_atmos}")
+            return is_atmos
+        else:
+            logger.warning(f"Failed to extract Atmos metadata from {Path(file_path).name}")
+            return False
+    except ImportError as e:
+        logger.warning(f"Dolby module import failed: {e}, using fallback")
         # Fallback if dolby module not available
         return _is_atmos_fallback(file_path)
-    except Exception:
-        return False
+    except Exception as e:
+        logger.error(f"Error detecting Atmos file {Path(file_path).name}: {e}")
+        # Try fallback
+        return _is_atmos_fallback(file_path)
 
 
 def _is_atmos_fallback(file_path: str) -> bool:
