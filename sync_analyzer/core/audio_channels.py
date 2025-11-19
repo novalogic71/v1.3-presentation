@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
 Channel probing and stem extraction utilities for multi-channel analysis.
+
+Supports:
+- Standard multi-channel audio (stereo, 5.1, 7.1)
+- Multi-mono streams
+- Dolby Atmos bed extraction (EC3, EAC3, ADM WAV)
 """
 
 from __future__ import annotations
@@ -77,6 +82,11 @@ def _layout_roles(layout: str, channels: int) -> List[str]:
 
     Returns a list of roles (e.g., [FL, FR, FC, LFE, SL, SR]) length==channels,
     or generic [c0, c1, ...] when unknown.
+
+    Supports Atmos bed configurations:
+    - 7.1.2: 10 channels (7.1 + 2 height)
+    - 7.1.4: 12 channels (7.1 + 4 height)
+    - 9.1.6: 16 channels (9.1 + 6 height)
     """
     layout = (layout or "").lower()
     known = {
@@ -87,6 +97,11 @@ def _layout_roles(layout: str, channels: int) -> List[str]:
         "5.1(side)": ["FL", "FR", "FC", "LFE", "SL", "SR"],
         "4.0": ["FL", "FR", "FC", "BC"],
         "7.1": ["FL", "FR", "FC", "LFE", "SL", "SR", "BL", "BR"],
+        # Atmos bed configurations
+        "7.1.2": ["FL", "FR", "FC", "LFE", "SL", "SR", "BL", "BR", "TpFL", "TpFR"],
+        "7.1.4": ["FL", "FR", "FC", "LFE", "SL", "SR", "BL", "BR", "TpFL", "TpFR", "TpBL", "TpBR"],
+        "9.1.6": ["FL", "FR", "FC", "LFE", "SL", "SR", "BL", "BR", "FLC", "FRC",
+                  "TpFL", "TpFR", "TpBL", "TpBR", "TpSL", "TpSR"],
     }
     for key, roles in known.items():
         if key in layout and len(roles) == channels:
@@ -210,4 +225,178 @@ def make_temp_stems(input_path: str) -> Tuple[str, Dict[str, str]]:
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
+
+
+# ============================================================================
+# Dolby Atmos Support
+# ============================================================================
+
+
+def is_atmos_file(file_path: str) -> bool:
+    """
+    Check if file contains Dolby Atmos audio
+
+    Args:
+        file_path: Path to audio/video file
+
+    Returns:
+        True if file has Atmos audio, False otherwise
+    """
+    try:
+        # Import here to avoid circular dependency
+        from ..dolby.atmos_metadata import extract_atmos_metadata, is_atmos_codec
+
+        metadata = extract_atmos_metadata(file_path)
+        if metadata:
+            return is_atmos_codec(metadata.codec)
+        return False
+    except ImportError:
+        # Fallback if dolby module not available
+        return _is_atmos_fallback(file_path)
+    except Exception:
+        return False
+
+
+def _is_atmos_fallback(file_path: str) -> bool:
+    """
+    Fallback Atmos detection using file extension and ffprobe
+
+    Args:
+        file_path: Path to audio/video file
+
+    Returns:
+        True if likely Atmos, False otherwise
+    """
+    ext = Path(file_path).suffix.lower()
+    if ext in ['.ec3', '.eac3', '.adm']:
+        return True
+
+    try:
+        data = _run_ffprobe_json(file_path)
+        for stream in data.get("streams", []):
+            if stream.get("codec_type") == "audio":
+                codec = stream.get("codec_name", "").lower()
+                if codec in ['eac3', 'ec3', 'truehd']:
+                    return True
+    except Exception:
+        pass
+
+    return False
+
+
+def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int = 22050) -> str:
+    """
+    Extract Atmos bed as stereo downmix for sync analysis
+
+    This extracts the 7.1 bed from Atmos and downmixes to stereo.
+    Objects are ignored for sync analysis.
+
+    Args:
+        input_path: Path to Atmos file (EC3/EAC3/MP4 with Atmos)
+        output_path: Output WAV path
+        sample_rate: Target sample rate (default: 22050 for analysis)
+
+    Returns:
+        Path to extracted stereo WAV
+    """
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",  # No video
+        "-ac",
+        "2",  # Stereo downmix
+        "-ar",
+        str(sample_rate),
+        "-c:a",
+        "pcm_s16le",
+        output_path,
+    ]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to extract Atmos bed stereo: {proc.stderr.strip()}")
+
+    return output_path
+
+
+def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int = 22050) -> str:
+    """
+    Extract Atmos bed as mono downmix for sync analysis
+
+    Args:
+        input_path: Path to Atmos file
+        output_path: Output WAV path
+        sample_rate: Target sample rate (default: 22050 for analysis)
+
+    Returns:
+        Path to extracted mono WAV
+    """
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",  # No video
+        "-ac",
+        "1",  # Mono downmix
+        "-ar",
+        str(sample_rate),
+        "-c:a",
+        "pcm_s16le",
+        output_path,
+    ]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to extract Atmos bed mono: {proc.stderr.strip()}")
+
+    return output_path
+
+
+def extract_atmos_bed_channels(input_path: str, out_dir: str, sample_rate: int = 48000) -> Dict[str, str]:
+    """
+    Extract Atmos bed as individual 7.1 channel stems
+
+    This is for per-channel analysis of the Atmos bed (objects ignored).
+
+    Args:
+        input_path: Path to Atmos file
+        out_dir: Output directory for channel stems
+        sample_rate: Target sample rate (default: 48000 to preserve quality)
+
+    Returns:
+        Dictionary mapping channel roles to WAV file paths
+        Example: {"FL": "path/to/FL.wav", "FR": "path/to/FR.wav", ...}
+    """
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    # First, check if we have a multichannel stream or need to extract bed
+    info = probe_audio_layout(input_path)
+
+    # Look for the bed stream (typically 7.1 or 5.1)
+    bed_stream = None
+    for stream in info["streams"]:
+        channels = stream["channels"]
+        if channels >= 6:  # 5.1 or higher
+            bed_stream = stream
+            break
+
+    if not bed_stream:
+        raise ValueError(f"No multichannel bed found in Atmos file: {input_path}")
+
+    # Extract bed channels using the standard extraction
+    # This will work because Atmos MP4 files have the bed as a multichannel stream
+    return extract_all_stems(input_path, out_dir)
 

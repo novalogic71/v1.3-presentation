@@ -88,19 +88,38 @@ class OptimizedLargeFileDetector:
             self.logger.info("PyTorch not available; running on CPU")
     
     def extract_audio_from_video(self, video_path: str) -> Optional[str]:
-        """Extract audio from video file using ffmpeg with optimized parameters"""
+        """Extract audio from video file using ffmpeg with optimized parameters
+
+        Supports:
+        - Standard audio/video files
+        - Dolby Atmos files (EC3/EAC3/ADM WAV)
+            - Auto-detects Atmos and extracts bed for analysis
+        """
         try:
             if not os.path.exists(video_path):
                 self.logger.error(f"Video file not found: {video_path}")
                 return None
-            
+
             # Generate output filename
             base_name = os.path.splitext(os.path.basename(video_path))[0]
             audio_file = os.path.join(self.temp_dir, f"{base_name}.wav")
-            
-            # Extract audio with optimized settings
+
+            # Check if file is Atmos format
+            is_atmos = self._is_atmos_file(video_path)
+
+            if is_atmos:
+                self.logger.info(f"Detected Dolby Atmos file: {os.path.basename(video_path)}")
+                self.logger.info(f"Extracting Atmos bed for analysis...")
+                # Use Atmos bed extraction (downmix to mono)
+                try:
+                    from .audio_channels import extract_atmos_bed_mono
+                    return extract_atmos_bed_mono(video_path, audio_file, self.sample_rate)
+                except ImportError:
+                    self.logger.warning("Atmos module not available, using standard extraction")
+
+            # Standard extraction for non-Atmos files
             cmd = [
-                "ffmpeg", "-i", video_path, 
+                "ffmpeg", "-i", video_path,
                 "-vn",  # No video
                 "-acodec", "pcm_s16le",  # 16-bit PCM
                 "-ar", str(self.sample_rate),  # Sample rate
@@ -108,20 +127,38 @@ class OptimizedLargeFileDetector:
                 "-y",  # Overwrite
                 audio_file
             ]
-            
+
             self.logger.info(f"Extracting audio from {os.path.basename(video_path)}...")
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             if result.returncode != 0:
                 self.logger.error(f"FFmpeg failed: {result.stderr}")
                 return None
-            
+
             self.logger.info(f"Audio extracted: {audio_file}")
             return audio_file
-            
+
         except Exception as e:
             self.logger.error(f"Error extracting audio: {e}")
             return None
+
+    def _is_atmos_file(self, file_path: str) -> bool:
+        """
+        Check if file is Dolby Atmos format
+
+        Args:
+            file_path: Path to audio/video file
+
+        Returns:
+            True if Atmos, False otherwise
+        """
+        try:
+            from .audio_channels import is_atmos_file
+            return is_atmos_file(file_path)
+        except ImportError:
+            # Fallback: check file extension
+            ext = os.path.splitext(file_path)[1].lower()
+            return ext in ['.ec3', '.eac3', '.adm']
     
     def get_audio_duration(self, audio_path: str) -> float:
         """Get audio duration efficiently (ffprobe only)."""
