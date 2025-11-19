@@ -104,8 +104,11 @@ class OptimizedLargeFileDetector:
             base_name = os.path.splitext(os.path.basename(video_path))[0]
             audio_file = os.path.join(self.temp_dir, f"{base_name}.wav")
 
+            self.logger.info(f"[EXTRACT_AUDIO] Starting extraction for: {os.path.basename(video_path)}")
+            
             # Check if file is Atmos format
             is_atmos = self._is_atmos_file(video_path)
+            self.logger.info(f"[EXTRACT_AUDIO] is_atmos = {is_atmos}")
 
             if is_atmos:
                 self.logger.info(f"Detected Dolby Atmos file: {os.path.basename(video_path)}")
@@ -152,13 +155,24 @@ class OptimizedLargeFileDetector:
         Returns:
             True if Atmos, False otherwise
         """
+        self.logger.info(f"[_IS_ATMOS_FILE] Checking file: {os.path.basename(file_path)}")
         try:
             from .audio_channels import is_atmos_file
-            return is_atmos_file(file_path)
-        except ImportError:
+            result = is_atmos_file(file_path)
+            self.logger.info(f"[_IS_ATMOS_FILE] is_atmos_file() returned: {result}")
+            return result
+        except ImportError as e:
+            self.logger.warning(f"[_IS_ATMOS_FILE] Import failed: {e}")
             # Fallback: check file extension
             ext = os.path.splitext(file_path)[1].lower()
-            return ext in ['.ec3', '.eac3', '.adm']
+            result = ext in ['.ec3', '.eac3', '.adm']
+            self.logger.info(f"[_IS_ATMOS_FILE] Fallback extension check: ext={ext}, result={result}")
+            return result
+        except Exception as e:
+            self.logger.error(f"[_IS_ATMOS_FILE] Exception: {e}")
+            import traceback
+            self.logger.error(f"[_IS_ATMOS_FILE] Traceback: {traceback.format_exc()}")
+            return False
     
     def get_audio_duration(self, audio_path: str) -> float:
         """Get audio duration efficiently (ffprobe only)."""
