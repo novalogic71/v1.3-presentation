@@ -123,6 +123,8 @@ class ProfessionalSyncDetector:
         """
         Load and preprocess audio file with professional audio standards.
         
+        Handles Atmos files by extracting bed audio first before loading.
+        
         Args:
             audio_path: Path to audio file
             
@@ -130,13 +132,42 @@ class ProfessionalSyncDetector:
             Tuple of (audio_samples, original_sample_rate)
         """
         try:
+            # Check if this is an Atmos file that needs special handling
+            temp_wav_path = None
+            actual_path = audio_path
+            
+            try:
+                from .audio_channels import is_atmos_file, extract_atmos_bed_mono
+                import tempfile
+                
+                if is_atmos_file(str(audio_path)):
+                    logger.info(f"[LOAD_AUDIO] Detected Atmos file, extracting bed: {audio_path.name}")
+                    # Extract Atmos bed to temporary WAV file
+                    temp_wav_path = tempfile.mktemp(suffix=".wav", prefix="atmos_extracted_")
+                    extract_atmos_bed_mono(str(audio_path), temp_wav_path, self.sample_rate)
+                    actual_path = Path(temp_wav_path)
+                    logger.info(f"[LOAD_AUDIO] Atmos bed extracted to: {temp_wav_path}")
+            except ImportError as e:
+                logger.debug(f"[LOAD_AUDIO] Atmos module not available: {e}")
+            except Exception as e:
+                logger.warning(f"[LOAD_AUDIO] Failed to extract Atmos bed, using direct load: {e}")
+            
             # Load with librosa for consistent preprocessing
             audio, original_sr = librosa.load(
-                str(audio_path), 
+                str(actual_path), 
                 sr=self.sample_rate,
                 mono=True,
                 dtype=np.float32
             )
+            
+            # Clean up temporary file if created
+            if temp_wav_path:
+                try:
+                    import os
+                    os.remove(temp_wav_path)
+                    logger.debug(f"[LOAD_AUDIO] Cleaned up temp file: {temp_wav_path}")
+                except:
+                    pass
             
             # Normalize audio to prevent clipping
             if np.max(np.abs(audio)) > 0:
