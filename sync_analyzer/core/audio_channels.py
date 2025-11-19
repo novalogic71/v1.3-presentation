@@ -288,8 +288,10 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     """
     Extract Atmos bed as stereo downmix for sync analysis
 
-    This extracts the 7.1 bed from Atmos and downmixes to stereo.
-    Objects are ignored for sync analysis.
+    For Atmos files (EC3, EAC3, ADM WAV, IAB):
+    1. Convert to MP4 with black video using dlb_mp4base/FFmpeg
+    2. Extract audio from MP4 to WAV
+    3. Convert to stereo at target sample rate
 
     Args:
         input_path: Path to Atmos file (EC3/EAC3/MP4 with Atmos)
@@ -299,52 +301,98 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     Returns:
         Path to extracted stereo WAV
     """
+    import tempfile
+    import os
+    import logging
+
+    logger = logging.getLogger(__name__)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Check if this is an ADM WAV file
+    # Check file extension to determine format
     ext = Path(input_path).suffix.lower()
-    is_adm_wav = ext in ['.adm', '.wav']
 
-    if is_adm_wav:
-        # For ADM WAV: explicitly map first audio stream and avoid timestamp issues
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            input_path,
-            "-map", "0:a:0",  # Explicitly map first audio stream only
-            "-vn",  # No video
-            "-ac",
-            "2",  # Stereo downmix
-            "-ar",
-            str(sample_rate),
-            "-c:a",
-            "pcm_s16le",
-            "-avoid_negative_ts", "make_zero",  # Ensure no negative timestamps
-            output_path,
-        ]
-    else:
-        # For EC3/EAC3/other compressed Atmos formats
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            input_path,
-            "-vn",  # No video
-            "-ac",
-            "2",  # Stereo downmix
-            "-ar",
-            str(sample_rate),
-            "-c:a",
-            "pcm_s16le",
-            output_path,
-        ]
+    # Atmos formats that need conversion to MP4 first
+    needs_conversion = ext in ['.ec3', '.eac3', '.adm', '.iab']
+
+    if needs_conversion:
+        # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
+        logger.info(f"Converting Atmos file to MP4 for proper extraction: {input_path}")
+
+        try:
+            from ..dolby.atmos_converter import convert_atmos_to_mp4
+
+            # Step 1: Convert Atmos file to MP4 with black video
+            temp_mp4 = tempfile.mktemp(suffix=".mp4", prefix="atmos_temp_")
+
+            result = convert_atmos_to_mp4(
+                atmos_path=input_path,
+                output_path=temp_mp4,
+                fps=24.0,
+                resolution="1920x1080",
+                preserve_original=True
+            )
+
+            if not result or not os.path.exists(temp_mp4):
+                raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
+
+            logger.info(f"Atmos converted to MP4: {temp_mp4}")
+
+            # Step 2: Extract audio from MP4 to stereo WAV
+            logger.info(f"Extracting audio from MP4 to stereo WAV...")
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                temp_mp4,
+                "-vn",  # No video
+                "-ac",
+                "2",  # Stereo downmix
+                "-ar",
+                str(sample_rate),
+                "-c:a",
+                "pcm_s16le",
+                output_path,
+            ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+            # Clean up temp MP4
+            try:
+                os.remove(temp_mp4)
+            except:
+                pass
+
+            if proc.returncode != 0:
+                raise RuntimeError(f"Failed to extract audio from MP4: {proc.stderr.strip()}")
+
+            logger.info(f"Successfully extracted Atmos bed to stereo WAV: {output_path}")
+            return output_path
+
+        except ImportError as e:
+            logger.warning(f"Dolby module not available, using direct FFmpeg: {e}")
+            # Fallback to direct FFmpeg
+
+    # For MP4/MOV/MXF with Atmos audio, or fallback extraction
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",  # No video
+        "-ac",
+        "2",  # Stereo downmix
+        "-ar",
+        str(sample_rate),
+        "-c:a",
+        "pcm_s16le",
+        output_path,
+    ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
@@ -357,6 +405,13 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     """
     Extract Atmos bed as mono downmix for sync analysis
 
+    For Atmos files (EC3, EAC3, ADM WAV, IAB):
+    1. Convert to MP4 with black video using dlb_mp4base/FFmpeg
+    2. Extract audio from MP4 to WAV
+    3. Convert to mono at target sample rate
+
+    This ensures proper Atmos decoding and avoids FFmpeg extraction issues.
+
     Args:
         input_path: Path to Atmos file
         output_path: Output WAV path
@@ -365,57 +420,98 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     Returns:
         Path to extracted mono WAV
     """
+    import tempfile
+    import os
+    import logging
+
+    logger = logging.getLogger(__name__)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Check if this is an ADM WAV file
+    # Check file extension to determine format
     ext = Path(input_path).suffix.lower()
-    is_adm_wav = ext in ['.adm', '.wav']
 
-    # ADM WAV files are standard PCM audio with BWF metadata chunks
-    # They should be extracted like regular WAV files, not as compressed Atmos
-    # The ADM metadata is just object/spatial metadata, not audio data
+    # Atmos formats that need conversion to MP4 first
+    needs_conversion = ext in ['.ec3', '.eac3', '.adm', '.iab']
 
-    if is_adm_wav:
-        # For ADM WAV: Use map 0:a:0 to explicitly select first audio stream only
-        # This avoids any issues with BWF chunk interpretation
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            input_path,
-            "-map", "0:a:0",  # Explicitly map first audio stream only
-            "-vn",  # No video
-            "-ac",
-            "1",  # Mono downmix
-            "-ar",
-            str(sample_rate),
-            "-c:a",
-            "pcm_s16le",
-            "-avoid_negative_ts", "make_zero",  # Ensure no negative timestamps
-            output_path,
-        ]
-    else:
-        # For EC3/EAC3/other compressed Atmos formats
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            input_path,
-            "-vn",  # No video
-            "-ac",
-            "1",  # Mono downmix
-            "-ar",
-            str(sample_rate),
-            "-c:a",
-            "pcm_s16le",
-            output_path,
-        ]
+    if needs_conversion:
+        # Use dlb_mp4base pipeline: Atmos → MP4 → WAV extraction
+        logger.info(f"Converting Atmos file to MP4 for proper extraction: {input_path}")
+
+        try:
+            from ..dolby.atmos_converter import convert_atmos_to_mp4
+
+            # Step 1: Convert Atmos file to MP4 with black video
+            temp_mp4 = tempfile.mktemp(suffix=".mp4", prefix="atmos_temp_")
+
+            result = convert_atmos_to_mp4(
+                atmos_path=input_path,
+                output_path=temp_mp4,
+                fps=24.0,
+                resolution="1920x1080",
+                preserve_original=True
+            )
+
+            if not result or not os.path.exists(temp_mp4):
+                raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
+
+            logger.info(f"Atmos converted to MP4: {temp_mp4}")
+
+            # Step 2: Extract audio from MP4 to mono WAV
+            logger.info(f"Extracting audio from MP4 to WAV...")
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                temp_mp4,
+                "-vn",  # No video
+                "-ac",
+                "1",  # Mono downmix
+                "-ar",
+                str(sample_rate),
+                "-c:a",
+                "pcm_s16le",
+                output_path,
+            ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+            # Clean up temp MP4
+            try:
+                os.remove(temp_mp4)
+            except:
+                pass
+
+            if proc.returncode != 0:
+                raise RuntimeError(f"Failed to extract audio from MP4: {proc.stderr.strip()}")
+
+            logger.info(f"Successfully extracted Atmos bed to mono WAV: {output_path}")
+            return output_path
+
+        except ImportError as e:
+            logger.warning(f"Dolby module not available, using direct FFmpeg: {e}")
+            # Fallback to direct FFmpeg
+
+    # For MP4/MOV/MXF with Atmos audio, or fallback extraction
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",  # No video
+        "-ac",
+        "1",  # Mono downmix
+        "-ar",
+        str(sample_rate),
+        "-c:a",
+        "pcm_s16le",
+        output_path,
+    ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
