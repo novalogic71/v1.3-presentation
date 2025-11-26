@@ -1,0 +1,10 @@
+{
+    "version": 0,
+    "processes": [
+        {"name": "input", "type": "read_adm_bw64", "out_ports": ["out_samples", "out_axml"]},
+        {"name": "output", "type": "write_bw64", "in_ports": ["in_samples"]}
+    ],
+    "connections": [
+        ["input.out_samples", "output.in_samples"]
+    ]
+}

@@ -141,7 +141,21 @@ def create_application() -> FastAPI:
     )
     
     # Add middleware
-    # CORS: in DEBUG, open up for easier local/dev usage
+    # IMPORTANT: Middleware executes in REVERSE order of how it's added
+    # Add CORS LAST so it executes FIRST to handle OPTIONS preflight requests
+
+    # Rate limiting (if enabled)
+    if settings.ENABLE_RATE_LIMITING:
+        app.add_middleware(RateLimitMiddleware)
+
+    # Request logging
+    app.add_middleware(RequestLoggingMiddleware)
+
+    # Trusted host validation
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
+
+    # CORS - added LAST to execute FIRST
+    # In DEBUG mode, open up for easier local/dev usage
     debug_flag = os.environ.get("DEBUG", str(settings.DEBUG)).lower() in {"1", "true", "yes"}
     if debug_flag:
         app.add_middleware(
@@ -159,12 +173,6 @@ def create_application() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
-    app.add_middleware(RequestLoggingMiddleware)
-    
-    if settings.ENABLE_RATE_LIMITING:
-        app.add_middleware(RateLimitMiddleware)
     
     # Add exception handlers
     @app.exception_handler(SyncAnalyzerException)

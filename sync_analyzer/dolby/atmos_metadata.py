@@ -201,7 +201,8 @@ def _check_iab_stream(file_path: str) -> bool:
     """
     try:
         # Check file extension first
-        if file_path.lower().endswith('.iab'):
+        file_lower = file_path.lower()
+        if file_lower.endswith('.iab') or ".atmos" in file_lower:
             return True
 
         # Check for IAB codec in streams

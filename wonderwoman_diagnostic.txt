@@ -1,0 +1,98 @@
+INFO:sync_analyzer.core.audio_sync_detector:Initialized ProfessionalSyncDetector with SR=22050, window=30.0s, MFCC=13
+INFO:sync_analyzer.core.audio_sync_detector:Starting sync analysis: WonderWoman_Trailer_Dub_Master.mov vs wonderwoman_fullmix_stereo.wav
+INFO:sync_analyzer.dolby.atmos_metadata:Extracted Atmos metadata from WonderWoman_Trailer_Dub_Master.mov: 12.0 @ 48000Hz
+INFO:sync_analyzer.core.audio_channels:Atmos detection for WonderWoman_Trailer_Dub_Master.mov: is_adm_wav=False, is_iab=False, is_mxf=False, codec=pcm_s24le, result=False
+/mnt/data/amcmurray/Sync_dub/v1.3-presentation/sync_analyzer/core/audio_sync_detector.py:156: UserWarning: PySoundFile failed. Trying audioread instead.
+  audio, original_sr = librosa.load(
+INFO:sync_analyzer.core.audio_sync_detector:Loaded WonderWoman_Trailer_Dub_Master.mov: 218.78s, 22050->22050 Hz
+INFO:sync_analyzer.dolby.atmos_metadata:Extracted Atmos metadata from wonderwoman_fullmix_stereo.wav: 2.0 @ 48000Hz
+INFO:sync_analyzer.core.audio_channels:Atmos detection for wonderwoman_fullmix_stereo.wav: is_adm_wav=False, is_iab=False, is_mxf=False, codec=pcm_s16le, result=False
+INFO:sync_analyzer.core.audio_sync_detector:Loaded wonderwoman_fullmix_stereo.wav: 137.55s, 22050->22050 Hz
+INFO:sync_analyzer.core.audio_sync_detector:Extracting audio features...
+INFO:sync_analyzer.core.audio_sync_detector:Performing MFCC cross-correlation analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing onset-based sync analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing spectral feature analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing sample-accurate raw audio cross-correlation...
+INFO:sync_analyzer.core.audio_sync_detector:Sync analysis complete. Results: ['mfcc', 'onset', 'spectral', 'correlation', 'raw_audio']
+INFO:sync_analyzer.core.audio_sync_detector:Using correlation method (sample-accurate precision)
+================================================================================
+WONDER WOMAN OFFSET DIAGNOSTIC TEST
+================================================================================
+Master: /mnt/data/amcmurray/_insync_master_files/WonderWoman_Trailer_Dub_Master.mov
+Dub:    /mnt/data/amcmurray/Sync_dub/v1.3-presentation/optimized_sync_reports/wonderwoman_fullmix_stereo.wav
+
+Running analysis with all methods...
+
+================================================================================
+INDIVIDUAL METHOD RESULTS:
+================================================================================
+
+MFCC:
+  offset_samples:      434688
+  offset_seconds:      19.713741s
+  offset_milliseconds: 19713.741ms
+  confidence:          0.8911
+  ✗ DOES NOT MATCH expected ±8.0s
+    Error from -8.0s: 27.714s
+    Error from +8.0s: 11.714s
+
+ONSET:
+  offset_samples:      801792
+  offset_seconds:      36.362449s
+  offset_milliseconds: 36362.449ms
+  confidence:          0.5767
+  ✗ DOES NOT MATCH expected ±8.0s
+    Error from -8.0s: 44.362s
+    Error from +8.0s: 28.362s
+
+SPECTRAL:
+  offset_samples:      763392
+  offset_seconds:      34.620952s
+  offset_milliseconds: 34620.952ms
+  confidence:          0.5641
+  ✗ DOES NOT MATCH expected ±8.0s
+    Error from -8.0s: 42.621s
+    Error from +8.0s: 26.621s
+
+CORRELATION:
+  offset_samples:      48712
+  offset_seconds:      2.209161s
+  offset_milliseconds: 2209.161ms
+  confidence:          0.9977
+  ✗ DOES NOT MATCH expected ±8.0s
+    Error from -8.0s: 10.209s
+    Error from +8.0s: 5.791s
+
+RAW_AUDIO:
+  offset_samples:      48712
+  offset_seconds:      2.209161s
+  offset_milliseconds: 2209.161ms
+  confidence:          0.9977
+  ✗ DOES NOT MATCH expected ±8.0s
+    Error from -8.0s: 10.209s
+    Error from +8.0s: 5.791s
+
+================================================================================
+CONSENSUS RESULT:
+================================================================================
+  method_used:         Consensus (correlation primary)
+  offset_samples:      48712
+  offset_seconds:      2.209161s
+  offset_milliseconds: 2209.161ms
+  confidence:          0.9977
+
+  ✗ CONSENSUS INCORRECT!
+    Expected: ±8.0s
+    Got: 2.209161s
+    Error from -8.0s: 10.209s
+    Error from +8.0s: 5.791s
+
+================================================================================
+DIAGNOSTIC INFORMATION:
+================================================================================
+Traceback (most recent call last):
+  File "/mnt/data/amcmurray/Sync_dub/v1.3-presentation/test_wonderwoman_offset.py", line 114, in <module>
+    test_wonderwoman_offset(master, dub)
+  File "/mnt/data/amcmurray/Sync_dub/v1.3-presentation/test_wonderwoman_offset.py", line 95, in test_wonderwoman_offset
+    print(f"  Master duration:     {detector.master_duration:.2f}s")
+AttributeError: 'ProfessionalSyncDetector' object has no attribute 'master_duration'

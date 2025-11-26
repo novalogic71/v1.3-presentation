@@ -85,13 +85,25 @@ class CoreAudioEngine {
             // Generate waveform data
             const waveformData = this.generateWaveformData(audioBuffer);
             
-            // Store results
+            // Store results and clear any old element/source to avoid mixed state
             if (type === 'master') {
                 this.masterBuffer = audioBuffer;
                 this.masterWaveformData = waveformData;
+                // Clear any old media element if buffer loaded successfully
+                if (this.masterElement) {
+                    try { this.masterElement.remove(); } catch {}
+                    this.masterElement = null;
+                }
+                this.masterElementSource = null;
             } else {
                 this.dubBuffer = audioBuffer;
                 this.dubWaveformData = waveformData;
+                // Clear any old media element if buffer loaded successfully
+                if (this.dubElement) {
+                    try { this.dubElement.remove(); } catch {}
+                    this.dubElement = null;
+                }
+                this.dubElementSource = null;
             }
             
             this.updateProgress(`${type} file processed successfully`, 100);
@@ -124,44 +136,55 @@ class CoreAudioEngine {
      */
     async loadAudioUrl(url, type = 'master') {
         if (!this.audioContext) {
+            console.error('[Audio] Context not initialized');
             throw new Error('Audio context not initialized');
         }
+        console.log(`[Audio] Loading ${type} from: ${url}`);
         try {
             this.updateProgress(`Fetching ${type} from URL...`, 10);
             // Avoid 304 caching issues by bypassing cache
             let resp = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+            console.log(`[Audio] Fetch response for ${type}: ${resp.status} ${resp.statusText}`);
             if (resp.status === 304) {
                 try { resp = await fetch(url, { credentials: 'same-origin', cache: 'reload' }); } catch {}
             }
             if (!resp.ok) {
+                console.error(`[Audio] Fetch failed for ${type}: HTTP ${resp.status}`);
                 try { window.showToast?.('error', `${type} fetch failed: HTTP ${resp.status} — ${url}`, 'Audio Load'); } catch {}
                 throw new Error(`HTTP ${resp.status}`);
             }
             const arrayBuffer = await resp.arrayBuffer();
+            console.log(`[Audio] Received ${arrayBuffer.byteLength} bytes for ${type}`);
             this.updateProgress(`Decoding ${type} audio...`, 50);
             let audioBuffer = null;
             let usedProxy = false;
             const rawPath = this._extractPathFromRawUrl(url);
+            console.log(`[Audio] Decoding ${type}, rawPath=${rawPath}, audioContext.state=${this.audioContext.state}`);
             try {
                 audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                console.log(`[Audio] Decode succeeded for ${type}: ${audioBuffer.duration}s, ${audioBuffer.numberOfChannels}ch`);
             } catch (decodeErr) {
-                console.warn('decodeAudioData failed:', decodeErr);
+                console.warn(`[Audio] decodeAudioData failed for ${type}:`, decodeErr);
                 // Try proxy first when loading from our raw endpoint
                 if (rawPath) {
+                    console.log(`[Audio] Trying proxy for ${type}: ${rawPath}`);
                     try {
                         this.updateProgress(`Transcoding ${type} via proxy...`, 60);
                         const proxyUrl = `/api/v1/files/proxy-audio?path=${encodeURIComponent(rawPath)}&format=wav`;
+                        console.log(`[Audio] Proxy URL for ${type}: ${proxyUrl}`);
                         const pResp = await fetch(proxyUrl, { credentials: 'same-origin' });
+                        console.log(`[Audio] Proxy response for ${type}: ${pResp.status}`);
                         if (!pResp.ok) {
                             try { window.showToast?.('error', `${type} proxy failed: HTTP ${pResp.status} — ${proxyUrl}`, 'Audio Proxy'); } catch {}
                             throw new Error(`Proxy HTTP ${pResp.status}`);
                         }
                         const pBuf = await pResp.arrayBuffer();
+                        console.log(`[Audio] Proxy received ${pBuf.byteLength} bytes for ${type}`);
                         audioBuffer = await this.audioContext.decodeAudioData(pBuf);
                         usedProxy = true;
-                        console.info('Proxy decode succeeded for', type);
+                        console.info(`[Audio] Proxy decode succeeded for ${type}: ${audioBuffer.duration}s`);
                     } catch (proxyErr) {
-                        console.warn('Proxy decode failed, falling back to media element:', proxyErr);
+                        console.warn(`[Audio] Proxy decode failed for ${type}, falling back to media element:`, proxyErr);
                         await this._loadViaMediaElement(url, type);
                         const el = type === 'master' ? this.masterElement : this.dubElement;
                         await new Promise((res) => {
@@ -172,10 +195,13 @@ class CoreAudioEngine {
                         const targetWidth = Math.min(4000, Math.max(800, Math.floor(duration * 100)));
                         const peaks = new Float32Array(targetWidth).fill(0); // placeholder
                         const waveformData = { peaks, rms: new Float32Array(targetWidth).fill(0), duration, sampleRate: 44100, width: targetWidth };
+                        // Clear buffer when using media element fallback to avoid mixed state
                         if (type === 'master') {
                             this.masterWaveformData = waveformData;
+                            this.masterBuffer = null;
                         } else {
                             this.dubWaveformData = waveformData;
+                            this.dubBuffer = null;
                         }
                         if (this.onAudioLoaded) {
                             this.onAudioLoaded(type, {
@@ -202,10 +228,13 @@ class CoreAudioEngine {
                     const targetWidth = Math.min(4000, Math.max(800, Math.floor(duration * 100)));
                     const peaks = new Float32Array(targetWidth).fill(0); // placeholder
                     const waveformData = { peaks, rms: new Float32Array(targetWidth).fill(0), duration, sampleRate: 44100, width: targetWidth };
+                    // Clear buffer when using media element fallback to avoid mixed state
                     if (type === 'master') {
                         this.masterWaveformData = waveformData;
+                        this.masterBuffer = null;
                     } else {
                         this.dubWaveformData = waveformData;
+                        this.dubBuffer = null;
                     }
                     if (this.onAudioLoaded) {
                         this.onAudioLoaded(type, {
@@ -219,12 +248,25 @@ class CoreAudioEngine {
             }
             this.updateProgress(`Processing ${type} waveform...`, 80);
             const waveformData = this.generateWaveformData(audioBuffer);
+            // Store results and clear any old element/source to avoid mixed state
             if (type === 'master') {
                 this.masterBuffer = audioBuffer;
                 this.masterWaveformData = waveformData;
+                // Clear any old media element if buffer loaded successfully
+                if (this.masterElement) {
+                    try { this.masterElement.remove(); } catch {}
+                    this.masterElement = null;
+                }
+                this.masterElementSource = null;
             } else {
                 this.dubBuffer = audioBuffer;
                 this.dubWaveformData = waveformData;
+                // Clear any old media element if buffer loaded successfully
+                if (this.dubElement) {
+                    try { this.dubElement.remove(); } catch {}
+                    this.dubElement = null;
+                }
+                this.dubElementSource = null;
             }
             this.updateProgress(`${type} URL processed successfully`, 100);
             if (this.onAudioLoaded) {
@@ -267,7 +309,24 @@ class CoreAudioEngine {
             el.addEventListener('error', onError, { once: true });
             el.addEventListener('loadedmetadata', () => resolve(), { once: true });
         });
-        if (type === 'master') this.masterElement = el; else this.dubElement = el;
+        // Clean up old element and source when loading new one
+        if (type === 'master') {
+            // Remove old master element from DOM if it exists
+            if (this.masterElement && this.masterElement !== el) {
+                try { this.masterElement.remove(); } catch {}
+            }
+            this.masterElement = el;
+            // Clear old MediaElementSource - must create new one for new element
+            this.masterElementSource = null;
+        } else {
+            // Remove old dub element from DOM if it exists
+            if (this.dubElement && this.dubElement !== el) {
+                try { this.dubElement.remove(); } catch {}
+            }
+            this.dubElement = el;
+            // Clear old MediaElementSource - must create new one for new element
+            this.dubElementSource = null;
+        }
         return el;
     }
 
@@ -374,12 +433,20 @@ class CoreAudioEngine {
             'audio/m4a', 'audio/mp4',
             'audio/aiff', 'audio/x-aiff',
             'audio/aac',
-            'audio/ogg'
+            'audio/ogg',
+            'video/quicktime',  // MOV files
+            'video/mp4',
+            'video/x-msvideo',  // AVI
+            'video/x-matroska'  // MKV
         ];
-        
-        const supportedExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg'];
-        
-        return supportedTypes.includes(file.type) || 
+
+        const supportedExtensions = [
+            '.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg',
+            '.mov', '.mp4', '.avi', '.mkv', '.wmv',  // Video containers
+            '.ec3', '.eac3', '.adm', '.iab', '.mxf'  // Atmos and professional formats
+        ];
+
+        return supportedTypes.includes(file.type) ||
                supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     }
     
@@ -503,8 +570,9 @@ class CoreAudioEngine {
                 this.masterPan = m.panner || m; this.dubPan = d.panner || d;
 
                 // Preserve previous desired gains if set
+                // Dub defaults higher (1.2) to compensate for typically quieter dub tracks
                 this.masterGainValue = this.masterGainValue ?? 0.8;
-                this.dubGainValue = this.dubGainValue ?? 0.8;
+                this.dubGainValue = this.dubGainValue ?? 1.2;
                 this.masterGain.gain.value = this.masterGainValue;
                 this.dubGain.gain.value = this.dubGainValue;
 
@@ -586,7 +654,10 @@ class CoreAudioEngine {
                 try { mEl.pause(); dEl.pause(); } catch {}
                 mEl.currentTime = safeStartAt; dEl.currentTime = safeStartAt;
 
+                const outNode = this.audioContext.destination;
+
                 // Create/reuse MediaElementSource (only allowed once per element)
+                // IMPORTANT: Once created, element audio ONLY goes through WebAudio
                 if (!this.masterElementSource) {
                     try { 
                         this.masterElementSource = this.audioContext.createMediaElementSource(mEl); 
@@ -604,64 +675,63 @@ class CoreAudioEngine {
                     }
                 }
 
+                // Set up audio routing - MUST connect element sources to destination or no audio plays
                 try {
-                    // Gains and panners
                     this.ensureOutputGain();
-                    const m = { gain: this.audioContext.createGain() };
-                    const d = { gain: this.audioContext.createGain() };
-                    if (this.audioContext.createStereoPanner) {
-                        m.panner = this.audioContext.createStereoPanner();
-                        d.panner = this.audioContext.createStereoPanner();
-                    }
-                    this.masterGain = m.gain; this.dubGain = d.gain;
-                    this.masterPan = m.panner || null; this.dubPan = d.panner || null;
+                    
+                    // Disconnect any previous connections to avoid duplicates
+                    try { this.masterElementSource?.disconnect(); } catch {}
+                    try { this.dubElementSource?.disconnect(); } catch {}
+                    try { this.masterGain?.disconnect(); } catch {}
+                    try { this.dubGain?.disconnect(); } catch {}
+                    
+                    // Create gain nodes
+                    const masterGain = this.audioContext.createGain();
+                    const dubGain = this.audioContext.createGain();
+                    this.masterGain = masterGain;
+                    this.dubGain = dubGain;
 
                     // Apply current volumes
-                    this.masterGainValue = this.masterGainValue ?? (typeof mEl.volume === 'number' ? mEl.volume : 0.8);
-                    this.dubGainValue = this.dubGainValue ?? (typeof dEl.volume === 'number' ? dEl.volume : 0.8);
-                    this.masterGain.gain.value = this.masterGainValue;
-                    this.dubGain.gain.value = this.dubGainValue;
+                    // Dub defaults higher (1.2) to compensate for typically quieter dub tracks
+                    this.masterGainValue = this.masterGainValue ?? 0.8;
+                    this.dubGainValue = this.dubGainValue ?? 1.2;
+                    masterGain.gain.value = this.masterGainValue;
+                    dubGain.gain.value = this.dubGainValue;
+                    
                     // Max element volume; use GainNode for control
                     mEl.volume = 1.0;
                     dEl.volume = 1.0;
 
-                    // Connect graph
-                    if (!this.masterElementSource || !this.dubElementSource) throw new Error('MediaElementSource missing');
-                const outNode2 = this.audioContext.destination;
-                if (m.panner) {
-                    try { m.panner.pan.value = -1; } catch {}
-                    this.masterElementSource.connect(m.gain).connect(m.panner).connect(outNode2);
-                } else {
-                    // Fallback: emulate pan
-                    m.splitter = this.audioContext.createChannelSplitter(2);
-                    m.leftGain = this.audioContext.createGain();
-                    m.rightGain = this.audioContext.createGain();
-                    m.merger = this.audioContext.createChannelMerger(2);
-                    this.masterElementSource.connect(m.gain).connect(m.splitter);
-                    m.splitter.connect(m.leftGain, 0);
-                    m.splitter.connect(m.rightGain, 1);
-                    m.leftGain.connect(m.merger, 0, 0);
-                    m.rightGain.connect(m.merger, 0, 1);
-                    m.merger.connect(outNode2);
-                    this.masterPan = m; // ensure applyPan() can adjust fallback gains
-                }
-                if (d.panner) {
-                    try { d.panner.pan.value = 1; } catch {}
-                    this.dubElementSource.connect(d.gain).connect(d.panner).connect(outNode2);
-                } else {
-                    // Fallback: emulate pan
-                    d.splitter = this.audioContext.createChannelSplitter(2);
-                    d.leftGain = this.audioContext.createGain();
-                    d.rightGain = this.audioContext.createGain();
-                    d.merger = this.audioContext.createChannelMerger(2);
-                    this.dubElementSource.connect(d.gain).connect(d.splitter);
-                    d.splitter.connect(d.leftGain, 0);
-                    d.splitter.connect(d.rightGain, 1);
-                    d.leftGain.connect(d.merger, 0, 0);
-                    d.rightGain.connect(d.merger, 0, 1);
-                    d.merger.connect(outNode2);
-                    this.dubPan = d;
-                }
+                    // Try to set up stereo panning (master left, dub right)
+                    let masterPanner = null, dubPanner = null;
+                    if (this.audioContext.createStereoPanner) {
+                        masterPanner = this.audioContext.createStereoPanner();
+                        dubPanner = this.audioContext.createStereoPanner();
+                        try { masterPanner.pan.value = -1; } catch {}
+                        try { dubPanner.pan.value = 1; } catch {}
+                    }
+                    this.masterPan = masterPanner;
+                    this.dubPan = dubPanner;
+
+                    // Connect master audio chain
+                    if (this.masterElementSource) {
+                        if (masterPanner) {
+                            this.masterElementSource.connect(masterGain).connect(masterPanner).connect(outNode);
+                        } else {
+                            this.masterElementSource.connect(masterGain).connect(outNode);
+                        }
+                        console.log('Master element source connected to output');
+                    }
+
+                    // Connect dub audio chain
+                    if (this.dubElementSource) {
+                        if (dubPanner) {
+                            this.dubElementSource.connect(dubGain).connect(dubPanner).connect(outNode);
+                        } else {
+                            this.dubElementSource.connect(dubGain).connect(outNode);
+                        }
+                        console.log('Dub element source connected to output');
+                    }
 
                     // Apply pan and gains
                     this.masterPanValue = (typeof this.masterPanValue === 'number') ? this.masterPanValue : -1;
@@ -670,11 +740,22 @@ class CoreAudioEngine {
                     this.applyPan('dub');
                     this.updateTrackGains();
                 } catch (graphErr) {
-                    console.warn('WebAudio graph failed; falling back to direct element playback:', graphErr);
-                    try { window.showToast?.('warning', 'Audio engine fell back to direct playback (no pan)', 'Audio'); } catch {}
-                    // Fall back: use HTML media elements directly (no pan), keep volumes
-                    mEl.volume = this.masterGainValue ?? 0.8;
-                    dEl.volume = this.dubGainValue ?? 0.8;
+                    console.error('WebAudio graph setup failed:', graphErr);
+                    try { window.showToast?.('error', 'Audio graph setup failed: ' + graphErr.message, 'Audio'); } catch {}
+                    
+                    // Emergency fallback: try to connect sources directly to destination
+                    try {
+                        if (this.masterElementSource) {
+                            this.masterElementSource.connect(outNode);
+                            console.log('Emergency: master connected directly to output');
+                        }
+                        if (this.dubElementSource) {
+                            this.dubElementSource.connect(outNode);
+                            console.log('Emergency: dub connected directly to output');
+                        }
+                    } catch (emergencyErr) {
+                        console.error('Emergency connection also failed:', emergencyErr);
+                    }
                 }
 
                 const startElements = () => {
@@ -751,18 +832,20 @@ class CoreAudioEngine {
     }
 
     /**
-     * Adjust volume of master or dub (0.0 - 1.0)
+     * Adjust volume of master or dub
+     * Master: 0.0 - 1.0, Dub: 0.0 - 2.0 (allows boost for quieter dub tracks)
      */
     setVolume(track, value) {
-        const v = Math.max(0, Math.min(1, Number(value) || 0));
         if (track === 'master') {
+            const v = Math.max(0, Math.min(1, Number(value) || 0));
             this.masterGainValue = v;
             if (this.masterGain) this.updateTrackGains();
             if (this.masterElement && !this.masterElementSource) this.masterElement.volume = v;
         } else if (track === 'dub') {
+            const v = Math.max(0, Math.min(2, Number(value) || 0)); // Allow up to 2x boost for dub
             this.dubGainValue = v;
             if (this.dubGain) this.updateTrackGains();
-            if (this.dubElement && !this.dubElementSource) this.dubElement.volume = v;
+            if (this.dubElement && !this.dubElementSource) this.dubElement.volume = Math.min(1, v);
         }
     }
 
@@ -819,20 +902,20 @@ class CoreAudioEngine {
         const masterScale = 1 - Math.max(0, b);
         const dubScale = 1 - Math.max(0, -b);
         const masterBase = this.masterGainValue ?? 0.8;
-        const dubBase = this.dubGainValue ?? 0.8;
+        const dubBase = this.dubGainValue ?? 1.2; // Default dub higher to match typical quieter dub tracks
         const mMute = this.muteMaster ? 0 : 1;
         const dMute = this.muteDub ? 0 : 1;
         const out = this.masterOutputValue ?? 1.0;
         const mVal = Math.max(0, Math.min(1, masterBase * masterScale * mMute * out));
-        const dVal = Math.max(0, Math.min(1, dubBase * dubScale * dMute * out));
+        const dVal = Math.max(0, Math.min(2, dubBase * dubScale * dMute * out)); // Allow dub up to 2x
         
         console.log('Updating track gains:', { masterBase, dubBase, mVal, dVal, balance: b, output: out });
         
         try { if (this.masterGain) this.masterGain.gain.value = mVal; } catch {}
         try { if (this.dubGain) this.dubGain.gain.value = dVal; } catch {}
-        // If we are not using MediaElementSource, also reflect on element volumes
+        // If we are not using MediaElementSource, also reflect on element volumes (capped at 1.0 for elements)
         if (this.masterElement && !this.masterElementSource) this.masterElement.volume = mVal;
-        if (this.dubElement && !this.dubElementSource) this.dubElement.volume = dVal;
+        if (this.dubElement && !this.dubElementSource) this.dubElement.volume = Math.min(1, dVal);
     }
     
     /**

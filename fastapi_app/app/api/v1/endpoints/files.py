@@ -38,9 +38,10 @@ async def list_files(
     * **path**: Directory path to list (default: mount path)
     
     ## Supported File Types
-    
+
     * **Audio**: .wav, .mp3, .flac, .m4a, .aiff, .ogg
-    * **Video**: .mov, .mp4, .avi, .mkv, .wmv
+    * **Video**: .mov, .mp4, .avi, .mkv, .wmv, .mxf
+    * **Atmos**: .ec3, .eac3, .adm, .iab
     
     ## Example Response
     
@@ -339,7 +340,8 @@ async def probe_file(path: str = Query(..., description="Absolute path under mou
 @router.get("/proxy-audio")
 async def proxy_audio(
     path: str = Query(..., description="Absolute path under mount to transcode/stream as browser-friendly audio"),
-    format: str = Query("wav", description="Output format: wav|mp4|webm|opus|aac")
+    format: str = Query("wav", description="Output format: wav|mp4|webm|opus|aac"),
+    max_duration: int = Query(600, description="Max duration in seconds for preview (default 600 = 10 min)")
 ):
     """Transcode source file's audio track to a browser-friendly audio stream.
 
@@ -347,6 +349,8 @@ async def proxy_audio(
     - format=mp4 (AAC in fragmented MP4)
     - format=aac (raw ADTS AAC)
     - format=webm or opus (Opus in WebM)
+    
+    Use max_duration to limit output for preview playback (avoids timeouts on very long files).
     """
     if not _is_safe_path(path):
         raise HTTPException(status_code=400, detail="Invalid or unsafe path")
@@ -355,10 +359,37 @@ async def proxy_audio(
     fmt = format.lower()
     if fmt not in {"wav", "mp4", "webm", "opus", "aac"}:
         raise HTTPException(status_code=400, detail="Unsupported target format")
+    # Ensure max_duration is positive
+    if max_duration <= 0:
+        max_duration = 600
+
+    # Check if file is Atmos - if yes, extract to temp WAV first
+    temp_wav_path = None
+    source_path = path
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+        import tempfile
+
+        if is_atmos_file(path):
+            logger.info(f"Detected Atmos file for proxy streaming: {os.path.basename(path)}")
+            # Create temp WAV for streaming
+            temp_wav_path = tempfile.mktemp(suffix=".wav", prefix="proxy_atmos_")
+            extract_atmos_bed_stereo(path, temp_wav_path, sample_rate=48000)
+            if os.path.exists(temp_wav_path):
+                source_path = temp_wav_path
+                logger.info(f"Atmos proxy WAV created for streaming: {temp_wav_path}")
+            else:
+                logger.warning(f"Atmos extraction failed, falling back to direct ffmpeg")
+    except Exception as e:
+        logger.warning(f"Atmos detection/extraction failed: {e}, falling back to direct ffmpeg")
+
     try:
         import subprocess, shutil
         ffmpeg_bin = shutil.which("ffmpeg") or "/home/linuxbrew/.linuxbrew/bin/ffmpeg"
-        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", path, "-vn", "-ac", "2", "-ar", "48000"]
+        logger.info(f"Proxy audio: extracting max {max_duration}s from {os.path.basename(path)}")
+        # Peak normalize to 0 dB - maximizes volume without clipping
+        # Use -t to limit duration for preview (avoids timeouts on very long files)
+        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000", "-af", "loudnorm=I=-14:TP=0:LRA=7:linear=true"]
         media_type = "audio/wav"
         if fmt == "wav":
             args += ["-f", "wav", "-acodec", "pcm_s16le", "pipe:1"]
@@ -391,6 +422,13 @@ async def proxy_audio(
                     proc.terminate()
                 except Exception:
                     pass
+                # Clean up temp Atmos WAV if created
+                if temp_wav_path and os.path.exists(temp_wav_path):
+                    try:
+                        os.remove(temp_wav_path)
+                        logger.debug(f"Cleaned up temp Atmos WAV: {temp_wav_path}")
+                    except Exception:
+                        pass
 
         return StreamingResponse(_iter(), media_type=media_type)
     except FileNotFoundError:
@@ -537,11 +575,14 @@ def _detect_file_type(file_ext: str) -> FileType:
     """Detect file type from extension."""
     audio_exts = [".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg"]
     video_exts = [".mov", ".mp4", ".avi", ".mkv", ".wmv"]
-    
+    atmos_exts = [".ec3", ".eac3", ".adm", ".iab", ".mxf"]  # Dolby Atmos and professional formats
+
     if file_ext in audio_exts:
         return FileType.AUDIO
     elif file_ext in video_exts:
         return FileType.VIDEO
+    elif file_ext in atmos_exts:
+        return FileType.ATMOS
     else:
         return FileType.UNKNOWN
 

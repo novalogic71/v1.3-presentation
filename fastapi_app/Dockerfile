@@ -45,6 +45,17 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
+# Install Dolby IAB tools if they are provided in the repo
+RUN if [ -f sync_analyzer/dolby/bin/iab_renderer ]; then \
+        cp sync_analyzer/dolby/bin/iab_renderer /usr/local/bin/ && \
+        chmod +x /usr/local/bin/iab_renderer; \
+    elif [ -f sync_analyzer/dolby/bin/cmdline_atmos_conversion_tool ]; then \
+        cp sync_analyzer/dolby/bin/cmdline_atmos_conversion_tool /usr/local/bin/ && \
+        chmod +x /usr/local/bin/cmdline_atmos_conversion_tool; \
+    else \
+        echo "IAB renderer not present - skipping"; \
+    fi
+
 # Create necessary directories
 RUN mkdir -p uploads ai_models logs reports
 

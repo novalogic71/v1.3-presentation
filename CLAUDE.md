@@ -52,3 +52,33 @@
 - BACKEND: Detects offset in seconds (universal unit)
 - FRONTEND: Converts seconds to frames using detected video frame rate
 - BRANCH: All fixes committed to v1.2 branch (commit a9026fa)
+
+# Critical Sync Accuracy Fixes (November 2025)
+
+## Sample-Accurate Sync Detection Achieved
+- ACCURACY: Single file analysis now matches batch exactly (0.045ms precision @ 22050 Hz)
+- FIXED: AI methods excluded from consensus (500ms hop_size makes them unsuitable for frame sync)
+- FIXED: Correlation duration mismatch (60s → 30s to match batch)
+- FIXED: Peak selection logic added (prefer smallest lag when peaks are equal)
+- FIXED: Removed downsampling factor (4x → 1x for full sample-rate precision)
+- FIXED: Consensus priority (CORRELATION method takes absolute priority)
+
+## Technical Details
+- **AI Methods**: Now informational only (embedding similarity, confidence metrics)
+- **CORRELATION Method**: Determines final offset (sample-accurate)
+- **Batch Parity**: Single file now uses identical algorithm as batch analysis
+- **Precision**: Sub-millisecond accuracy (44 samples @ 22050 Hz = 1 frame @ 24fps)
+
+## Files Modified
+- sync_analyzer/core/audio_sync_detector.py (lines 477-543, 516-525)
+- sync_analyzer/ai/embedding_sync_detector.py (lines 787-791)
+- fastapi_app/app/services/sync_analyzer_service.py (lines 812-873)
+
+## Validation
+- Expected: -15.024 seconds (exact)
+- Single File (AI OFF): -15.024 seconds ✓
+- Single File (AI ON): -15.024 seconds ✓
+- Batch Analysis: -15.024 seconds ✓
+
+## Documentation
+See: docs/SYNC_ACCURACY_FIXES_NOV_2025.md for complete technical details

@@ -308,6 +308,7 @@ class BatchAnalysisRequest(BaseModel):
 class SyncOffset(BaseModel):
     """Sync offset information."""
     offset_seconds: float = Field(..., description="Offset in seconds")
+    offset_milliseconds: Optional[float] = Field(None, description="Offset in milliseconds (pre-calculated for precision)")
     offset_samples: int = Field(..., description="Offset in samples")
     offset_frames: Dict[str, float] = Field(
         default_factory=dict,

@@ -31,6 +31,8 @@ class Settings(BaseSettings):
             "http://localhost:3002",
             "http://127.0.0.1:3002",
             "http://localhost:8000",
+            "http://10.124.201.10:3002",
+            "http://10.124.201.10:8000",
         ],
         env="ALLOWED_ORIGINS"
     )

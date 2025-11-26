@@ -16,6 +16,7 @@ import librosa
 import scipy.signal
 import torch
 import torch.nn.functional as F
+import subprocess
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -133,7 +134,7 @@ class ProfessionalSyncDetector:
         """
         try:
             # Check if this is an Atmos file that needs special handling
-            temp_wav_path = None
+            temp_wav_paths: List[str] = []
             actual_path = audio_path
             
             try:
@@ -146,11 +147,45 @@ class ProfessionalSyncDetector:
                     temp_wav_path = tempfile.mktemp(suffix=".wav", prefix="atmos_extracted_")
                     extract_atmos_bed_mono(str(audio_path), temp_wav_path, self.sample_rate)
                     actual_path = Path(temp_wav_path)
+                    temp_wav_paths.append(temp_wav_path)
                     logger.info(f"[LOAD_AUDIO] Atmos bed extracted to: {temp_wav_path}")
             except ImportError as e:
                 logger.debug(f"[LOAD_AUDIO] Atmos module not available: {e}")
             except Exception as e:
-                logger.warning(f"[LOAD_AUDIO] Failed to extract Atmos bed, using direct load: {e}")
+                import logging as _logging
+                _logging.getLogger(__name__).warning(f"[LOAD_AUDIO] Failed to extract Atmos bed, using direct load: {e}")
+
+            # If still pointing at an A/V container (MOV/MP4/MXF/MKV), demux to mono WAV to avoid audioread timing drift
+            if actual_path == audio_path and actual_path.suffix.lower() in {".mov", ".mp4", ".mxf", ".mkv", ".avi"}:
+                try:
+                    import tempfile
+                    temp_demux = tempfile.mktemp(suffix=".wav", prefix="demux_")
+                    cmd = [
+                        "ffmpeg",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        str(actual_path),
+                        "-vn",
+                        "-ac",
+                        "1",
+                        "-ar",
+                        str(self.sample_rate),
+                        "-c:a",
+                        "pcm_s16le",
+                        temp_demux,
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    if proc.returncode == 0 and Path(temp_demux).exists():
+                        actual_path = Path(temp_demux)
+                        temp_wav_paths.append(temp_demux)
+                        logger.info(f"[LOAD_AUDIO] Demuxed container to WAV: {temp_demux}")
+                    else:
+                        logger.warning(f"[LOAD_AUDIO] ffmpeg demux failed ({proc.returncode}): {proc.stderr.strip()}")
+                except Exception as e:
+                    logger.warning(f"[LOAD_AUDIO] Demux to WAV failed, using direct load: {e}")
             
             # Load with librosa for consistent preprocessing
             audio, original_sr = librosa.load(
@@ -161,13 +196,14 @@ class ProfessionalSyncDetector:
             )
             
             # Clean up temporary file if created
-            if temp_wav_path:
-                try:
-                    import os
-                    os.remove(temp_wav_path)
-                    logger.debug(f"[LOAD_AUDIO] Cleaned up temp file: {temp_wav_path}")
-                except:
-                    pass
+            if temp_wav_paths:
+                import os
+                for _tmp in temp_wav_paths:
+                    try:
+                        os.remove(_tmp)
+                        logger.debug(f"[LOAD_AUDIO] Cleaned up temp file: {_tmp}")
+                    except Exception:
+                        pass
             
             # Normalize audio to prevent clipping
             if np.max(np.abs(audio)) > 0:
@@ -476,57 +512,80 @@ class ProfessionalSyncDetector:
 
     def raw_audio_cross_correlation(self, master_audio: np.ndarray, dub_audio: np.ndarray) -> SyncResult:
         """
-        Fallback method using direct raw audio cross-correlation for difficult cases.
+        Sample-accurate raw audio cross-correlation matching batch analysis precision.
+        Uses FULL sample rate (no downsampling) for exact sample-level precision.
         """
-        # Downsample for efficiency while preserving sync accuracy
-        downsample_factor = 4
-        master_down = master_audio[::downsample_factor]
-        dub_down = dub_audio[::downsample_factor]
-
-        # Use shorter segments if files are very long (first 2 minutes)
-        max_samples = int(2 * 60 * self.sample_rate // downsample_factor)  # 2 minutes downsampled
-        master_down = master_down[:max_samples]
-        dub_down = dub_down[:max_samples]
+        # CRITICAL: Use 30 seconds to EXACTLY match batch analysis
+        # Batch uses: duration: float = 30.0 (line 608 in optimized_large_file_detector.py)
+        max_samples = int(30.0 * self.sample_rate)  # 30 seconds at full sample rate
+        master_segment = master_audio[:max_samples]
+        dub_segment = dub_audio[:max_samples]
 
         # Ensure same length
-        min_len = min(len(master_down), len(dub_down))
-        master_down = master_down[:min_len]
-        dub_down = dub_down[:min_len]
+        min_len = min(len(master_segment), len(dub_segment))
+        master_segment = master_segment[:min_len]
+        dub_segment = dub_segment[:min_len]
 
         if min_len == 0:
             return self._create_low_confidence_result("Raw Audio - Empty audio")
 
-        # Cross-correlation
-        correlation = scipy.signal.correlate(master_down, dub_down, mode='full')
-        peak_idx = np.argmax(np.abs(correlation))
-        peak_value = correlation[peak_idx]
+        # Normalize to reduce bias from loud passages
+        master_segment = master_segment - np.mean(master_segment)
+        dub_segment = dub_segment - np.mean(dub_segment)
+        master_std = np.std(master_segment) + 1e-8
+        dub_std = np.std(dub_segment) + 1e-8
+        master_segment = master_segment / master_std
+        dub_segment = dub_segment / dub_std
 
-        # Convert to sample offset (accounting for downsampling)
-        offset_frames = peak_idx - (len(dub_down) - 1)
-        offset_samples = offset_frames * downsample_factor
-        offset_seconds = offset_samples / self.sample_rate
+        # Cross-correlation at FULL sample rate using FFT for speed
+        correlation = scipy.signal.correlate(master_segment, dub_segment, mode='full', method='fft')
 
-        # Calculate confidence
+        # Use correlation_lags for precise lag calculation
+        from scipy.signal import correlation_lags
+        lags = correlation_lags(len(master_segment), len(dub_segment), mode='full')
+
+        # Find peak
         correlation_abs = np.abs(correlation)
+        peak_idx = np.argmax(correlation_abs)
+        peak_value = float(correlation_abs[peak_idx])
+
+        # CRITICAL: If multiple peaks share the same max value (within numeric tolerance),
+        # prefer the lag with the smallest absolute shift to avoid runaway offsets.
+        # This matches batch analysis logic exactly.
+        near_max_mask = np.isclose(correlation_abs, peak_value, rtol=1e-6, atol=1e-6)
+        if np.any(near_max_mask):
+            candidate_lags = lags[near_max_mask]
+            candidate_idxs = np.nonzero(near_max_mask)[0]
+            best_local_idx = int(candidate_idxs[np.argmin(np.abs(candidate_lags))])
+            peak_idx = best_local_idx
+            peak_value = float(correlation_abs[peak_idx])
+
+        # Get offset in samples (NO downsampling - exact sample precision)
+        offset_samples = int(lags[peak_idx])
+        offset_seconds = offset_samples / float(self.sample_rate)
+
+        # Calculate confidence from peak prominence
         peak_height = correlation_abs[peak_idx]
         mean_correlation = np.mean(correlation_abs)
         std_correlation = np.std(correlation_abs)
 
         snr = (peak_height - mean_correlation) / (std_correlation + 1e-8)
-        confidence = min(max(snr / 6, 0.0), 1.0)
+        confidence = min(max(snr / 8, 0.0), 1.0)
 
         return SyncResult(
-            offset_samples=int(offset_samples),
+            offset_samples=offset_samples,
             offset_seconds=offset_seconds,
             confidence=confidence,
-            method_used="Raw Audio Cross-Correlation",
+            method_used="Raw Audio Cross-Correlation (Sample-Accurate)",
             correlation_peak=float(peak_value),
             quality_score=confidence,
-            frame_rate=self.sample_rate / downsample_factor,
+            frame_rate=self.sample_rate,  # Full sample rate
             analysis_metadata={
-                "downsample_factor": downsample_factor,
-                "segment_length_seconds": min_len * downsample_factor / self.sample_rate,
-                "correlation_length": len(correlation)
+                "downsample_factor": 1,  # No downsampling
+                "segment_length_seconds": min_len / self.sample_rate,
+                "correlation_length": len(correlation),
+                "sample_rate": self.sample_rate,
+                "precision": "sample-accurate"
             }
         )
 
@@ -562,7 +621,152 @@ class ProfessionalSyncDetector:
             frame_rate=self.sample_rate / self.hop_length,
             analysis_metadata={"status": "analysis_failed"}
         )
-    
+
+    def refine_offset_sample_accurate(self,
+                                      master_audio: np.ndarray,
+                                      dub_audio: np.ndarray,
+                                      coarse_offset_samples: int,
+                                      refinement_window_seconds: float = 2.0,
+                                      search_range_samples: int = 2048) -> Tuple[int, float, Dict[str, float]]:
+        """
+        Refine offset to sample-accurate precision using raw audio cross-correlation
+        and phase correlation verification.
+
+        Args:
+            master_audio: Master audio samples
+            dub_audio: Dub audio samples
+            coarse_offset_samples: Initial offset estimate from MFCC/onset methods
+            refinement_window_seconds: Size of audio window to use for refinement
+            search_range_samples: How many samples +/- to search around coarse offset
+
+        Returns:
+            Tuple of (refined_offset_samples, phase_coherence, metadata)
+        """
+        logger.info(f"Refining offset from coarse estimate: {coarse_offset_samples} samples")
+
+        # Calculate window size in samples
+        window_samples = int(refinement_window_seconds * self.sample_rate)
+
+        # Extract windows from both audio files centered around the coarse offset
+        # If offset is negative, dub is ahead of master
+        if coarse_offset_samples < 0:
+            # Dub is ahead, so dub starts at sample abs(offset)
+            dub_start = abs(coarse_offset_samples)
+            master_start = 0
+        else:
+            # Master is ahead
+            master_start = coarse_offset_samples
+            dub_start = 0
+
+        # Add search range to window for correlation
+        extended_window = window_samples + 2 * search_range_samples
+
+        # Extract windows with bounds checking
+        master_end = min(master_start + extended_window, len(master_audio))
+        dub_end = min(dub_start + extended_window, len(dub_audio))
+
+        master_window = master_audio[master_start:master_end]
+        dub_window = dub_audio[dub_start:dub_end]
+
+        if len(master_window) < window_samples or len(dub_window) < window_samples:
+            logger.warning("Insufficient audio for refinement, returning coarse offset")
+            return coarse_offset_samples, 0.0, {"status": "insufficient_audio"}
+
+        # Normalize windows
+        master_window = master_window / (np.max(np.abs(master_window)) + 1e-8)
+        dub_window = dub_window / (np.max(np.abs(dub_window)) + 1e-8)
+
+        # Perform sample-accurate cross-correlation on a focused search window
+        # Use only the center portion for correlation to reduce computation
+        search_master = master_window[:window_samples + search_range_samples]
+        search_dub = dub_window[:window_samples + search_range_samples]
+
+        # Cross-correlation
+        correlation = scipy.signal.correlate(search_master, search_dub, mode='valid')
+
+        if len(correlation) == 0:
+            logger.warning("Empty correlation result, returning coarse offset")
+            return coarse_offset_samples, 0.0, {"status": "empty_correlation"}
+
+        # Find peak with sub-sample precision using parabolic interpolation
+        peak_idx = np.argmax(np.abs(correlation))
+
+        # Parabolic interpolation for sub-sample accuracy
+        if 0 < peak_idx < len(correlation) - 1:
+            alpha = correlation[peak_idx - 1]
+            beta = correlation[peak_idx]
+            gamma = correlation[peak_idx + 1]
+
+            # Parabolic peak interpolation
+            denom = alpha - 2*beta + gamma
+            if abs(denom) > 1e-10:
+                p = 0.5 * (alpha - gamma) / denom
+                sub_sample_offset = peak_idx + p
+            else:
+                sub_sample_offset = peak_idx
+        else:
+            sub_sample_offset = peak_idx
+
+        # Calculate refinement relative to search window
+        # The correlation gives us the offset within our search window
+        samples_from_coarse = int(round(sub_sample_offset - search_range_samples))
+        refined_offset_samples = coarse_offset_samples + samples_from_coarse
+
+        logger.info(f"Refinement adjustment: {samples_from_coarse} samples")
+        logger.info(f"Refined offset: {refined_offset_samples} samples")
+
+        # Calculate phase coherence for verification
+        # Align the audio at the refined offset and measure phase correlation
+        if refined_offset_samples < 0:
+            aligned_dub_start = abs(refined_offset_samples)
+            aligned_master_start = 0
+        else:
+            aligned_master_start = refined_offset_samples
+            aligned_dub_start = 0
+
+        # Extract aligned windows for phase analysis
+        phase_window_samples = min(window_samples,
+                                   len(master_audio) - aligned_master_start,
+                                   len(dub_audio) - aligned_dub_start)
+
+        if phase_window_samples > 0:
+            aligned_master = master_audio[aligned_master_start:aligned_master_start + phase_window_samples]
+            aligned_dub = dub_audio[aligned_dub_start:aligned_dub_start + phase_window_samples]
+
+            # Compute phase correlation using FFT
+            # Higher phase correlation = better alignment
+            master_fft = np.fft.rfft(aligned_master)
+            dub_fft = np.fft.rfft(aligned_dub)
+
+            # Cross-power spectrum
+            cross_power = master_fft * np.conj(dub_fft)
+            cross_power_norm = cross_power / (np.abs(cross_power) + 1e-8)
+
+            # Inverse FFT gives phase correlation
+            phase_corr = np.fft.irfft(cross_power_norm)
+            phase_coherence = float(np.max(np.abs(phase_corr)) / len(phase_corr))
+
+            # Also calculate simple correlation coefficient
+            correlation_coef = np.corrcoef(aligned_master, aligned_dub)[0, 1]
+
+            # RMS difference (lower is better)
+            rms_diff = np.sqrt(np.mean((aligned_master - aligned_dub) ** 2))
+
+            metadata = {
+                "phase_coherence": phase_coherence,
+                "correlation_coefficient": float(correlation_coef),
+                "rms_difference": float(rms_diff),
+                "refinement_samples": samples_from_coarse,
+                "sub_sample_precision": float(sub_sample_offset - peak_idx),
+                "peak_correlation": float(correlation[peak_idx]),
+                "status": "success"
+            }
+        else:
+            phase_coherence = 0.0
+            metadata = {"status": "insufficient_aligned_audio"}
+
+        return refined_offset_samples, phase_coherence, metadata
+
     def analyze_sync(self, 
                     master_path: Path, 
                     dub_path: Path,
@@ -580,38 +784,51 @@ class ProfessionalSyncDetector:
             Dictionary mapping method names to SyncResult objects
         """
         if methods is None:
-            methods = ['mfcc', 'onset', 'spectral']
-        
+            # IMPORTANT: Include 'correlation' for sample-accurate precision
+            # MFCC/Onset/Spectral use hop_length=512 (~23ms resolution)
+            # Raw audio correlation gives exact sample-level precision
+            methods = ['mfcc', 'onset', 'spectral', 'correlation']
+
         logger.info(f"Starting sync analysis: {master_path.name} vs {dub_path.name}")
-        
+
         # Load audio files
         master_audio, _ = self.load_and_preprocess_audio(master_path)
         dub_audio, _ = self.load_and_preprocess_audio(dub_path)
-        
+
         # Extract features
         logger.info("Extracting audio features...")
         master_features = self.extract_audio_features(master_audio)
         dub_features = self.extract_audio_features(dub_audio)
-        
+
         # Perform analysis with selected methods
         results = {}
-        
+
         if 'mfcc' in methods:
             logger.info("Performing MFCC cross-correlation analysis...")
             results['mfcc'] = self.mfcc_cross_correlation_sync(master_features, dub_features)
-        
+
         if 'onset' in methods:
             logger.info("Performing onset-based sync analysis...")
             results['onset'] = self.onset_based_sync(master_features, dub_features)
-        
+
         if 'spectral' in methods:
             logger.info("Performing spectral feature analysis...")
             results['spectral'] = self.spectral_sync_detection(master_features, dub_features)
 
-        # Add robust raw audio fallback if all methods have low confidence
-        if all(result.confidence < 0.2 for result in results.values()):
+        # ALWAYS include raw audio cross-correlation for sample-accurate precision
+        # This matches the batch analysis precision and avoids hop_length quantization
+        if 'correlation' in methods or 'raw_audio' in methods:
+            logger.info("Performing sample-accurate raw audio cross-correlation...")
+            result = self.raw_audio_cross_correlation(master_audio, dub_audio)
+            # Store under both 'correlation' and 'raw_audio' for compatibility
+            results['correlation'] = result
+            results['raw_audio'] = result
+        elif all(result.confidence < 0.2 for result in results.values()):
+            # Fallback if not explicitly requested but all other methods failed
             logger.info("All methods low confidence, adding raw audio cross-correlation...")
-            results['raw_audio'] = self.raw_audio_cross_correlation(master_audio, dub_audio)
+            result = self.raw_audio_cross_correlation(master_audio, dub_audio)
+            results['raw_audio'] = result
+            results['correlation'] = result
 
         logger.info(f"Sync analysis complete. Results: {list(results.keys())}")
         return results
@@ -636,21 +853,25 @@ class ProfessionalSyncDetector:
         }
         
         if high_confidence_results:
-            # Use highest confidence result
-            best_method = max(high_confidence_results.keys(),
-                            key=lambda x: high_confidence_results[x].confidence)
-            best_result = high_confidence_results[best_method]
-            
-            # Calculate consensus offset (weighted average)
-            offsets = [r.offset_seconds for r in high_confidence_results.values()]
-            confidences = [r.confidence for r in high_confidence_results.values()]
-            
-            if len(offsets) > 1:
-                consensus_offset = np.average(offsets, weights=confidences)
-                consensus_samples = int(consensus_offset * self.sample_rate)
+            # PREFER correlation/raw_audio method if available (sample-accurate precision)
+            # AI and MFCC methods have coarser precision and can introduce quantization errors
+            if 'correlation' in high_confidence_results:
+                best_method = 'correlation'
+                best_result = high_confidence_results[best_method]
+                logger.info("Using correlation method (sample-accurate precision)")
+            elif 'raw_audio' in high_confidence_results:
+                best_method = 'raw_audio'
+                best_result = high_confidence_results[best_method]
+                logger.info("Using raw_audio method (sample-accurate precision)")
             else:
-                consensus_offset = best_result.offset_seconds
-                consensus_samples = best_result.offset_samples
+                # Use highest confidence result from other methods
+                best_method = max(high_confidence_results.keys(),
+                                key=lambda x: high_confidence_results[x].confidence)
+                best_result = high_confidence_results[best_method]
+
+            # Use the best result directly (no weighted average that could introduce errors)
+            consensus_offset = best_result.offset_seconds
+            consensus_samples = best_result.offset_samples
             
             return SyncResult(
                 offset_samples=consensus_samples,

@@ -1,0 +1,100 @@
+INFO:sync_analyzer.core.audio_sync_detector:Initialized ProfessionalSyncDetector with SR=22050, window=30.0s, MFCC=13
+INFO:sync_analyzer.core.audio_sync_detector:Starting sync analysis: DunkirkEC_InsideTheCockpit_ProRes.mov vs DunkirkEC_InsideTheCockpit_ProRes_15sec.mov
+INFO:sync_analyzer.dolby.atmos_metadata:Extracted Atmos metadata from DunkirkEC_InsideTheCockpit_ProRes.mov: 2.0 @ 48000Hz
+INFO:sync_analyzer.core.audio_channels:Atmos detection for DunkirkEC_InsideTheCockpit_ProRes.mov: is_adm_wav=False, is_iab=False, is_mxf=False, codec=pcm_s16be, result=False
+/mnt/data/amcmurray/Sync_dub/v1.3-presentation/sync_analyzer/core/audio_sync_detector.py:156: UserWarning: PySoundFile failed. Trying audioread instead.
+  audio, original_sr = librosa.load(
+INFO:sync_analyzer.core.audio_sync_detector:Loaded DunkirkEC_InsideTheCockpit_ProRes.mov: 100.43s, 22050->22050 Hz
+INFO:sync_analyzer.dolby.atmos_metadata:Extracted Atmos metadata from DunkirkEC_InsideTheCockpit_ProRes_15sec.mov: 2.0 @ 48000Hz
+INFO:sync_analyzer.core.audio_channels:Atmos detection for DunkirkEC_InsideTheCockpit_ProRes_15sec.mov: is_adm_wav=False, is_iab=False, is_mxf=False, codec=pcm_s16le, result=False
+/mnt/data/amcmurray/Sync_dub/v1.3-presentation/sync_analyzer/core/audio_sync_detector.py:156: UserWarning: PySoundFile failed. Trying audioread instead.
+  audio, original_sr = librosa.load(
+INFO:sync_analyzer.core.audio_sync_detector:Loaded DunkirkEC_InsideTheCockpit_ProRes_15sec.mov: 115.49s, 22050->22050 Hz
+INFO:sync_analyzer.core.audio_sync_detector:Extracting audio features...
+INFO:sync_analyzer.core.audio_sync_detector:Performing MFCC cross-correlation analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing onset-based sync analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing spectral feature analysis...
+INFO:sync_analyzer.core.audio_sync_detector:Performing sample-accurate raw audio cross-correlation...
+INFO:sync_analyzer.core.audio_sync_detector:Sync analysis complete. Results: ['mfcc', 'onset', 'spectral', 'raw_audio']
+INFO:sync_analyzer.core.audio_sync_detector:Using raw_audio method (sample-accurate precision)
+================================================================================
+OFFSET PRECISION TEST
+================================================================================
+Master: /mnt/data/amcmurray/_insync_master_files/DunkirkEC_InsideTheCockpit_ProRes.mov
+Dub:    /mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_InsideTheCockpit_ProRes_15sec.mov
+
+INDIVIDUAL METHOD RESULTS:
+--------------------------------------------------------------------------------
+
+MFCC:
+  offset_samples:      -331264
+  offset_seconds:      -15.0233106576
+  offset_milliseconds: -15023.3106575964
+  confidence:          1.0000
+  Frame offsets:
+    @ 23.976 fps: -360.198896 frames (rounded: 360f)
+    @ 24.000 fps: -360.559456 frames (rounded: 361f)
+    @ 29.970 fps: -450.248620 frames (rounded: 450f)
+    @ 30.000 fps: -450.699320 frames (rounded: 451f)
+
+ONSET:
+  offset_samples:      -331264
+  offset_seconds:      -15.0233106576
+  offset_milliseconds: -15023.3106575964
+  confidence:          1.0000
+  Frame offsets:
+    @ 23.976 fps: -360.198896 frames (rounded: 360f)
+    @ 24.000 fps: -360.559456 frames (rounded: 361f)
+    @ 29.970 fps: -450.248620 frames (rounded: 450f)
+    @ 30.000 fps: -450.699320 frames (rounded: 451f)
+
+SPECTRAL:
+  offset_samples:      -331264
+  offset_seconds:      -15.0233106576
+  offset_milliseconds: -15023.3106575964
+  confidence:          1.0000
+  Frame offsets:
+    @ 23.976 fps: -360.198896 frames (rounded: 360f)
+    @ 24.000 fps: -360.559456 frames (rounded: 361f)
+    @ 29.970 fps: -450.248620 frames (rounded: 450f)
+    @ 30.000 fps: -450.699320 frames (rounded: 451f)
+
+RAW_AUDIO:
+  offset_samples:      -331288
+  offset_seconds:      -15.0243990930
+  offset_milliseconds: -15024.3990929705
+  confidence:          1.0000
+  Frame offsets:
+    @ 23.976 fps: -360.224993 frames (rounded: 360f)
+    @ 24.000 fps: -360.585578 frames (rounded: 361f)
+    @ 29.970 fps: -450.281241 frames (rounded: 450f)
+    @ 30.000 fps: -450.731973 frames (rounded: 451f)
+
+================================================================================
+CONSENSUS RESULT:
+--------------------------------------------------------------------------------
+  method_used:         Consensus (raw_audio primary)
+  offset_samples:      -331288
+  offset_seconds:      -15.0243990930
+  offset_milliseconds: -15024.3990929705
+  confidence:          1.0000
+
+================================================================================
+VALUES SENT TO FRONTEND:
+--------------------------------------------------------------------------------
+  offset_seconds:      -15.024399092970521
+  offset_milliseconds: -15024.399092970521
+
+================================================================================
+FRONTEND CALCULATIONS (OLD WAY - recalculating from seconds):
+--------------------------------------------------------------------------------
+  offsetMs = offset_seconds * 1000 = -15024.399092970521
+  Displayed: 15024.4ms
+
+================================================================================
+FRONTEND CALCULATIONS (NEW WAY - using pre-calculated):
+--------------------------------------------------------------------------------
+  offsetMs = offset_milliseconds = -15024.399092970521
+  Displayed: 15024.4ms
+
+================================================================================

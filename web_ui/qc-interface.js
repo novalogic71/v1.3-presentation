@@ -408,7 +408,8 @@ class QCInterface {
             }
             
             // Create loading promises with timeout (longer for video files)
-            const timeoutMs = usingProxy ? 60000 : 30000; // 60s for video, 30s for audio
+            // Note: proxy-audio now limits to 10 min max, so 120s should be plenty
+            const timeoutMs = usingProxy ? 120000 : 60000; // 120s for video, 60s for audio
             const loadWithTimeout = (url, type) => {
                 const loadPromise = this.audioEngine.loadAudioUrl(url, type);
                 const timeoutPromise = new Promise((_, reject) => 

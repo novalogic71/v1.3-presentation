@@ -4,12 +4,19 @@ Backend server for Professional Audio Sync Analyzer UI
 Provides file system access and sync analysis API endpoints
 """
 
+import sys
 import os
+from pathlib import Path
+
+# Ensure we import from the correct project directory
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import json
 import time
 import asyncio
 import subprocess
-from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 import logging
@@ -41,6 +48,12 @@ ALLOWED_EXTENSIONS = {
     ".mp4",
     ".avi",
     ".mkv",
+    ".wmv",
+    ".mxf",
+    ".ec3",
+    ".eac3",
+    ".adm",
+    ".iab",
 }
 
 
@@ -57,9 +70,9 @@ def is_safe_path(path):
 def get_file_type(filepath):
     """Determine file type based on extension"""
     ext = Path(filepath).suffix.lower()
-    if ext in {".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg"}:
+    if ext in {".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".ec3", ".eac3", ".adm", ".iab"}:
         return "audio"
-    elif ext in {".mov", ".mp4", ".avi", ".mkv", ".wmv"}:
+    elif ext in {".mov", ".mp4", ".avi", ".mkv", ".wmv", ".mxf"}:
         return "video"
     else:
         return "file"
@@ -83,7 +96,29 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
     out_path = os.path.join(PROXY_CACHE_DIR, base)
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
+
+    # Check if file is Atmos format - if yes, use specialized extraction
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+
+        if is_atmos_file(src_path):
+            logger.info(f"Detected Atmos file, using specialized extraction: {Path(src_path).name}")
+            extract_atmos_bed_stereo(src_path, out_path, sample_rate=48000)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                logger.info(f"Atmos proxy created successfully: {out_path}")
+                return out_path
+            else:
+                logger.error(f"Atmos extraction succeeded but output file missing/empty: {out_path}")
+                raise RuntimeError("Atmos extraction failed to create output")
+    except ImportError as e:
+        logger.warning(f"Atmos detection unavailable: {e}, falling back to ffmpeg")
+    except Exception as e:
+        logger.warning(f"Atmos extraction failed: {e}, falling back to ffmpeg")
+
     # Transcode to WAV 48k stereo for Chrome/WebAudio compatibility
+    # Peak normalize to 0 dB, then boost dub by 5dB to match master levels
+    # Note: role is 'master' or 'dub' - only boost dub
+    volume_boost = ",volume=5dB" if role == "dub" else ""
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -97,6 +132,8 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
         "2",
         "-ar",
         "48000",
+        "-af",
+        f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}",
         "-acodec",
         "pcm_s16le",
         out_path,
@@ -193,9 +230,14 @@ def api_v1_files_proxy_audio():
 
     Defaults to WAV (PCM) for maximum compatibility. Supports format query:
     - format=wav | mp4 | aac | webm | opus
+    - max_duration=600 (optional, limit output to N seconds for preview, default 600 = 10 min)
     """
     path = request.args.get("path", type=str)
     fmt = (request.args.get("format", "wav") or "wav").lower()
+    # Max duration for preview - default 10 minutes to avoid huge file timeouts
+    max_duration = request.args.get("max_duration", type=int, default=600)
+    if max_duration is None or max_duration <= 0:
+        max_duration = 600  # Default 10 minutes
     if not path:
         return jsonify({"success": False, "error": "Missing path"}), 400
     if not is_safe_path(path):
@@ -205,21 +247,50 @@ def api_v1_files_proxy_audio():
     if fmt not in {"wav", "mp4", "webm", "opus", "aac"}:
         return jsonify({"success": False, "error": "Unsupported target format"}), 400
 
+    # Check if file is Atmos - if yes, extract to temp WAV first
+    temp_wav_path = None
+    source_path = path
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+        import tempfile as _tempfile
+
+        if is_atmos_file(path):
+            logger.info(f"[PROXY-AUDIO] Detected Atmos file for streaming: {os.path.basename(path)}")
+            # Create temp WAV for streaming
+            temp_wav_path = _tempfile.mktemp(suffix=".wav", prefix="proxy_atmos_stream_")
+            extract_atmos_bed_stereo(path, temp_wav_path, sample_rate=48000)
+            if os.path.exists(temp_wav_path):
+                source_path = temp_wav_path
+                logger.info(f"[PROXY-AUDIO] Atmos proxy WAV created for streaming: {temp_wav_path}")
+            else:
+                logger.warning(f"[PROXY-AUDIO] Atmos extraction failed, falling back to direct ffmpeg")
+    except Exception as e:
+        logger.warning(f"[PROXY-AUDIO] Atmos detection/extraction failed: {e}, falling back to direct ffmpeg")
+
     try:
         import subprocess
 
+        # Log the duration limit for debugging
+        logger.info(f"[PROXY-AUDIO] Extracting audio with max_duration={max_duration}s from {os.path.basename(path)}")
+
+        # Peak normalize to 0 dB - maximizes volume without clipping
+        # Use -t to limit duration for preview (avoids timeouts on very long files)
         args = [
             "ffmpeg",
             "-hide_banner",
             "-loglevel",
             "error",
             "-i",
-            path,
+            source_path,  # Use extracted WAV if Atmos, otherwise original path
+            "-t",
+            str(max_duration),  # Limit to max_duration seconds
             "-vn",
             "-ac",
             "2",
             "-ar",
             "48000",
+            "-af",
+            "loudnorm=I=-14:TP=0:LRA=7:linear=true",
         ]
         media_type = "audio/wav"
         if fmt == "wav":
@@ -263,6 +334,13 @@ def api_v1_files_proxy_audio():
                     proc.terminate()
                 except Exception:
                     pass
+                # Clean up temp Atmos WAV if created
+                if temp_wav_path and os.path.exists(temp_wav_path):
+                    try:
+                        os.remove(temp_wav_path)
+                        logger.info(f"[PROXY-AUDIO] Cleaned up temp Atmos WAV: {temp_wav_path}")
+                    except Exception as e:
+                        logger.warning(f"[PROXY-AUDIO] Failed to clean up temp WAV: {e}")
 
         return app.response_class(generate(), mimetype=media_type)
     except FileNotFoundError:
@@ -403,10 +481,17 @@ def analyze_sync():
         if ai_enabled:
             method_list.append("ai")
 
+        # Coerce numpy/float32 values to native Python types for JSON serialization
+        def _f(val):
+            try:
+                return float(val)
+            except Exception:
+                return None
+
         result_data = {
-            "offset_seconds": consensus.offset_seconds,
-            "confidence": consensus.confidence,
-            "quality_score": consensus.quality_score,
+            "offset_seconds": _f(consensus.offset_seconds),
+            "confidence": _f(consensus.confidence),
+            "quality_score": _f(getattr(consensus, "quality_score", None)),
             "method_used": consensus.method_used,
             "analysis_methods": method_list,
             "per_channel_results": {},

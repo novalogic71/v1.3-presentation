@@ -1,0 +1,13 @@
+IAB / Atmos Analysis Pipeline (current state)
+--------------------------------------------
+- Detect: is_atmos_file → flags ADM / IAB / MXF / EC3 / EAC3; IAB check includes .iab/.atmos names.
+- IAB path:
+  - Dolby Atmos Conversion Tool → ADM WAV (optional head trim via IAB_HEAD_DURATION_SECONDS)
+  - soundfile downmix of ADM WAV to analysis WAV (fallback: continue to standard pipeline)
+- Audio-only MXF:
+  - ffmpeg extract → 48k stereo PCM WAV → analyze
+- Other Atmos (MXF with video, EC3/EAC3/ADM):
+  - convert_atmos_to_mp4 (copy/AAC; fallback WAV if needed) → ffmpeg extract stereo/mono WAV → analyze
+- Global fallbacks:
+  - If MP4 conversion fails → direct ffmpeg downmix to WAV
+  - If IAB downmix ffmpeg fails → use raw Conversion Tool WAV

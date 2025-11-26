@@ -1,0 +1,1230 @@
+{
+  "analysis_date": "2025-11-21T18:33:52.169476",
+  "sync_status": "Major Sync Issues",
+  "confidence": 1.0,
+  "offset_seconds": -8.007981859410434,
+  "offset_milliseconds": -8007.981859410434,
+  "similarity_score": 0.7575699978345184,
+  "quality": "Good",
+  "chunks_analyzed": 9,
+  "chunks_reliable": 9,
+  "recommendation": "Major sync offset of -8.008s requires immediate correction",
+  "master_duration": 145.854059,
+  "dub_duration": 153.862041,
+  "duration_difference": 8.007981999999998,
+  "drift_analysis": {
+    "has_drift": false,
+    "drift_magnitude": 0.0,
+    "drift_magnitude_ms": 0.0,
+    "median_offset": -8.007981859410432,
+    "offset_range": {
+      "min": -8.007981859410432,
+      "max": -8.007981859410432
+    },
+    "timeline": [
+      {
+        "start_time": 0.0,
+        "end_time": 45.0,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 13.5,
+        "end_time": 58.5,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 27.0,
+        "end_time": 72.0,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 40.5,
+        "end_time": 85.5,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 54.0,
+        "end_time": 99.0,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 67.5,
+        "end_time": 112.5,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 81.0,
+        "end_time": 126.0,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 94.5,
+        "end_time": 139.5,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      },
+      {
+        "start_time": 108.0,
+        "end_time": 145.854059,
+        "offset_seconds": -8.007981859410432,
+        "confidence": 1.0,
+        "reliable": true,
+        "quality": "Excellent"
+      }
+    ],
+    "drift_regions": [],
+    "drift_summary": "Consistent sync across file (drift: 0.0ms)",
+    "baseline_offset": -8.007981859410432,
+    "localized_events": [],
+    "total_reliable_chunks": 9
+  },
+  "timeline": [
+    {
+      "start_time": 0.0,
+      "end_time": 45.0,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 13.5,
+      "end_time": 58.5,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 27.0,
+      "end_time": 72.0,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 40.5,
+      "end_time": 85.5,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 54.0,
+      "end_time": 99.0,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 67.5,
+      "end_time": 112.5,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 81.0,
+      "end_time": 126.0,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 94.5,
+      "end_time": 139.5,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    },
+    {
+      "start_time": 108.0,
+      "end_time": 145.854059,
+      "offset_seconds": -8.007981859410432,
+      "confidence": 1.0,
+      "reliable": true,
+      "quality": "Excellent"
+    }
+  ],
+  "localized_events": [],
+  "gpu_used": false,
+  "chunk_details": [
+    {
+      "chunk_index": 0,
+      "start_time": 0.0,
+      "end_time": 45.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.066757366",
+          "avg_rms": "0.016002607",
+          "spectral_rolloff": "2273.358",
+          "mfcc_variance": 918.7481079101562
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06380146",
+          "avg_rms": "0.001751476",
+          "spectral_rolloff": "5094.016",
+          "mfcc_variance": 1994.1666259765625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9441921644732212,
+        "rms": 0.0,
+        "overall": 0.7553537315785769,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 878424.0625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 1,
+      "start_time": 13.5,
+      "end_time": 58.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.065166034",
+          "avg_rms": "0.015898535",
+          "spectral_rolloff": "1651.1699",
+          "mfcc_variance": 684.1552734375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.073668934",
+          "avg_rms": "0.0018827756",
+          "spectral_rolloff": "1592.1237",
+          "mfcc_variance": 653.3433227539062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9628867568980382,
+        "rms": 0.0,
+        "overall": 0.7703094055184305,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 849444.1875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 2,
+      "start_time": 27.0,
+      "end_time": 72.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.06622928",
+          "avg_rms": "0.0114461975",
+          "spectral_rolloff": "1386.949",
+          "mfcc_variance": 582.4788818359375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.070755355",
+          "avg_rms": "0.001793525",
+          "spectral_rolloff": "1264.8135",
+          "mfcc_variance": 526.8242797851562
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9678602268145464,
+        "rms": 0.0,
+        "overall": 0.7742881814516371,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 596722.5,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 3,
+      "start_time": 40.5,
+      "end_time": 85.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.06318972",
+          "avg_rms": "0.013474216",
+          "spectral_rolloff": "1698.3069",
+          "mfcc_variance": 693.1605834960938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06964273",
+          "avg_rms": "0.0014551596",
+          "spectral_rolloff": "1278.377",
+          "mfcc_variance": 530.9028930664062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9604589940324036,
+        "rms": 0.0,
+        "overall": 0.7683671952259229,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 690998.625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 4,
+      "start_time": 54.0,
+      "end_time": 99.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.05945679",
+          "avg_rms": "0.018177109",
+          "spectral_rolloff": "1301.7676",
+          "mfcc_variance": 525.9164428710938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06895641",
+          "avg_rms": "0.0017667552",
+          "spectral_rolloff": "1692.2828",
+          "mfcc_variance": 684.6431274414062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.963958284753944,
+        "rms": 0.0,
+        "overall": 0.7711666278031551,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 676403.0625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 5,
+      "start_time": 67.5,
+      "end_time": 112.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.062211137",
+          "avg_rms": "0.019087862",
+          "spectral_rolloff": "1621.9407",
+          "mfcc_variance": 654.257568359375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.060558327",
+          "avg_rms": "0.0022190574",
+          "spectral_rolloff": "1761.3518",
+          "mfcc_variance": 705.0651245117188
+        }
+      },
+      "similarities": {
+        "mfcc": 0.936804862098237,
+        "rms": 0.0,
+        "overall": 0.7494438896785897,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 829657.875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 6,
+      "start_time": 81.0,
+      "end_time": 126.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.062898465",
+          "avg_rms": "0.019818423",
+          "spectral_rolloff": "1539.0388",
+          "mfcc_variance": 624.2992553710938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.068236835",
+          "avg_rms": "0.0023993214",
+          "spectral_rolloff": "1885.0586",
+          "mfcc_variance": 753.0530395507812
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9320082805858364,
+        "rms": 0.0,
+        "overall": 0.7456066244686691,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 800718.1875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 7,
+      "start_time": 94.5,
+      "end_time": 139.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.07043789",
+          "avg_rms": "0.017669167",
+          "spectral_rolloff": "2668.7515",
+          "mfcc_variance": 1071.4571533203125
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.068145126",
+          "avg_rms": "0.0023839043",
+          "spectral_rolloff": "1805.8933",
+          "mfcc_variance": 724.609619140625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9240503800076999,
+        "rms": 0.0,
+        "overall": 0.7392403040061599,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 834884.3125,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 8,
+      "start_time": 108.0,
+      "end_time": 145.854059,
+      "duration": 37.85405900000001,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.069332995",
+          "avg_rms": "0.015136061",
+          "spectral_rolloff": "4586.5874",
+          "mfcc_variance": 1816.3438720703125
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.074509814",
+          "avg_rms": "0.0019852994",
+          "spectral_rolloff": "2430.9165",
+          "mfcc_variance": 973.40625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.930442525974406,
+        "rms": 0.0,
+        "overall": 0.7443540207795247,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 695186.75,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    }
+  ],
+  "pass_1_chunks": 9,
+  "pass_1_results": [
+    {
+      "chunk_index": 0,
+      "start_time": 0.0,
+      "end_time": 45.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.066757366",
+          "avg_rms": "0.016002607",
+          "spectral_rolloff": "2273.358",
+          "mfcc_variance": 918.7481079101562
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06380146",
+          "avg_rms": "0.001751476",
+          "spectral_rolloff": "5094.016",
+          "mfcc_variance": 1994.1666259765625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9441921644732212,
+        "rms": 0.0,
+        "overall": 0.7553537315785769,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 878424.0625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 1,
+      "start_time": 13.5,
+      "end_time": 58.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.065166034",
+          "avg_rms": "0.015898535",
+          "spectral_rolloff": "1651.1699",
+          "mfcc_variance": 684.1552734375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.073668934",
+          "avg_rms": "0.0018827756",
+          "spectral_rolloff": "1592.1237",
+          "mfcc_variance": 653.3433227539062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9628867568980382,
+        "rms": 0.0,
+        "overall": 0.7703094055184305,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 849444.1875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 2,
+      "start_time": 27.0,
+      "end_time": 72.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.06622928",
+          "avg_rms": "0.0114461975",
+          "spectral_rolloff": "1386.949",
+          "mfcc_variance": 582.4788818359375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.070755355",
+          "avg_rms": "0.001793525",
+          "spectral_rolloff": "1264.8135",
+          "mfcc_variance": 526.8242797851562
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9678602268145464,
+        "rms": 0.0,
+        "overall": 0.7742881814516371,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 596722.5,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 3,
+      "start_time": 40.5,
+      "end_time": 85.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.06318972",
+          "avg_rms": "0.013474216",
+          "spectral_rolloff": "1698.3069",
+          "mfcc_variance": 693.1605834960938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06964273",
+          "avg_rms": "0.0014551596",
+          "spectral_rolloff": "1278.377",
+          "mfcc_variance": 530.9028930664062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9604589940324036,
+        "rms": 0.0,
+        "overall": 0.7683671952259229,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 690998.625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 4,
+      "start_time": 54.0,
+      "end_time": 99.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.05945679",
+          "avg_rms": "0.018177109",
+          "spectral_rolloff": "1301.7676",
+          "mfcc_variance": 525.9164428710938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.06895641",
+          "avg_rms": "0.0017667552",
+          "spectral_rolloff": "1692.2828",
+          "mfcc_variance": 684.6431274414062
+        }
+      },
+      "similarities": {
+        "mfcc": 0.963958284753944,
+        "rms": 0.0,
+        "overall": 0.7711666278031551,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 676403.0625,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 5,
+      "start_time": 67.5,
+      "end_time": 112.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.062211137",
+          "avg_rms": "0.019087862",
+          "spectral_rolloff": "1621.9407",
+          "mfcc_variance": 654.257568359375
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.060558327",
+          "avg_rms": "0.0022190574",
+          "spectral_rolloff": "1761.3518",
+          "mfcc_variance": 705.0651245117188
+        }
+      },
+      "similarities": {
+        "mfcc": 0.936804862098237,
+        "rms": 0.0,
+        "overall": 0.7494438896785897,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 829657.875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 6,
+      "start_time": 81.0,
+      "end_time": 126.0,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.062898465",
+          "avg_rms": "0.019818423",
+          "spectral_rolloff": "1539.0388",
+          "mfcc_variance": 624.2992553710938
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.068236835",
+          "avg_rms": "0.0023993214",
+          "spectral_rolloff": "1885.0586",
+          "mfcc_variance": 753.0530395507812
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9320082805858364,
+        "rms": 0.0,
+        "overall": 0.7456066244686691,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 800718.1875,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 7,
+      "start_time": 94.5,
+      "end_time": 139.5,
+      "duration": 45.0,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.07043789",
+          "avg_rms": "0.017669167",
+          "spectral_rolloff": "2668.7515",
+          "mfcc_variance": 1071.4571533203125
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.068145126",
+          "avg_rms": "0.0023839043",
+          "spectral_rolloff": "1805.8933",
+          "mfcc_variance": 724.609619140625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.9240503800076999,
+        "rms": 0.0,
+        "overall": 0.7392403040061599,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 834884.3125,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    },
+    {
+      "chunk_index": 8,
+      "start_time": 108.0,
+      "end_time": 145.854059,
+      "duration": 37.85405900000001,
+      "master_content": {
+        "content_type": "mixed",
+        "confidence": 0.4,
+        "processing_hints": {
+          "balanced_approach": true,
+          "onset_weight": 1.0,
+          "mfcc_weight": 1.0,
+          "spectral_weight": 1.0
+        },
+        "characteristics": {
+          "avg_zcr": "0.069332995",
+          "avg_rms": "0.015136061",
+          "spectral_rolloff": "4586.5874",
+          "mfcc_variance": 1816.3438720703125
+        }
+      },
+      "dub_content": {
+        "content_type": "silence",
+        "confidence": 0.8,
+        "processing_hints": {
+          "skip_analysis": true,
+          "reliability_penalty": 0.5
+        },
+        "characteristics": {
+          "avg_zcr": "0.074509814",
+          "avg_rms": "0.0019852994",
+          "spectral_rolloff": "2430.9165",
+          "mfcc_variance": 973.40625
+        }
+      },
+      "similarities": {
+        "mfcc": 0.930442525974406,
+        "rms": 0.0,
+        "overall": 0.7443540207795247,
+        "content_adaptive": true
+      },
+      "offset_detection": {
+        "offset_seconds": -8.007981859410432,
+        "offset_samples": -176576,
+        "confidence": 1.0,
+        "correlation_peak": 695186.75,
+        "gpu_used": false
+      },
+      "quality": "Excellent",
+      "pass_number": 1,
+      "ensemble_confidence": 1.0,
+      "confidence_factors": {
+        "base_confidence": 1.0,
+        "content_factor": 0.8,
+        "signal_quality_factor": 1.4300000000000002,
+        "temporal_factor": 1.0
+      }
+    }
+  ],
+  "multi_pass_analysis": false
+}

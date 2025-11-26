@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -73,10 +75,19 @@ def _safe_json_dumps(obj: Any) -> str:
         return "{}"
 
 
+def _generate_cli_analysis_id() -> str:
+    """Generate a unique analysis_id for CLI saves when none is provided."""
+    millis = int(time.time() * 1000)
+    return f"cli_{millis}_{uuid.uuid4().hex[:8]}"
+
+
 def save_report_from_cli_json(report_json: Dict[str, Any], db_path: Optional[Path] = None) -> None:
     """Persist a CLI report.json (sync_analyzer.reports.SyncAnalysisReport as dict)."""
     # Expected structure from reporter: { analysis_id, master_file, dub_file, sync_results, analysis_metadata, ... }
-    analysis_id = str(report_json.get("analysis_id") or "")
+    analysis_id_raw = report_json.get("analysis_id")
+    analysis_id = str(analysis_id_raw or "").strip()
+    if not analysis_id:
+        analysis_id = _generate_cli_analysis_id()
     master_file = str(report_json.get("master_file") or "")
     dub_file = str(report_json.get("dub_file") or "")
     sync_results = report_json.get("sync_results") or {}
@@ -124,7 +135,10 @@ def save_report_from_model(result: Any, db_path: Optional[Path] = None) -> None:
         except Exception:
             as_dict = {}
 
-    analysis_id = str(as_dict.get("analysis_id") or "")
+    analysis_id_raw = as_dict.get("analysis_id")
+    analysis_id = str(analysis_id_raw or "").strip()
+    if not analysis_id:
+        analysis_id = _generate_cli_analysis_id()
     master_file = str(as_dict.get("master_file") or "")
     dub_file = str(as_dict.get("dub_file") or "")
     consensus = (as_dict.get("consensus_offset") or {}).get("offset_seconds") or 0.0
@@ -142,16 +156,10 @@ def save_report_from_model(result: Any, db_path: Optional[Path] = None) -> None:
     except Exception:
         pass
 
-    # Apply correction for known sample rate bug (1.5x error)
+    # NOTE: Old correction code removed - the underlying sample rate bug was fixed in Sept 2025
+    # The correction was corrupting correct results, turning -15.024s into -10.025s
     consensus_corrected = float(consensus or 0.0)
-    if abs(consensus_corrected) > 0.1:  # Only correct significant offsets
-        # Check if this looks like the 1.5x sample rate error
-        correction_factor = 0.6672652732283885  # 22050/32942.5 (approximate)
-        potential_correct = consensus_corrected * correction_factor
-        # If the corrected value seems reasonable, apply the correction
-        if abs(potential_correct) < abs(consensus_corrected) and abs(consensus_corrected / potential_correct - 1.5) < 0.1:
-            consensus_corrected = potential_correct
-    
+
     payload = {
         "analysis_id": analysis_id,
         "master_file": master_file,
@@ -171,39 +179,49 @@ def _insert_or_replace(payload: Dict[str, Any], db_path: Optional[Path] = None) 
     init_db(db_path)
     conn = get_conn(db_path)
     try:
-        conn.execute(
-            """
-            INSERT INTO reports (
-                analysis_id, master_file, dub_file,
-                consensus_offset_seconds, confidence_score,
-                methods_used, detailed_results, ai_result, full_report, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(analysis_id) DO UPDATE SET
-                master_file=excluded.master_file,
-                dub_file=excluded.dub_file,
-                consensus_offset_seconds=excluded.consensus_offset_seconds,
-                confidence_score=excluded.confidence_score,
-                methods_used=excluded.methods_used,
-                detailed_results=excluded.detailed_results,
-                ai_result=excluded.ai_result,
-                full_report=excluded.full_report,
-                created_at=excluded.created_at
-            ;
-            """,
-            (
-                payload.get("analysis_id"),
-                payload.get("master_file"),
-                payload.get("dub_file"),
-                payload.get("consensus_offset_seconds"),
-                payload.get("confidence_score"),
-                payload.get("methods_used"),
-                payload.get("detailed_results"),
-                payload.get("ai_result"),
-                payload.get("full_report"),
-                payload.get("created_at"),
-            ),
-        )
-        conn.commit()
+        def _do_insert(p: Dict[str, Any]):
+            conn.execute(
+                """
+                INSERT INTO reports (
+                    analysis_id, master_file, dub_file,
+                    consensus_offset_seconds, confidence_score,
+                    methods_used, detailed_results, ai_result, full_report, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    master_file=excluded.master_file,
+                    dub_file=excluded.dub_file,
+                    consensus_offset_seconds=excluded.consensus_offset_seconds,
+                    confidence_score=excluded.confidence_score,
+                    methods_used=excluded.methods_used,
+                    detailed_results=excluded.detailed_results,
+                    ai_result=excluded.ai_result,
+                    full_report=excluded.full_report,
+                    created_at=excluded.created_at
+                ;
+                """,
+                (
+                    p.get("analysis_id"),
+                    p.get("master_file"),
+                    p.get("dub_file"),
+                    p.get("consensus_offset_seconds"),
+                    p.get("confidence_score"),
+                    p.get("methods_used"),
+                    p.get("detailed_results"),
+                    p.get("ai_result"),
+                    p.get("full_report"),
+                    p.get("created_at"),
+                ),
+            )
+
+        try:
+            _do_insert(payload)
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # Collision on analysis_id (unique); generate a new one and retry once
+            payload = dict(payload)
+            payload["analysis_id"] = _generate_cli_analysis_id()
+            _do_insert(payload)
+            conn.commit()
     finally:
         conn.close()
 
@@ -241,17 +259,29 @@ def get_by_analysis_id(analysis_id: str, db_path: Optional[Path] = None) -> Opti
         conn.close()
 
 
-def get_latest_by_pair(master_file: str, dub_file: str, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+def get_latest_by_pair(
+    master_file: str,
+    dub_file: str,
+    db_path: Optional[Path] = None,
+    prefer_high_confidence: bool = False,
+) -> Optional[Dict[str, Any]]:
     init_db(db_path)
     conn = get_conn(db_path)
     try:
+        order_clause = (
+            "ORDER BY confidence_score DESC, datetime(created_at) DESC, id DESC"
+            if prefer_high_confidence
+            else "ORDER BY datetime(created_at) DESC, id DESC"
+        )
         cur = conn.execute(
             """
             SELECT analysis_id, master_file, dub_file, consensus_offset_seconds, confidence_score,
                    methods_used, detailed_results, ai_result, full_report, created_at
             FROM reports
             WHERE master_file = ? AND dub_file = ?
-            ORDER BY datetime(created_at) DESC, id DESC
+            """
+            + order_clause
+            + """
             LIMIT 1
             """,
             (master_file, dub_file),
@@ -272,4 +302,3 @@ def get_latest_by_pair(master_file: str, dub_file: str, db_path: Optional[Path] 
         return rec
     finally:
         conn.close()
-

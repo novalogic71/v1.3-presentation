@@ -53,11 +53,22 @@ async def debug_analysis(analysis_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/search")
-async def search_latest_report(master_file: str, dub_file: str):
+async def search_latest_report(
+    master_file: str,
+    dub_file: str,
+    prefer_high_confidence: bool = Query(
+        True,
+        description="When multiple rows exist, prefer the highest-confidence entry"
+    )
+):
     """Return the latest persisted report for a given master/dub pair from the DB."""
     try:
         from sync_analyzer.db.report_db import get_latest_by_pair
-        rec = get_latest_by_pair(master_file, dub_file)
+        rec = get_latest_by_pair(
+            master_file,
+            dub_file,
+            prefer_high_confidence=prefer_high_confidence
+        )
         if not rec:
             raise HTTPException(status_code=404, detail="No report found for specified files")
         return {"success": True, "report": rec}

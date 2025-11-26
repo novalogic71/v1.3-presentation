@@ -260,8 +260,8 @@ def is_atmos_file(file_path: str) -> bool:
                        f"codec={metadata.codec}, result={is_atmos}")
             return is_atmos
         else:
-            logger.warning(f"Failed to extract Atmos metadata from {Path(file_path).name}")
-            return False
+            logger.warning(f"Failed to extract Atmos metadata from {Path(file_path).name}, using fallback detection")
+            return _is_atmos_fallback(file_path)
     except ImportError as e:
         logger.warning(f"Dolby module import failed: {e}, using fallback")
         # Fallback if dolby module not available
@@ -283,7 +283,7 @@ def _is_atmos_fallback(file_path: str) -> bool:
         True if likely Atmos, False otherwise
     """
     ext = Path(file_path).suffix.lower()
-    if ext in ['.ec3', '.eac3', '.adm']:
+    if ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']:
         return True
 
     try:
@@ -316,6 +316,38 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     Returns:
         Path to extracted stereo WAV
     """
+    import logging as _logging
+    logger = _logging.getLogger(__name__)
+    temp_wav_paths: List[str] = []
+
+    # Quick path: mix all available channels to stereo using soundfile (ignores ADM metadata)
+    try:
+        import soundfile as sf
+        import numpy as np
+
+        audio, sr = sf.read(input_path, always_2d=True)
+        if audio.size == 0:
+            raise RuntimeError("input audio is empty")
+
+        # Average all channels to mono, then duplicate to stereo
+        mono = np.mean(audio, axis=1, dtype=np.float64)
+        mono = np.clip(mono, -1.0, 1.0)
+        target_sr = sr
+        if sample_rate:
+            target_sr = sample_rate
+            if sr and sr != sample_rate:
+                # Simple linear resample to target_sr to avoid speed shift
+                import numpy as _np
+                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                mono = _np.interp(t_new, t_orig, mono)
+        stereo = np.stack([mono, mono], axis=1)
+        sf.write(output_path, stereo, int(target_sr or sample_rate or sr), subtype="PCM_16")
+        logger.info(f"[ATMOS PIPELINE] Fallback/full mixdown to stereo via soundfile -> {output_path}")
+        return output_path
+    except Exception as e:
+        logger.warning(f"[ATMOS PIPELINE] soundfile mixdown failed, proceeding to converter: {e}")
+
     import tempfile
     import os
     import logging
@@ -328,12 +360,76 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     ext = Path(input_path).suffix.lower()
     
     logger.info(f"[ATMOS PIPELINE CHECK] File: {Path(input_path).name}, Extension: {ext}")
+
+    # IAB-specific path: convert to ADM WAV via Dolby tools, then continue through ADM pipeline
+    is_iab = False
+    if ext in [".mxf", ".iab"]:
+        iab_metadata = None
+        try:
+            from ..dolby.atmos_metadata import extract_atmos_metadata
+
+            iab_metadata = extract_atmos_metadata(input_path)
+            is_iab = bool(iab_metadata and getattr(iab_metadata, "is_iab", False))
+        except Exception as exc:
+            logger.warning(f"[IAB] Metadata probe failed: {exc}")
+
+        if ext == ".iab":
+            is_iab = True
+
+        if is_iab:
+            try:
+                from ..dolby.iab_wrapper import IabProcessor
+
+                iab_proc = IabProcessor()
+                if iab_proc.is_available():
+                    logger.info("[IAB] Converting IAB to ADM WAV via Dolby Atmos Conversion Tool")
+                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "300") or "300")
+                    head_trim = head_seconds if head_seconds > 0 else None
+                    adm_wav = tempfile.mktemp(suffix=".adm", prefix="iab_to_adm_")
+                    converted = iab_proc.convert_to_adm_wav(
+                        input_path,
+                        adm_wav,
+                        trim_duration=head_trim,
+                        sample_rate=48000,
+                    )
+                    if converted and Path(adm_wav).exists():
+                        temp_wav_paths.append(adm_wav)
+                        try:
+                            import soundfile as sf
+                            import numpy as _np
+
+                            data, sr = sf.read(adm_wav, always_2d=True)
+                            if data.size == 0:
+                                raise RuntimeError("ADM audio is empty")
+                            mono = _np.mean(data, axis=1, dtype=_np.float64)
+                            mono = _np.clip(mono, -1.0, 1.0)
+                            target_sr = sr
+                            if sr and sample_rate and sr != sample_rate:
+                                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                                mono = _np.interp(t_new, t_orig, mono)
+                                target_sr = sample_rate
+                            stereo = _np.stack([mono, mono], axis=1)
+                            sf.write(output_path, stereo, int(target_sr or sample_rate or sr), subtype="PCM_16")
+                            logger.info(f"[IAB] ADM WAV downmixed via soundfile (stereo) -> {output_path}")
+                            return output_path
+                        except Exception as exc:
+                            logger.warning(f"[IAB] ADM downmix failed, continuing to Atmos pipeline: {exc}")
+                        input_path = adm_wav
+                        ext = ".adm"
+                        logger.info("[IAB] ADM render complete; continuing with ADM pipeline")
+                    else:
+                        logger.warning("[IAB] Dolby IAB->ADM conversion failed, continuing to Atmos pipeline")
+                else:
+                    logger.warning("[IAB] IAB tools unavailable, falling back to Atmos pipeline")
+            except Exception as exc:
+                logger.warning(f"[IAB] IAB conversion path failed, continuing with pipeline: {exc}")
     
     # Check if this is an Atmos file that needs conversion
     needs_conversion = False
     
     # Always convert EC3, EAC3, IAB files
-    if ext in ['.ec3', '.eac3', '.adm', '.iab']:
+    if ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']:
         needs_conversion = True
         logger.info(f"[ATMOS PIPELINE] Format {ext} requires conversion")
     # For .wav files, check if they're actually ADM/Atmos
@@ -373,10 +469,40 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
                 preserve_original=True
             )
 
-            if not result or not os.path.exists(temp_mp4):
+            if not result or not result.get("mp4_path"):
                 raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
 
-            logger.info(f"Atmos converted to MP4: {temp_mp4}")
+            mp4_path = result["mp4_path"]
+            audio_only = bool(result.get("audio_only"))
+
+            if audio_only and Path(mp4_path).suffix.lower() == ".wav":
+                try:
+                    import soundfile as sf
+                    import numpy as _np
+
+                    data, sr = sf.read(mp4_path, always_2d=True)
+                    if data.size == 0:
+                        raise RuntimeError("audio-only MXF yielded empty audio")
+                    mono = _np.mean(data, axis=1, dtype=_np.float64)
+                    mono = _np.clip(mono, -1.0, 1.0)
+                    target_sr = sr
+                    if sample_rate and sr and sr != sample_rate:
+                        t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                        t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                        mono = _np.interp(t_new, t_orig, mono)
+                        target_sr = sample_rate
+                    sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
+                    temp_wav_paths.append(mp4_path)
+                    logger.info(f"[ATMOS PIPELINE] Audio-only MXF extracted via soundfile -> {output_path}")
+                    return output_path
+                except Exception as exc:
+                    logger.warning(f"[ATMOS PIPELINE] Audio-only MXF handling failed, attempting ffmpeg: {exc}")
+                    mp4_path = result["mp4_path"]
+
+            if not os.path.exists(mp4_path):
+                raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
+
+            logger.info(f"Atmos converted to MP4: {mp4_path}")
 
             # Step 2: Extract audio from MP4 to stereo WAV
             logger.info(f"Extracting audio from MP4 to stereo WAV...")
@@ -387,7 +513,7 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
                 "error",
                 "-y",
                 "-i",
-                temp_mp4,
+                mp4_path,
                 "-vn",  # No video
                 "-ac",
                 "2",  # Stereo downmix
@@ -400,9 +526,9 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
 
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
-            # Clean up temp MP4
+            # Clean up temp MP4/WAV
             try:
-                os.remove(temp_mp4)
+                os.remove(mp4_path)
             except:
                 pass
 
@@ -415,6 +541,78 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
         except ImportError as e:
             logger.warning(f"Dolby module not available, using direct FFmpeg: {e}")
             # Fallback to direct FFmpeg
+        except Exception as e:
+            logger.warning(f"[ATMOS PIPELINE] Conversion to MP4 failed ({e}); attempting direct ffmpeg extract")
+            # Fallback: direct ffmpeg extraction
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                input_path,
+                "-vn",  # No video
+                "-ac",
+                "2",  # Stereo downmix
+                "-ar",
+                str(sample_rate),
+                "-c:a",
+                "pcm_s16le",
+                output_path,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if proc.returncode != 0:
+                raise RuntimeError(f"Failed to extract Atmos bed stereo: {proc.stderr.strip()}")
+            return output_path
+        except Exception as e:
+            logger.warning(f"[ATMOS PIPELINE] Conversion to MP4 failed ({e}); attempting direct ffmpeg extract")
+            # Fallback: direct ffmpeg extraction
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                input_path,
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                str(sample_rate),
+                "-c:a",
+                "pcm_s16le",
+                output_path,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if proc.returncode != 0:
+                raise RuntimeError(f"Failed to extract Atmos bed mono: {proc.stderr.strip()}")
+            return output_path
+        except Exception as e:
+            logger.warning(f"[ATMOS PIPELINE] Conversion to MP4 failed ({e}); attempting direct ffmpeg extract")
+            # Fallback: direct ffmpeg extraction
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                input_path,
+                "-vn",
+                "-ac",
+                "2",
+                "-ar",
+                str(sample_rate),
+                "-c:a",
+                "pcm_s16le",
+                output_path,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if proc.returncode != 0:
+                raise RuntimeError(f"Failed to extract Atmos bed stereo: {proc.stderr.strip()}")
+            return output_path
 
     # For MP4/MOV/MXF with Atmos audio, or fallback extraction
     cmd = [
@@ -461,6 +659,36 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     Returns:
         Path to extracted mono WAV
     """
+    import logging as _logging
+    logger = _logging.getLogger(__name__)
+    temp_wav_paths: List[str] = []
+
+    # Quick path: mix all channels to mono using soundfile (ignores ADM metadata)
+    try:
+        import soundfile as sf
+        import numpy as np
+
+        audio, sr = sf.read(input_path, always_2d=True)
+        if audio.size == 0:
+            raise RuntimeError("input audio is empty")
+
+        mono = np.mean(audio, axis=1, dtype=np.float64)
+        mono = np.clip(mono, -1.0, 1.0)
+        target_sr = sr
+        if sample_rate:
+            target_sr = sample_rate
+            if sr and sr != sample_rate:
+                # Simple linear resample to target_sr to avoid slowing/fast audio
+                import numpy as _np
+                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                mono = _np.interp(t_new, t_orig, mono)
+        sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
+        logger.info(f"[ATMOS PIPELINE] Fallback/full mixdown to mono via soundfile -> {output_path}")
+        return output_path
+    except Exception as e:
+        logger.warning(f"[ATMOS PIPELINE] soundfile mixdown failed, proceeding to converter: {e}")
+
     import tempfile
     import os
     import logging
@@ -468,17 +696,79 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     logger = logging.getLogger(__name__)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
+    # IAB-specific path: convert to ADM WAV via Dolby tools, then continue through ADM pipeline
+    is_iab = False
+    ext = Path(input_path).suffix.lower()
+    if ext in [".mxf", ".iab"]:
+        iab_metadata = None
+        try:
+            from ..dolby.atmos_metadata import extract_atmos_metadata
+
+            iab_metadata = extract_atmos_metadata(input_path)
+            is_iab = bool(iab_metadata and getattr(iab_metadata, "is_iab", False))
+        except Exception as exc:
+            logger.warning(f"[IAB] Metadata probe failed: {exc}")
+
+        if ext == ".iab":
+            is_iab = True
+
+        if is_iab:
+            try:
+                from ..dolby.iab_wrapper import IabProcessor
+
+                iab_proc = IabProcessor()
+                if iab_proc.is_available():
+                    logger.info("[IAB] Converting IAB to ADM WAV via Dolby Atmos Conversion Tool")
+                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "300") or "300")
+                    head_trim = head_seconds if head_seconds > 0 else None
+                    adm_wav = tempfile.mktemp(suffix=".adm", prefix="iab_to_adm_")
+                    converted = iab_proc.convert_to_adm_wav(
+                        input_path,
+                        adm_wav,
+                        trim_duration=head_trim,
+                        sample_rate=48000,
+                    )
+                    if converted and Path(adm_wav).exists():
+                        temp_wav_paths.append(adm_wav)
+                        try:
+                            import soundfile as sf
+                            import numpy as _np
+
+                            data, sr = sf.read(adm_wav, always_2d=True)
+                            if data.size == 0:
+                                raise RuntimeError("ADM audio is empty")
+                            mono = _np.mean(data, axis=1, dtype=_np.float64)
+                            mono = _np.clip(mono, -1.0, 1.0)
+                            target_sr = sr
+                            if sr and sample_rate and sr != sample_rate:
+                                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                                mono = _np.interp(t_new, t_orig, mono)
+                                target_sr = sample_rate
+                            sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
+                            logger.info(f"[IAB] ADM WAV downmixed via soundfile -> {output_path}")
+                            return output_path
+                        except Exception as exc:
+                            logger.warning(f"[IAB] ADM downmix failed, continuing to Atmos pipeline: {exc}")
+                        input_path = adm_wav
+                        ext = ".adm"
+                        logger.info("[IAB] ADM render complete; continuing with ADM pipeline")
+                    else:
+                        logger.warning("[IAB] Dolby IAB->ADM conversion failed, continuing to Atmos pipeline")
+                else:
+                    logger.warning("[IAB] IAB tools unavailable, falling back to Atmos pipeline")
+            except Exception as exc:
+                logger.warning(f"[IAB] IAB conversion path failed, continuing with pipeline: {exc}")
+
     # Check if file is actually Atmos (not just by extension)
     # This handles .wav files with ADM metadata (72 channels, etc.)
-    ext = Path(input_path).suffix.lower()
-    
     logger.info(f"[ATMOS PIPELINE CHECK] File: {Path(input_path).name}, Extension: {ext}")
     
     # Check if this is an Atmos file that needs conversion
     needs_conversion = False
     
     # Always convert EC3, EAC3, IAB files
-    if ext in ['.ec3', '.eac3', '.adm', '.iab']:
+    if ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']:
         needs_conversion = True
         logger.info(f"[ATMOS PIPELINE] Format {ext} requires conversion")
     # For .wav files, check if they're actually ADM/Atmos
@@ -518,10 +808,41 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
                 preserve_original=True
             )
 
-            if not result or not os.path.exists(temp_mp4):
+            if not result or not result.get("mp4_path"):
                 raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
 
-            logger.info(f"Atmos converted to MP4: {temp_mp4}")
+            mp4_path = result["mp4_path"]
+            audio_only = bool(result.get("audio_only"))
+
+            # If audio-only MXF, handle the WAV directly
+            if audio_only and Path(mp4_path).suffix.lower() == ".wav":
+                try:
+                    import soundfile as sf
+                    import numpy as _np
+
+                    data, sr = sf.read(mp4_path, always_2d=True)
+                    if data.size == 0:
+                        raise RuntimeError("audio-only MXF yielded empty audio")
+                    mono = _np.mean(data, axis=1, dtype=_np.float64)
+                    mono = _np.clip(mono, -1.0, 1.0)
+                    target_sr = sr
+                    if sample_rate and sr and sr != sample_rate:
+                        t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
+                        t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                        mono = _np.interp(t_new, t_orig, mono)
+                        target_sr = sample_rate
+                    sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
+                    temp_wav_paths.append(mp4_path)
+                    logger.info(f"[ATMOS PIPELINE] Audio-only MXF extracted via soundfile (mono) -> {output_path}")
+                    return output_path
+                except Exception as exc:
+                    logger.warning(f"[ATMOS PIPELINE] Audio-only MXF handling failed, attempting ffmpeg: {exc}")
+                    # Fall through to ffmpeg extraction below
+
+            if not os.path.exists(mp4_path):
+                raise RuntimeError(f"Failed to convert Atmos to MP4: {input_path}")
+
+            logger.info(f"Atmos converted to MP4: {mp4_path}")
 
             # Step 2: Extract audio from MP4 to mono WAV
             logger.info(f"Extracting audio from MP4 to WAV...")
@@ -532,7 +853,7 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
                 "error",
                 "-y",
                 "-i",
-                temp_mp4,
+                mp4_path,
                 "-vn",  # No video
                 "-ac",
                 "1",  # Mono downmix
@@ -547,7 +868,7 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
 
             # Clean up temp MP4
             try:
-                os.remove(temp_mp4)
+                os.remove(mp4_path)
             except:
                 pass
 
@@ -621,4 +942,3 @@ def extract_atmos_bed_channels(input_path: str, out_dir: str, sample_rate: int =
     # Extract bed channels using the standard extraction
     # This will work because Atmos MP4 files have the bed as a multichannel stream
     return extract_all_stems(input_path, out_dir)
-

@@ -1,0 +1,22 @@
+{
+  "iab_renderer": {
+    "binary_name": "iab_renderer",
+    "binary_candidates": [
+      "iab_renderer",
+      "cmdline_atmos_conversion_tool"
+    ],
+    "default_sample_rate": 48000,
+    "downmix_format": "stereo",
+    "render_quality": "high",
+    "args": [
+      "-i",
+      "{input}",
+      "-o",
+      "{output}",
+      "-sr",
+      "{sample_rate}",
+      "-ch",
+      "{channels}"
+    ]
+  }
+}

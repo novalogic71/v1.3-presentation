@@ -17,6 +17,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
+from scipy.signal import correlate, correlation_lags
 
 class OptimizedLargeFileDetector:
     """
@@ -136,7 +137,28 @@ class OptimizedLargeFileDetector:
 
             if result.returncode != 0:
                 self.logger.error(f"FFmpeg failed: {result.stderr}")
-                return None
+                # Fallback: attempt direct mixdown with soundfile for multichannel WAVs
+                try:
+                    import soundfile as sf
+                    import numpy as np
+                    data, sr = sf.read(video_path, always_2d=True)
+                    if data.size == 0:
+                        raise RuntimeError("empty audio during fallback mixdown")
+                    mono = np.mean(data, axis=1, dtype=np.float64)
+                    mono = np.clip(mono, -1.0, 1.0)
+                    target_sr = self.sample_rate
+                    if sr and sr != target_sr:
+                        # simple resample using linear interpolation
+                        import numpy as _np
+                        t_orig = _np.linspace(0, 1, num=len(mono), endpoint=False)
+                        t_new = _np.linspace(0, 1, num=int(len(mono) * target_sr / sr), endpoint=False)
+                        mono = _np.interp(t_new, t_orig, mono)
+                        sr = target_sr
+                    sf.write(audio_file, mono, sr or target_sr, subtype="PCM_16")
+                    self.logger.info(f"Fallback mixdown succeeded for {os.path.basename(video_path)}")
+                except Exception as e:
+                    self.logger.error(f"Fallback mixdown failed: {e}")
+                    return None
 
             self.logger.info(f"Audio extracted: {audio_file}")
             return audio_file
@@ -165,7 +187,7 @@ class OptimizedLargeFileDetector:
             self.logger.warning(f"[_IS_ATMOS_FILE] Import failed: {e}")
             # Fallback: check file extension
             ext = os.path.splitext(file_path)[1].lower()
-            result = ext in ['.ec3', '.eac3', '.adm']
+            result = ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']
             self.logger.info(f"[_IS_ATMOS_FILE] Fallback extension check: ext={ext}, result={result}")
             return result
         except Exception as e:
@@ -608,94 +630,71 @@ class OptimizedLargeFileDetector:
         """Detect offset using cross-correlation on a specific segment"""
         try:
             # Load audio segments with soundfile (pre-resampled by ffmpeg extract)
-            info1 = sf.info(audio1_path)
-            sr1 = self.sample_rate  # Use resampled rate, not metadata rate
-            s1 = int(start_time * sr1)
-            n1 = int(duration * sr1)
-            y1, _ = sf.read(audio1_path, start=s1, frames=n1, dtype='float32', always_2d=False)
+            sr = self.sample_rate
+            start_frame = int(start_time * sr)
+            n_frames = int(duration * sr)
+
+            y1, _ = sf.read(audio1_path, start=start_frame, frames=n_frames, dtype='float32', always_2d=False)
+            y2, _ = sf.read(audio2_path, start=start_frame, frames=n_frames, dtype='float32', always_2d=False)
             if y1.ndim > 1:
                 y1 = y1.mean(axis=1)
-
-            info2 = sf.info(audio2_path)
-            sr2 = self.sample_rate  # Use resampled rate, not metadata rate
-            s2 = int(start_time * sr2)
-            n2 = int(duration * sr2)
-            y2, _ = sf.read(audio2_path, start=s2, frames=n2, dtype='float32', always_2d=False)
             if y2.ndim > 1:
                 y2 = y2.mean(axis=1)
             
             if len(y1) == 0 or len(y2) == 0:
                 return {'offset_seconds': 0.0, 'confidence': 0.0}
             
-            # Ensure same length
+            # Ensure same length and normalize to reduce bias from loud passages
             min_len = min(len(y1), len(y2))
             y1 = y1[:min_len]
             y2 = y2[:min_len]
-            # Cross-correlation (GPU-accelerated via PyTorch when available)
-            max_corr_idx = None
-            max_corr_val = None
-            used_gpu = False
-            if self.gpu_available:
-                try:
-                    import torch
-                    import torch.nn.functional as F
-                    with torch.no_grad():
-                        x = torch.from_numpy(y1.astype(np.float32)).to(self.device).view(1, 1, -1)
-                        w = torch.from_numpy(y2.astype(np.float32)[::-1].copy()).to(self.device).view(1, 1, -1)
-                        # full correlation via conv1d with padding
-                        pad = w.shape[-1] - 1
-                        corr = F.conv1d(x, w, padding=pad).view(-1)
-                        max_corr_idx_t = torch.argmax(corr)
-                        max_corr_idx = int(max_corr_idx_t.item())
-                        max_corr_val = float(corr[max_corr_idx_t].item())
-                        used_gpu = self.device.startswith('cuda')
-                except Exception as e:
-                    self.logger.debug(f"GPU cross-correlation fallback to numpy due to: {e}")
-                    max_corr_idx = None
-                    used_gpu = False
-            if max_corr_idx is None:
-                # CPU fallback
-                correlation = np.correlate(y1, y2, mode='full')
-                max_corr_idx = int(np.argmax(correlation))
-                max_corr_val = float(correlation[max_corr_idx])
-                used_gpu = False
+            y1 = y1 - np.mean(y1)
+            y2 = y2 - np.mean(y2)
+            y1_std = np.std(y1) + 1e-8
+            y2_std = np.std(y2) + 1e-8
+            y1 = y1 / y1_std
+            y2 = y2 / y2_std
 
-            # For np.correlate(y1, y2, mode='full'), zero-lag index is len(y2) - 1
-            # Use y2 (dub) as the reference to convert index -> lag
-            offset_samples = max_corr_idx - (len(y2) - 1)
-            # Use the resampled rate (22050 Hz) not the original file rate
-            # Files were resampled by FFmpeg extraction to self.sample_rate
-            offset_seconds = offset_samples / float(self.sample_rate)
+            # Limit search window to avoid spurious far-offset peaks
+            max_lag_samples = min(int(sr * min(duration * 0.6, 20.0)), min_len - 1)
 
-            # Improved confidence calculation using signal-to-noise ratio approach
-            if max_corr_idx is not None and used_gpu:
-                # For GPU path, get full correlation array
-                import torch
-                with torch.no_grad():
-                    x = torch.from_numpy(y1.astype(np.float32)).to(self.device).view(1, 1, -1)
-                    w = torch.from_numpy(y2.astype(np.float32)[::-1].copy()).to(self.device).view(1, 1, -1)
-                    pad = w.shape[-1] - 1
-                    corr_full = torch.nn.functional.conv1d(x, w, padding=pad).view(-1).detach().cpu().numpy()
-            else:
-                # For CPU path, use existing correlation
-                corr_full = np.correlate(y1, y2, mode='full')
+            # Cross-correlation via FFT for speed
+            corr = correlate(y1, y2, mode='full', method='fft')
+            lags = correlation_lags(len(y1), len(y2), mode='full')
+            if max_lag_samples > 0:
+                mask = np.abs(lags) <= max_lag_samples
+                corr = corr[mask]
+                lags = lags[mask]
 
-            # Calculate confidence using peak-to-average ratio
-            corr_abs = np.abs(corr_full)
-            peak_val = corr_abs[max_corr_idx] if max_corr_idx < len(corr_abs) else max_corr_val
-            mean_corr = np.mean(corr_abs)
-            std_corr = np.std(corr_abs)
+            corr_abs = np.abs(corr)
+            max_idx = int(np.argmax(corr_abs))
+            peak_val = float(corr_abs[max_idx])
 
-            # SNR-based confidence calculation
+            # If multiple peaks share the same max value (within numeric tolerance),
+            # prefer the lag with the smallest absolute shift to avoid runaway offsets.
+            near_max_mask = np.isclose(corr_abs, peak_val, rtol=1e-6, atol=1e-6)
+            if np.any(near_max_mask):
+                candidate_lags = lags[near_max_mask]
+                candidate_idxs = np.nonzero(near_max_mask)[0]
+                best_local_idx = int(candidate_idxs[np.argmin(np.abs(candidate_lags))])
+                max_idx = best_local_idx
+                peak_val = float(corr_abs[max_idx])
+
+            offset_samples = int(lags[max_idx])
+            offset_seconds = offset_samples / float(sr)
+
+            # Confidence from peak prominence
+            mean_corr = float(np.mean(corr_abs))
+            std_corr = float(np.std(corr_abs))
             snr = (peak_val - mean_corr) / (std_corr + 1e-8)
-            confidence = min(max(snr / 8, 0.0), 1.0)  # Normalize to 0-1 range
+            confidence = float(min(max(snr / 8, 0.0), 1.0))
             
             return {
-                'offset_seconds': float(offset_seconds),
-                'offset_samples': int(offset_samples),
-                'confidence': float(confidence),
-                'correlation_peak': float(max_corr_val),
-                'gpu_used': bool(used_gpu)
+                'offset_seconds': offset_seconds,
+                'offset_samples': offset_samples,
+                'confidence': confidence,
+                'correlation_peak': peak_val,
+                'gpu_used': False
             }
             
         except Exception as e:

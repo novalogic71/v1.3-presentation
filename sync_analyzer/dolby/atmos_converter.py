@@ -13,17 +13,281 @@ Workflow:
 5. Preserve Atmos metadata in MP4 atoms
 """
 
-import subprocess
 import logging
-import tempfile
+import math
+import os
 import shutil
+import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 from .atmos_metadata import extract_atmos_metadata, is_atmos_codec
 from .video_generator import generate_black_video_with_audio
 
 logger = logging.getLogger(__name__)
+
+
+def _local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.split("}", 1)[-1]
+    return tag
+
+
+def _cartesian_to_spherical(x: float, y: float, z: float) -> Tuple[float, float, float]:
+    radius = math.sqrt(x * x + y * y + z * z)
+    azimuth = math.degrees(math.atan2(y, x)) if radius else 0.0
+    horizontal = math.hypot(x, y)
+    elevation = math.degrees(math.atan2(z, horizontal)) if radius else 0.0
+    return azimuth, elevation, radius
+
+
+def _sanitize_axml_metadata(axml_bytes: bytes) -> Tuple[bytes, bool]:
+    try:
+        root = ET.fromstring(axml_bytes)
+    except ET.ParseError as exc:
+        raise ValueError(f"Failed to parse ADM AXML metadata: {exc}") from exc
+
+    changed = False
+    namespace_prefix = ""
+    if root.tag.startswith("{"):
+        namespace_prefix = root.tag.split("}", 1)[0] + "}"
+
+    # Remove unsupported ADM sub-elements
+    for parent in list(root.iter()):
+        for child in list(parent):
+            if _local_name(child.tag) in {"objectDivergence", "jumpPosition"}:
+                parent.remove(child)
+                changed = True
+
+    # Convert cartesian object positions to spherical so renderer does not need divergence
+    for channel in root.iter():
+        if _local_name(channel.tag) != "audioChannelFormat":
+            continue
+        if channel.attrib.get("typeDefinition") != "Objects":
+            continue
+        for block in list(channel):
+            if _local_name(block.tag) != "audioBlockFormat":
+                continue
+            cartesian_elem = None
+            positions = {}
+            for elem in list(block):
+                local = _local_name(elem.tag)
+                if local == "cartesian":
+                    cartesian_elem = elem
+                elif local == "position":
+                    coord = (elem.attrib.get("coordinate") or "").upper()
+                    positions[coord] = elem
+            if not any(coord in positions for coord in ("X", "Y", "Z")):
+                continue
+            try:
+                x_val = float((positions.get("X").text if positions.get("X") is not None else 0.0))
+                y_val = float((positions.get("Y").text if positions.get("Y") is not None else 0.0))
+                z_val = float((positions.get("Z").text if positions.get("Z") is not None else 0.0))
+            except (TypeError, ValueError):
+                continue
+            az, el, dist = _cartesian_to_spherical(x_val, y_val, z_val)
+
+            # Remove cartesian coordinates
+            for coord in ["X", "Y", "Z"]:
+                node = positions.get(coord)
+                if node is not None:
+                    block.remove(node)
+
+            insert_index = len(list(block))
+            if cartesian_elem is not None:
+                insert_index = list(block).index(cartesian_elem)
+                block.remove(cartesian_elem)
+
+            template_tag = None
+            if cartesian_elem is not None:
+                template_tag = cartesian_elem.tag
+            else:
+                for elem in block:
+                    if _local_name(elem.tag) == "position":
+                        template_tag = elem.tag
+                        break
+            pos_tag = "position"
+            if template_tag and "}" in template_tag:
+                namespace = template_tag.split("}", 1)[0] + "}"
+                pos_tag = f"{namespace}position"
+            elif namespace_prefix:
+                pos_tag = f"{namespace_prefix}position"
+
+            def _make_position(coord: str, value: float) -> ET.Element:
+                elem = ET.Element(pos_tag)
+                elem.set("coordinate", coord)
+                elem.text = f"{value:.10f}"
+                return elem
+
+            new_nodes = [
+                _make_position("azimuth", az),
+                _make_position("elevation", el),
+                _make_position("distance", dist)
+            ]
+            for offset, node in enumerate(new_nodes):
+                block.insert(insert_index + offset, node)
+            changed = True
+
+    # Drop any remaining cartesian markers so BS.2127 renderer sees spherical coords only
+    for block in root.iter():
+        if _local_name(block.tag) != "audioBlockFormat":
+            continue
+        removed_any = False
+        for elem in list(block):
+            if _local_name(elem.tag) == "cartesian":
+                block.remove(elem)
+                removed_any = True
+        if removed_any:
+            changed = True
+
+    # Remove any residual cartesian axis positions
+    for block in root.iter():
+        if _local_name(block.tag) != "audioBlockFormat":
+            continue
+        cleaned = False
+        for elem in list(block):
+            if _local_name(elem.tag) == "position":
+                coord = (elem.attrib.get("coordinate") or "").upper()
+                if coord in {"X", "Y", "Z"}:
+                    block.remove(elem)
+                    cleaned = True
+        if cleaned:
+            changed = True
+
+    # Ensure every block has at least one spherical position entry
+    for block in root.iter():
+        if _local_name(block.tag) != "audioBlockFormat":
+            continue
+        if any(_local_name(elem.tag) == "position" for elem in block):
+            continue
+        for coord, value in (("azimuth", 0.0), ("elevation", 0.0), ("distance", 1.0)):
+            tag = f"{namespace_prefix}position" if namespace_prefix else "position"
+            elem = ET.Element(tag)
+            elem.set("coordinate", coord)
+            elem.text = f"{value:.10f}"
+            block.append(elem)
+        changed = True
+
+    if not changed:
+        return axml_bytes, False
+
+    if namespace_prefix:
+        ET.register_namespace("", namespace_prefix.strip("{}"))
+    sanitized = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return sanitized, True
+
+
+def _extract_axml_chunk(adm_path: Path) -> Optional[bytes]:
+    with adm_path.open("rb") as handle:
+        header = handle.read(12)
+        if len(header) < 12 or header[:4] != b"RIFF" or header[8:12] != b"WAVE":
+            return None
+        while True:
+            chunk_header = handle.read(8)
+            if not chunk_header:
+                break
+            chunk_id = chunk_header[:4]
+            chunk_size = int.from_bytes(chunk_header[4:], "little")
+            if chunk_id == b"data":
+                skip = chunk_size + (chunk_size % 2)
+                handle.seek(skip, os.SEEK_CUR)
+                continue
+            chunk_data = handle.read(chunk_size)
+            if chunk_size % 2:
+                handle.read(1)
+            if chunk_id == b"axml":
+                return chunk_data
+    return None
+
+
+def _rewrite_bw64_with_new_axml(
+    src_path: Path,
+    dest_path: Path,
+    axml_bytes: bytes,
+    drop_dbmd: bool = True
+) -> None:
+    buffer_size = 4 * 1024 * 1024
+    with src_path.open("rb") as src, dest_path.open("wb") as dst:
+        riff_header = src.read(12)
+        if len(riff_header) < 12 or riff_header[:4] != b"RIFF" or riff_header[8:12] != b"WAVE":
+            raise ValueError("Input file is not a valid BW64/RIFF file")
+        dst.write(b"RIFF")
+        dst.write(b"\x00\x00\x00\x00")  # placeholder
+        dst.write(b"WAVE")
+
+        replaced_axml = False
+        while True:
+            chunk_header = src.read(8)
+            if not chunk_header:
+                break
+            if len(chunk_header) < 8:
+                raise IOError("Unexpected end of file while reading chunk header")
+            chunk_id = chunk_header[:4]
+            chunk_size = int.from_bytes(chunk_header[4:], "little")
+            if chunk_id == b"data":
+                dst.write(chunk_id)
+                dst.write(chunk_size.to_bytes(4, "little"))
+                remaining = chunk_size
+                while remaining > 0:
+                    piece = src.read(min(buffer_size, remaining))
+                    if not piece:
+                        raise IOError("Unexpected end of data chunk")
+                    dst.write(piece)
+                    remaining -= len(piece)
+                if chunk_size % 2:
+                    pad_byte = src.read(1) or b"\x00"
+                    dst.write(pad_byte)
+                continue
+
+            chunk_data = src.read(chunk_size)
+            if len(chunk_data) < chunk_size:
+                raise IOError("Unexpected end of chunk data")
+            pad_byte = b""
+            if chunk_size % 2:
+                pad_byte = src.read(1)
+
+            if chunk_id == b"axml":
+                chunk_data = axml_bytes
+                chunk_size = len(chunk_data)
+                pad_byte = b"\x00" if chunk_size % 2 else b""
+                replaced_axml = True
+            elif drop_dbmd and chunk_id == b"dbmd":
+                continue
+
+            dst.write(chunk_id)
+            dst.write(chunk_size.to_bytes(4, "little"))
+            dst.write(chunk_data)
+            if chunk_size % 2:
+                dst.write(pad_byte or b"\x00")
+
+        if not replaced_axml:
+            raise ValueError("Failed to locate axml chunk while rewriting BW64 file")
+
+        final_size = dst.tell() - 8
+        dst.seek(4)
+        dst.write(final_size.to_bytes(4, "little"))
+
+
+def _sanitize_adm_for_ebu(adm_path: Path) -> Optional[Path]:
+    try:
+        axml_chunk = _extract_axml_chunk(adm_path)
+        if not axml_chunk:
+            logger.debug("ADM file has no axml chunk; skipping sanitization for %s", adm_path)
+            return None
+        sanitized_axml, changed = _sanitize_axml_metadata(axml_chunk)
+        if not changed:
+            return None
+        fd, temp_path = tempfile.mkstemp(suffix=".wav", prefix="adm_sanitized_")
+        os.close(fd)
+        temp_path_obj = Path(temp_path)
+        _rewrite_bw64_with_new_axml(adm_path, temp_path_obj, sanitized_axml, drop_dbmd=True)
+        logger.info("Sanitized ADM metadata (removed ObjectDivergence/cartesian) -> %s", temp_path_obj)
+        return temp_path_obj
+    except Exception as exc:
+        logger.warning("Failed to sanitize ADM metadata for %s: %s", adm_path, exc)
+        return None
 
 
 def is_atmos_file(file_path: str) -> bool:
@@ -119,23 +383,22 @@ def convert_atmos_to_mp4(
         # Determine conversion strategy based on file type
         ext = atmos_path.suffix.lower()
 
-        if ext in ['.ec3', '.eac3']:
-            # EC3/EAC3 bitstream - needs decoding and re-encoding
-            mp4_path = _convert_ec3_to_mp4(str(atmos_path), output_path, fps, resolution)
-        elif ext == '.iab':
-            # IAB (Immersive Audio Bitstream) - SMPTE ST 2098-2
+        audio_only = False
+        if metadata.is_iab:
             mp4_path = _convert_iab_to_mp4(str(atmos_path), output_path, fps, resolution)
+        elif ext in ['.ec3', '.eac3']:
+            mp4_path = _convert_ec3_to_mp4(str(atmos_path), output_path, fps, resolution)
         elif ext == '.mxf':
-            # MXF container with Atmos/IAB
-            mp4_path = _convert_mxf_to_mp4(str(atmos_path), output_path, fps, resolution)
+            result = _convert_mxf_to_mp4(str(atmos_path), output_path, fps, resolution)
+            if result is None:
+                mp4_path = None
+            else:
+                mp4_path, audio_only = result
         elif ext == '.adm' or (ext == '.wav' and metadata.is_adm_wav):
-            # ADM BWF WAV - can be copied directly
             mp4_path = _convert_adm_wav_to_mp4(str(atmos_path), output_path, fps, resolution)
         elif ext in ['.mp4', '.mov']:
-            # Already in container format, just ensure it has black video
             mp4_path = _add_black_video_to_mp4(str(atmos_path), output_path, fps, resolution)
         elif ext == '.wav':
-            # Standard WAV with Atmos codec
             mp4_path = _convert_wav_to_mp4(str(atmos_path), output_path, fps, resolution)
         else:
             logger.error(f"Unsupported Atmos file format: {ext}")
@@ -156,7 +419,8 @@ def convert_atmos_to_mp4(
         return {
             "mp4_path": mp4_path,
             "metadata": metadata,
-            "original_path": original_path
+            "original_path": original_path,
+            "audio_only": audio_only,
         }
 
     except Exception as e:
@@ -228,6 +492,7 @@ def _convert_adm_wav_to_mp4(
     Returns:
         Path to MP4 file or None
     """
+    cleanup_paths = []
     try:
         if output_path is None:
             output_path = tempfile.mktemp(suffix=".mp4", prefix="atmos_adm_")
@@ -240,48 +505,56 @@ def _convert_adm_wav_to_mp4(
         
         temp_stereo = tempfile.mktemp(suffix=".wav", prefix="adm_stereo_")
         
-        logger.info(f"Extracting first 2 channels from ADM WAV (typically L/R bed)...")
-        # Use Python wave module to extract channels (handles any channel count)
-        try:
-            import wave
-            import struct
-            
-            with wave.open(adm_path, 'rb') as wav_in:
-                params = wav_in.getparams()
-                logger.info(f"ADM WAV: {params.nchannels} channels, {params.framerate} Hz, {params.sampwidth} bytes/sample")
-                
-                if params.nchannels < 2:
-                    logger.error(f"ADM WAV has only {params.nchannels} channel(s), need at least 2")
-                    return None
-                
-                # Read all frames
-                frames = wav_in.readframes(params.nframes)
-                
-                # Extract first 2 channels
-                bytes_per_sample = params.sampwidth
-                total_channels = params.nchannels
-                frame_size = bytes_per_sample * total_channels
-                
-                stereo_data = bytearray()
-                for i in range(0, len(frames), frame_size):
-                    # Extract first 2 channels from this frame
-                    ch1 = frames[i:i+bytes_per_sample]
-                    ch2 = frames[i+bytes_per_sample:i+2*bytes_per_sample]
-                    stereo_data.extend(ch1)
-                    stereo_data.extend(ch2)
-                
-                # Write stereo WAV
-                with wave.open(temp_stereo, 'wb') as wav_out:
-                    wav_out.setnchannels(2)
-                    wav_out.setsampwidth(params.sampwidth)
-                    wav_out.setframerate(params.framerate)
-                    wav_out.writeframes(bytes(stereo_data))
-                
-                logger.info(f"Extracted stereo to: {temp_stereo} ({len(stereo_data)/(1024*1024):.2f} MB)")
-                
-        except Exception as e:
-            logger.error(f"Failed to extract channels: {e}")
+        logger.info("Rendering ADM BWF WAV using EBU ADM Toolbox...")
+        config_path = Path(__file__).parent / "adm_render_config.json"
+        if not config_path.exists():
+            logger.error(f"ADM render config not found: {config_path}")
             return None
+
+        adm_input_path = Path(adm_path)
+        sanitized_adm = _sanitize_adm_for_ebu(adm_input_path)
+        if sanitized_adm:
+            cleanup_paths.append(sanitized_adm)
+            adm_input_path = sanitized_adm
+
+        eat_process_bin = Path(__file__).parent / "bin" / "eat-process"
+        if not eat_process_bin.exists():
+            logger.error(f"eat-process binary not found: {eat_process_bin}")
+            logger.warning("Falling back to simple channel extraction...")
+            eat_cmd = ["false"]
+        else:
+            eat_cmd = [
+                str(eat_process_bin),
+                str(config_path),
+                "-o", "input.path", str(adm_input_path),
+                "-o", "output.path", temp_stereo
+            ]
+
+        logger.info(f"Running EBU ADM Toolbox: {' '.join(eat_cmd)}")
+        result = subprocess.run(eat_cmd, capture_output=True, text=True, timeout=120)
+        
+        if result.returncode != 0 or not Path(temp_stereo).exists():
+            logger.error(f"EBU ADM Toolbox rendering failed: {result.stderr}")
+            logger.warning("Falling back to full-channel mixdown...")
+            
+            # Fallback: Mix all channels down to stereo (average) using soundfile
+            try:
+                import soundfile as sf
+                data, sr = sf.read(adm_path, always_2d=True)
+                if data.size == 0:
+                    logger.error("Fallback mixdown failed: empty audio")
+                    return None
+                # Average all channels to mono, then duplicate for stereo
+                mono = data.mean(axis=1)
+                stereo = np.stack([mono, mono], axis=1)
+                sf.write(temp_stereo, stereo, sr, subtype='PCM_16')
+                logger.info("Fallback full-channel mixdown to stereo completed")
+            except Exception as e:
+                logger.error(f"Fallback full-channel mixdown failed: {e}")
+                return None
+        else:
+            logger.info(f"✅ ADM rendered to stereo: {temp_stereo}")
+            logger.debug(f"eat-process output: {result.stdout}")
         
         # Step 2: Encode stereo WAV to EC-3
         temp_ec3 = tempfile.mktemp(suffix=".ec3", prefix="adm_ec3_")
@@ -365,6 +638,33 @@ def _convert_adm_wav_to_mp4(
     except Exception as e:
         logger.error(f"ADM WAV to MP4 conversion failed: {e}")
         return None
+    finally:
+        for temp_path in cleanup_paths:
+            try:
+                Path(temp_path).unlink()
+            except Exception:
+                pass
+
+
+def _has_video_stream(file_path: str) -> bool:
+    """Return True if file has at least one video stream."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            file_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
 
 
 def _convert_iab_to_mp4(
@@ -388,20 +688,39 @@ def _convert_iab_to_mp4(
     Returns:
         Path to MP4 file or None
     """
+    temp_stereo_wav: Optional[str] = None
     try:
         if output_path is None:
             output_path = tempfile.mktemp(suffix=".mp4", prefix="atmos_iab_")
 
         logger.info(f"Converting IAB to MP4: {iab_path}")
 
-        # IAB files are typically PCM-based with object metadata
-        # Best approach is to extract as PCM and encode to EAC3 or AAC
-        mp4_path = generate_black_video_with_audio(
+        from .iab_wrapper import IabProcessor
+
+        iab_processor = IabProcessor()
+        if not iab_processor.is_available():
+            logger.warning("IAB tools not available, using fallback conversion path")
+            return _convert_iab_fallback(iab_path, output_path, fps, resolution)
+
+        # Extract and render to stereo WAV first to avoid FFmpeg IAB issues
+        temp_stereo_wav = tempfile.mktemp(suffix=".wav", prefix="iab_rendered_")
+        rendered_path = iab_processor.extract_and_render(
             iab_path,
+            temp_stereo_wav,
+            sample_rate=48000,
+            channels=2,
+        )
+
+        if not rendered_path or not os.path.exists(temp_stereo_wav):
+            logger.error("IAB render failed; falling back to FFmpeg path")
+            return _convert_iab_fallback(iab_path, output_path, fps, resolution)
+
+        mp4_path = generate_black_video_with_audio(
+            temp_stereo_wav,
             output_path,
             fps=fps,
             resolution=resolution,
-            audio_codec="aac"  # AAC for broad compatibility
+            audio_codec="aac"
         )
 
         return mp4_path
@@ -409,6 +728,27 @@ def _convert_iab_to_mp4(
     except Exception as e:
         logger.error(f"IAB to MP4 conversion failed: {e}")
         return None
+    finally:
+        if temp_stereo_wav:
+            try:
+                Path(temp_stereo_wav).unlink()
+            except Exception:
+                pass
+
+
+def _convert_iab_fallback(
+    iab_path: str,
+    output_path: Optional[str],
+    fps: float,
+    resolution: str
+) -> Optional[str]:
+    message = (
+        "IAB decoding requires a Dolby renderer (e.g., cmdline_atmos_conversion_tool). "
+        "Install the tool and place the binary in sync_analyzer/dolby/bin. "
+        f"Source file: {iab_path}"
+    )
+    logger.error(message)
+    raise RuntimeError(message)
 
 
 def _convert_mxf_to_mp4(
@@ -416,7 +756,7 @@ def _convert_mxf_to_mp4(
     output_path: Optional[str],
     fps: float,
     resolution: str
-) -> Optional[str]:
+) -> Optional[Tuple[str, bool]]:
     """
     Convert MXF container to MP4
 
@@ -437,7 +777,28 @@ def _convert_mxf_to_mp4(
 
         logger.info(f"Converting MXF to MP4: {mxf_path}")
 
-        # Extract audio from MXF
+        # Detect if MXF already has video; if audio-only, extract to WAV and return
+        if not _has_video_stream(mxf_path):
+            target_wav_path = Path(output_path).with_suffix(".wav") if output_path else Path(tempfile.mktemp(suffix=".wav", prefix="atmos_mxf_audio_only_"))
+            target_wav_path.parent.mkdir(parents=True, exist_ok=True)
+            wav_cmd = [
+                "ffmpeg",
+                "-i", mxf_path,
+                "-vn",
+                "-ac", "2",
+                "-ar", "48000",
+                "-c:a", "pcm_s16le",
+                "-y",
+                str(target_wav_path),
+            ]
+            wav_result = subprocess.run(wav_cmd, capture_output=True, text=True)
+            if wav_result.returncode != 0 or not target_wav_path.exists():
+                logger.error(f"Audio-only MXF WAV extraction failed: {wav_result.stderr}")
+                return None
+            logger.info(f"Extracted audio-only MXF to WAV: {target_wav_path}")
+            return str(target_wav_path), True
+
+        # Extract audio from MXF (with video)
         temp_audio = tempfile.mktemp(suffix=".audio.m4a")
 
         # Extract audio track (preserve codec if possible)
@@ -453,9 +814,38 @@ def _convert_mxf_to_mp4(
         result = subprocess.run(extract_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             logger.warning("Failed to copy audio codec, re-encoding to AAC")
-            # Fallback: re-encode to AAC
-            extract_cmd[-2] = "aac"
-            subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
+            # Fallback: re-encode to AAC (preserve -y position)
+            extract_cmd = [
+                "ffmpeg",
+                "-i", mxf_path,
+                "-vn",
+                "-c:a", "aac",
+                "-y",
+                temp_audio
+            ]
+            try:
+                subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
+                audio_codec = "copy"
+            except subprocess.CalledProcessError as exc:
+                logger.error(f"MXF audio re-encode failed: {exc.stderr}")
+                # Final fallback: extract to WAV so we can still mux
+                temp_wav = tempfile.mktemp(suffix=".wav", prefix="atmos_mxf_audio_")
+                wav_cmd = [
+                    "ffmpeg",
+                    "-i", mxf_path,
+                    "-vn",
+                    "-ac", "2",
+                    "-ar", "48000",
+                    "-c:a", "pcm_s16le",
+                    "-y",
+                    temp_wav,
+                ]
+                wav_result = subprocess.run(wav_cmd, capture_output=True, text=True)
+                if wav_result.returncode != 0:
+                    logger.error(f"MXF WAV extraction failed: {wav_result.stderr}")
+                    return None
+                temp_audio = temp_wav
+                audio_codec = "aac"
 
         # Generate MP4 with black video and extracted audio
         mp4_path = generate_black_video_with_audio(
@@ -463,13 +853,13 @@ def _convert_mxf_to_mp4(
             output_path,
             fps=fps,
             resolution=resolution,
-            audio_codec="copy"
+            audio_codec=audio_codec
         )
 
         # Clean up temp audio
         Path(temp_audio).unlink(missing_ok=True)
 
-        return mp4_path
+        return mp4_path, False
 
     except Exception as e:
         logger.error(f"MXF to MP4 conversion failed: {e}")

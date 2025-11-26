@@ -1,0 +1,28 @@
+# EBU ADM Renderer (EAR) - Python-based renderer for ADM BW64 files
+# Provides ear-render CLI for rendering ADM to various speaker layouts
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install EAR package
+RUN pip install --no-cache-dir \
+    ear \
+    numpy \
+    scipy
+
+# Create working directories
+WORKDIR /data
+RUN mkdir -p /input /output
+
+# Verify installation
+RUN ear-render --help
+
+# Default entrypoint
+ENTRYPOINT ["ear-render"]
+CMD ["--help"]
+

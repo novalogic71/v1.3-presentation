@@ -532,7 +532,168 @@ class AISyncDetector:
         consistency = 1.0 - np.std(similarities)  # Lower std = higher consistency
         
         return max(0.0, min(1.0, consistency))
-    
+
+    def _refine_ai_offset_sample_accurate(self,
+                                          master_audio: np.ndarray,
+                                          dub_audio: np.ndarray,
+                                          coarse_offset_samples: int,
+                                          sr: int) -> Tuple[int, Dict[str, Any]]:
+        """
+        Refine AI's coarse offset to sample-accurate precision.
+        Wrapper around the detailed refinement method.
+        """
+        # Use larger search range for AI (±1 second to cover 0.5s hop uncertainty)
+        refined_offset, phase_coherence, metadata = self._refine_offset_sample_accurate(
+            master_audio,
+            dub_audio,
+            coarse_offset_samples,
+            sr,
+            refinement_window_seconds=4.0,
+            search_range_samples=int(sr)  # ±1 second
+        )
+
+        # Convert metadata format
+        adjustment = refined_offset - coarse_offset_samples
+        refinement_info = {
+            "status": metadata.get("status", "success"),
+            "adjustment_samples": adjustment,
+            "adjustment_seconds": adjustment / sr,
+            "adjustment_milliseconds": (adjustment / sr) * 1000,
+            "phase_coherence": phase_coherence,
+            **metadata
+        }
+
+        return refined_offset, refinement_info
+
+    def _refine_offset_sample_accurate(self,
+                                       master_audio: np.ndarray,
+                                       dub_audio: np.ndarray,
+                                       coarse_offset_samples: int,
+                                       sr: int,
+                                       refinement_window_seconds: float = 2.0,
+                                       search_range_samples: int = 2048) -> Tuple[int, float, Dict[str, float]]:
+        """
+        Refine offset to sample-accurate precision using raw audio cross-correlation.
+
+        Args:
+            master_audio: Master audio samples
+            dub_audio: Dub audio samples
+            coarse_offset_samples: Initial offset estimate
+            sr: Sample rate
+            refinement_window_seconds: Size of audio window to use for refinement
+            search_range_samples: How many samples +/- to search around coarse offset
+
+        Returns:
+            Tuple of (refined_offset_samples, phase_coherence, metadata)
+        """
+        import scipy.signal
+
+        # Calculate window size in samples
+        window_samples = int(refinement_window_seconds * sr)
+
+        # Extract windows from both audio files centered around the coarse offset
+        if coarse_offset_samples < 0:
+            # Dub is ahead
+            dub_start = abs(coarse_offset_samples)
+            master_start = 0
+        else:
+            # Master is ahead
+            master_start = coarse_offset_samples
+            dub_start = 0
+
+        # Add search range to window for correlation
+        extended_window = window_samples + 2 * search_range_samples
+
+        # Extract windows with bounds checking
+        master_end = min(master_start + extended_window, len(master_audio))
+        dub_end = min(dub_start + extended_window, len(dub_audio))
+
+        master_window = master_audio[master_start:master_end]
+        dub_window = dub_audio[dub_start:dub_end]
+
+        if len(master_window) < window_samples or len(dub_window) < window_samples:
+            return coarse_offset_samples, 0.0, {"status": "insufficient_audio"}
+
+        # Normalize windows
+        master_window = master_window / (np.max(np.abs(master_window)) + 1e-8)
+        dub_window = dub_window / (np.max(np.abs(dub_window)) + 1e-8)
+
+        # Perform sample-accurate cross-correlation
+        search_master = master_window[:window_samples + search_range_samples]
+        search_dub = dub_window[:window_samples + search_range_samples]
+
+        correlation = scipy.signal.correlate(search_master, search_dub, mode='valid')
+
+        if len(correlation) == 0:
+            return coarse_offset_samples, 0.0, {"status": "empty_correlation"}
+
+        # Find peak with sub-sample precision using parabolic interpolation
+        peak_idx = np.argmax(np.abs(correlation))
+
+        # Parabolic interpolation for sub-sample accuracy
+        if 0 < peak_idx < len(correlation) - 1:
+            alpha = correlation[peak_idx - 1]
+            beta = correlation[peak_idx]
+            gamma = correlation[peak_idx + 1]
+
+            denom = alpha - 2*beta + gamma
+            if abs(denom) > 1e-10:
+                p = 0.5 * (alpha - gamma) / denom
+                sub_sample_offset = peak_idx + p
+            else:
+                sub_sample_offset = peak_idx
+        else:
+            sub_sample_offset = peak_idx
+
+        # Calculate refinement relative to search window
+        samples_from_coarse = int(round(sub_sample_offset - search_range_samples))
+        refined_offset_samples = coarse_offset_samples + samples_from_coarse
+
+        # Calculate phase coherence for verification
+        if refined_offset_samples < 0:
+            aligned_dub_start = abs(refined_offset_samples)
+            aligned_master_start = 0
+        else:
+            aligned_master_start = refined_offset_samples
+            aligned_dub_start = 0
+
+        # Extract aligned windows for phase analysis
+        phase_window_samples = min(window_samples,
+                                   len(master_audio) - aligned_master_start,
+                                   len(dub_audio) - aligned_dub_start)
+
+        if phase_window_samples > 0:
+            aligned_master = master_audio[aligned_master_start:aligned_master_start + phase_window_samples]
+            aligned_dub = dub_audio[aligned_dub_start:aligned_dub_start + phase_window_samples]
+
+            # Compute phase correlation using FFT
+            master_fft = np.fft.rfft(aligned_master)
+            dub_fft = np.fft.rfft(aligned_dub)
+
+            cross_power = master_fft * np.conj(dub_fft)
+            cross_power_norm = cross_power / (np.abs(cross_power) + 1e-8)
+
+            phase_corr = np.fft.irfft(cross_power_norm)
+            phase_coherence = float(np.max(np.abs(phase_corr)) / len(phase_corr))
+
+            correlation_coef = np.corrcoef(aligned_master, aligned_dub)[0, 1]
+            rms_diff = np.sqrt(np.mean((aligned_master - aligned_dub) ** 2))
+
+            metadata = {
+                "phase_coherence": phase_coherence,
+                "correlation_coefficient": float(correlation_coef),
+                "rms_difference": float(rms_diff),
+                "refinement_samples": samples_from_coarse,
+                "sub_sample_precision": float(sub_sample_offset - peak_idx),
+                "peak_correlation": float(correlation[peak_idx]),
+                "status": "success"
+            }
+        else:
+            phase_coherence = 0.0
+            metadata = {"status": "insufficient_aligned_audio"}
+
+        return refined_offset_samples, phase_coherence, metadata
+
     def detect_sync(self, 
                    master_audio: np.ndarray, 
                    dub_audio: np.ndarray,
@@ -580,9 +741,15 @@ class AISyncDetector:
         offset_windows, confidence = self.find_optimal_alignment(similarity_matrix)
         
         # Convert window offset to samples
-        window_duration_samples = int(self.config.hop_size * sr)
-        offset_samples = offset_windows * window_duration_samples
-        offset_seconds = offset_samples / sr
+        # IMPORTANT: Windows are created at the embedding sample rate (config.sample_rate),
+        # not the input audio sample rate (sr), because audio gets resampled internally
+        embedding_sr = self.config.sample_rate  # 16000 Hz
+        window_duration_samples = int(self.config.hop_size * embedding_sr)
+        offset_samples_at_embedding_rate = offset_windows * window_duration_samples
+        offset_seconds = offset_samples_at_embedding_rate / embedding_sr
+
+        # Convert to original sample rate for reporting
+        offset_samples = int(offset_seconds * sr)
         
         logger.info("Checking temporal consistency...")
         if progress_callback:
@@ -616,10 +783,16 @@ class AISyncDetector:
         
         # Adjust confidence based on temporal consistency
         final_confidence = confidence * temporal_consistency
-        
+
+        # NOTE: AI has 500ms precision due to hop_size=0.5s
+        # Refinement attempts made results worse, so AI is informational only
+        # Use CORRELATION method for sample-accurate sync detection
+        logger.warning(f"AI offset: {offset_seconds:.3f}s (±500ms precision due to hop_size)")
+        logger.warning("Use CORRELATION method for sample-accurate results")
+
         if progress_callback:
             progress_callback(100.0, "AI Analysis: Complete!")
-        
+
         return AISyncResult(
             offset_samples=int(offset_samples),
             offset_seconds=offset_seconds,
@@ -633,7 +806,8 @@ class AISyncDetector:
                 "master_windows": len(master_embeddings),
                 "dub_windows": len(dub_embeddings),
                 "similarity_matrix_shape": similarity_matrix.shape,
-                "offset_windows": offset_windows
+                "offset_windows": offset_windows,
+                "precision_note": "AI has ±500ms precision - use CORRELATION for sample accuracy"
             }
         )
     

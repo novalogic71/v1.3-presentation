@@ -1,0 +1,45 @@
+FROM rockylinux:9
+
+# Install build dependencies for Rocky Linux 9 (RHEL 9 compatible)
+RUN dnf -y install \
+    gcc \
+    gcc-c++ \
+    make \
+    cmake \
+    git \
+    pkg-config \
+    zip \
+    unzip \
+    tar \
+    diffutils \
+    wget \
+    && dnf clean all
+
+# Install EPEL and PowerTools for additional packages
+RUN dnf -y install epel-release && \
+    dnf config-manager --set-enabled crb && \
+    dnf -y install ninja-build && \
+    dnf clean all
+
+# Clone EBU ADM Toolbox
+WORKDIR /build
+RUN git clone https://github.com/ebu/ebu-adm-toolbox.git --recursive
+
+# Build EBU ADM Toolbox
+WORKDIR /build/ebu-adm-toolbox
+RUN ./external/vcpkg/bootstrap-vcpkg.sh
+ENV CC=/usr/bin/gcc
+ENV CXX=/usr/bin/g++
+RUN cmake --preset release
+RUN cmake --build --preset release
+
+# Copy binary to a known location for extraction
+RUN mkdir -p /output && \
+    cp build/release/eat-process /output/ && \
+    chmod +x /output/eat-process
+
+# Verify binary works
+RUN /output/eat-process --help || true
+
+CMD ["/bin/bash"]
+

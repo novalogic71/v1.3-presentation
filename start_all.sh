@@ -130,8 +130,10 @@ if [ $? -ne 0 ]; then
     }
 fi
 
-# Prefer using the configured model cache for HF transformers
-export HF_HOME="${AI_MODEL_CACHE_DIR:-$API_DIR/ai_models}"
+# Configure AI model cache directory for both HuggingFace and custom code
+export AI_MODEL_CACHE_DIR="${AI_MODEL_CACHE_DIR:-$API_DIR/ai_models}"
+export HF_HOME="$AI_MODEL_CACHE_DIR"
+echo "🧠 AI_MODEL_CACHE_DIR set to: $AI_MODEL_CACHE_DIR"
 echo "🧠 HF_HOME set to: $HF_HOME"
 
 # Start API using the venv's Python explicitly (avoid relying on shell activation)

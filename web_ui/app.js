@@ -89,6 +89,28 @@ class SyncAnalyzerUI {
                 console.log('Audio Engine not available');
             }
         };
+        
+        // Helper to adjust dub volume (0-2, where 1.2 is default, 2 is max boost)
+        window.setDubVolume = (vol) => {
+            const engine = this.waveformVisualizer?.audioEngine;
+            if (engine) {
+                engine.setVolume('dub', vol);
+                console.log(`Dub volume set to ${vol} (0-2 range, 1.2 is default)`);
+            } else {
+                console.log('Audio Engine not available');
+            }
+        };
+        
+        // Helper to adjust master volume (0-1)
+        window.setMasterVolume = (vol) => {
+            const engine = this.waveformVisualizer?.audioEngine;
+            if (engine) {
+                engine.setVolume('master', vol);
+                console.log(`Master volume set to ${vol} (0-1 range, 0.8 is default)`);
+            } else {
+                console.log('Audio Engine not available');
+            }
+        };
 
         // Add QC debug helper
         window.debugQC = () => {
@@ -341,10 +363,18 @@ class SyncAnalyzerUI {
     
     async loadFileTree(path = this.currentPath) {
         this.elements.fileTree.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading files...</div>';
-        
+
         try {
             console.log('Loading file tree for path:', path);
-            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+            // Add cache-busting to force fresh data
+            const cacheBuster = `_=${Date.now()}`;
+            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&${cacheBuster}`, {
+                cache: 'no-cache',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
+            });
             console.log('Response status:', response.status);
             const data = await response.json();
             console.log('Response data:', data);
@@ -406,7 +436,10 @@ class SyncAnalyzerUI {
             { name: 'DunkirkEC_InsideTheCockpit_ProRes_15sec.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_InsideTheCockpit_ProRes_15sec.mov' },
             // New test files
             { name: 'DunkirkEC_TheInCameraApproach1_ProRes.mov', type: 'video', path: '/mnt/data/amcmurray/_insync_master_files/DunkirkEC_TheInCameraApproach1_ProRes.mov' },
-            { name: 'DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov' }
+            { name: 'DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov' },
+            // MXF files
+            { name: 'E4284683_SINNERS_OV_HDR_JG_01_EN_20_B.mxf', type: 'atmos', path: '/mnt/data/amcmurray/_insync_master_files/E4284683_SINNERS_OV_HDR_JG_01_EN_20_B.mxf' },
+            { name: 'E5168533_GRCH_LP_NEARFIELD_DOM_ATMOS_2398fps_.atmos.mxf', type: 'atmos', path: '/mnt/data/amcmurray/_outofsync_master_files/E5168533_GRCH_LP_NEARFIELD_DOM_ATMOS_2398fps_.atmos.mxf' }
         ];
         
         this.renderFileTree(mockFiles, '/mnt/data');
@@ -643,6 +676,7 @@ class SyncAnalyzerUI {
             }
             const startJson = await startResp.json();
             const analysisId = startJson.analysis_id;
+            newItem.analysisId = analysisId;
             this.addLog('info', `Analysis started: ${analysisId}`);
 
             // Live progress via SSE (fallback to polling on error)
@@ -758,26 +792,12 @@ class SyncAnalyzerUI {
                 confidence: co.confidence ?? 0,
                 quality_score: res.overall_confidence ?? 0,
                 method_used: 'Consensus',
+                analysis_id: res.analysis_id || analysisId,
+                created_at: res.completed_at || res.created_at || null,
                 analysis_methods: Array.isArray(res.method_results) ? res.method_results.map(m => m.method) : []
             };
 
-            // Try to fetch the latest DB record for this master/dub pair and prefer its consensus value
-            try {
-                const dbUrl = `${this.FASTAPI_BASE}/reports/search?master_file=${encodeURIComponent(newItem.master.path)}&dub_file=${encodeURIComponent(newItem.dub.path)}`;
-                const dbResp = await fetch(dbUrl);
-                if (dbResp.ok) {
-                    const dbJson = await dbResp.json();
-                    if (dbJson && dbJson.success && dbJson.report && typeof dbJson.report.consensus_offset_seconds === 'number') {
-                        adapted.offset_seconds = dbJson.report.consensus_offset_seconds;
-                        if (typeof dbJson.report.confidence_score === 'number') {
-                            adapted.confidence = dbJson.report.confidence_score;
-                        }
-                        this.addLog('info', `DB consensus applied: ${this.formatOffsetDisplay(adapted.offset_seconds, true, this.detectedFrameRate)}`);
-                    }
-                }
-            } catch (e) {
-                this.addLog('warning', `DB lookup failed; using API result: ${e.message}`);
-            }
+            // Use the live API result (avoid stale DB overrides)
             this.addLog('success', `Analysis completed: ${this.formatOffsetDisplay(adapted.offset_seconds, true, this.detectedFrameRate)}`);
 
             // Update batch item
@@ -785,6 +805,7 @@ class SyncAnalyzerUI {
             newItem.progress = 100;
             newItem.result = adapted;
             this.updateBatchTableRow(newItem);
+            await this.persistBatchQueue().catch(() => {});
 
             // Prepare browser-compatible audio proxies for playback (with timeout + fallback)
             try {
@@ -959,8 +980,11 @@ class SyncAnalyzerUI {
         
         // Hide placeholder and show results
         this.elements.resultsPlaceholder.style.display = 'none';
-        
-        const offsetMs = Math.abs(result.offset_seconds * 1000);
+
+        // Use backend's pre-calculated milliseconds to avoid precision loss
+        const offsetMs = result.offset_milliseconds !== undefined
+            ? Math.abs(result.offset_milliseconds)
+            : Math.abs(result.offset_seconds * 1000);
         const absOffset = Math.abs(result.offset_seconds);
         // Branch convention: positive => dub advanced, negative => dub delayed
         const direction = result.offset_seconds > 0 ? 'advanced' : 'delayed';
@@ -1269,7 +1293,7 @@ class SyncAnalyzerUI {
         // Master file input
         this.masterFileInput = document.createElement('input');
         this.masterFileInput.type = 'file';
-        this.masterFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg';
+        this.masterFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg,.mov,.mp4,.avi,.mkv,.wmv,.ec3,.eac3,.adm,.iab,.mxf';
         this.masterFileInput.style.display = 'none';
         this.masterFileInput.addEventListener('change', (e) => {
             if (e.target.files[0]) {
@@ -1277,11 +1301,11 @@ class SyncAnalyzerUI {
             }
         });
         document.body.appendChild(this.masterFileInput);
-        
+
         // Dub file input
         this.dubFileInput = document.createElement('input');
         this.dubFileInput.type = 'file';
-        this.dubFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg';
+        this.dubFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg,.mov,.mp4,.avi,.mkv,.wmv,.ec3,.eac3,.adm,.iab,.mxf';
         this.dubFileInput.style.display = 'none';
         this.dubFileInput.addEventListener('change', (e) => {
             if (e.target.files[0]) {
@@ -1318,7 +1342,7 @@ class SyncAnalyzerUI {
                 if (audioFile) {
                     this.loadAudioFile(audioFile, type);
                 } else {
-                    console.error('Please drop a valid audio file (WAV, MP3, FLAC, M4A, AIFF)');
+                    console.error('Please drop a valid media file (WAV, MP3, FLAC, M4A, AIFF, MOV, MP4, MXF, etc.)');
                 }
             });
         });
@@ -1455,12 +1479,20 @@ class SyncAnalyzerUI {
             'audio/m4a', 'audio/mp4',
             'audio/aiff', 'audio/x-aiff',
             'audio/aac',
-            'audio/ogg'
+            'audio/ogg',
+            'video/quicktime',  // MOV files
+            'video/mp4',
+            'video/x-msvideo',  // AVI
+            'video/x-matroska'  // MKV
         ];
-        
-        const supportedExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg'];
-        
-        return supportedTypes.includes(file.type) || 
+
+        const supportedExtensions = [
+            '.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg',
+            '.mov', '.mp4', '.avi', '.mkv', '.wmv',  // Video containers
+            '.ec3', '.eac3', '.adm', '.iab', '.mxf'  // Atmos and professional formats
+        ];
+
+        return supportedTypes.includes(file.type) ||
                supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     }
     
@@ -1533,12 +1565,12 @@ class SyncAnalyzerUI {
     }
     
     isAudioFile(filename) {
-        const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.ogg'];
+        const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.ogg', '.ec3', '.eac3', '.adm', '.iab'];
         return audioExtensions.some(ext => filename.toLowerCase().endsWith(ext));
     }
-    
+
     isVideoFile(filename) {
-        const videoExtensions = ['.mov', '.mp4', '.avi', '.mkv', '.wmv'];
+        const videoExtensions = ['.mov', '.mp4', '.avi', '.mkv', '.wmv', '.mxf'];
         return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
     }
     
@@ -2476,12 +2508,17 @@ class SyncAnalyzerUI {
                     this.updateBatchSummary();
                     this.addLog('info', `Restored ${items.length} batch item(s) from save`);
                     // Rehydrate results from DB in case some items were saved without inline results
-                    try { await this.rehydrateBatchResults(); } catch (e) { console.warn('Rehydrate failed:', e); }
+                    try { await this.rehydrateBatchResults(true); } catch (e) { console.warn('Rehydrate failed:', e); }
                     return;
                 }
             }
         } catch (e) {
             console.warn('Failed to load persisted batch queue:', e);
+        }
+        // If we already have a local queue (e.g., from localStorage), refresh it from DB
+        if (this.batchQueue.length) {
+            try { await this.rehydrateBatchResults(true); } catch (e) { console.warn('Rehydrate failed:', e); }
+            return;
         }
         // Optional: add demo entry only if nothing restored
         // DISABLED: Remove test entries for production - users want to see only their actual results
@@ -2514,9 +2551,10 @@ class SyncAnalyzerUI {
     async rehydrateBatchResults(force = false) {
         const enc = encodeURIComponent;
         for (const item of this.batchQueue) {
-            if (!force && item && item.result && typeof item.result.offset_seconds === 'number') continue;
+            const hasResult = item && item.result && typeof item.result.offset_seconds === 'number';
+            if (!force && hasResult) continue;
             try {
-                const url = `${this.FASTAPI_BASE}/reports/search?master_file=${enc(item.master.path)}&dub_file=${enc(item.dub.path)}`;
+                const url = `${this.FASTAPI_BASE}/reports/search?master_file=${enc(item.master.path)}&dub_file=${enc(item.dub.path)}&prefer_high_confidence=true`;
                 const r = await fetch(url);
                 if (!r.ok) continue;
                 const j = await r.json();
@@ -2526,8 +2564,11 @@ class SyncAnalyzerUI {
                     offset_seconds: Number(rec.consensus_offset_seconds || 0),
                     confidence: Number(rec.confidence_score || 0),
                     method_used: 'Consensus',
-                    quality_score: Number(rec.confidence_score || 0)
+                    quality_score: Number(rec.confidence_score || 0),
+                    analysis_id: rec.analysis_id,
+                    created_at: rec.created_at
                 };
+                item.analysisId = rec.analysis_id || item.analysisId;
                 item.result = adapted;
                 item.status = item.status === 'queued' ? 'completed' : item.status;
                 item.progress = item.progress || 100;
@@ -2767,9 +2808,15 @@ class SyncAnalyzerUI {
     
     getAnalysisConfig() {
         const aiModel = document.querySelector('input[name="ai-model"]:checked')?.value || 'wav2vec2';
-        
+
+        // Always include 'correlation' for sample-accurate detection
+        const methods = this.currentMethods || ['mfcc'];
+        if (!methods.includes('correlation')) {
+            methods.push('correlation');
+        }
+
         return {
-            methods: this.currentMethods || ['mfcc'],
+            methods: methods,
             sampleRate: parseInt(this.elements.sampleRate.value),
             windowSize: parseFloat(this.elements.windowSize.value),
             confidenceThreshold: parseFloat(this.elements.confidenceThreshold.value),
@@ -3073,7 +3120,10 @@ class SyncAnalyzerUI {
 
             // Extract key metrics
             const offsetSeconds = Math.abs(result.offset_seconds || 0);
-            const offsetMs = offsetSeconds * 1000;
+            // Use backend's pre-calculated milliseconds to avoid precision loss
+            const offsetMs = result.offset_milliseconds !== undefined
+                ? Math.abs(result.offset_milliseconds)
+                : offsetSeconds * 1000;
             const confidence = result.confidence || 0;
             const qualityScore = result.quality_score || 0;
             const timelineData = result.timeline || [];
@@ -3297,8 +3347,8 @@ class SyncAnalyzerUI {
         
         // Check file extension to determine if we need audio extraction
         const ext = filePath.toLowerCase().split('.').pop();
-        const videoExtensions = ['mov', 'mp4', 'avi', 'mkv', 'wmv'];
-        const audioExtensions = ['wav', 'mp3', 'flac', 'm4a', 'aiff', 'ogg', 'aac'];
+        const videoExtensions = ['mov', 'mp4', 'avi', 'mkv', 'wmv', 'mxf'];
+        const audioExtensions = ['wav', 'mp3', 'flac', 'm4a', 'aiff', 'ogg', 'aac', 'ec3', 'eac3', 'adm', 'iab'];
         
         if (videoExtensions.includes(ext)) {
             // Use audio proxy endpoint for video files (WAV for WebAudio decode)
