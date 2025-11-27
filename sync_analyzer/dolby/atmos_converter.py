@@ -311,16 +311,18 @@ def is_atmos_file(file_path: str) -> bool:
     try:
         file_path = Path(file_path)
 
-        # Check extension first
+        # Check extension first (but NOT .mxf - must probe for IAB)
         ext = file_path.suffix.lower()
-        if ext in ['.ec3', '.eac3', '.adm', '.iab', '.mxf']:
+        if ext in ['.ec3', '.eac3', '.adm', '.iab']:
             return True
 
-        # For other extensions, probe with ffprobe
+        # For .mxf and other extensions, probe with ffprobe
+        # NOTE: .mxf files are only Atmos if they contain IAB (detected via ffprobe metadata)
+        #       Regular MXF with PCM audio should be handled by FFmpeg directly.
         metadata = extract_atmos_metadata(str(file_path))
         if metadata:
-            # Check if it's ADM WAV, IAB, or MXF (even with .wav extension)
-            if metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf:
+            # Check if it's ADM WAV or IAB (NOT is_mxf alone!)
+            if metadata.is_adm_wav or metadata.is_iab:
                 return True
             # Also check codec (for EC3/EAC3 in MP4/MOV containers)
             return is_atmos_codec(metadata.codec)
@@ -537,20 +539,22 @@ def _convert_adm_wav_to_mp4(
             logger.error(f"EBU ADM Toolbox rendering failed: {result.stderr}")
             logger.warning("Falling back to full-channel mixdown...")
             
-            # Fallback: Mix all channels down to stereo (average) using soundfile
+            # Fallback: Use ITU-R BS.775 professional downmix via atmos_downmix module
             try:
-                import soundfile as sf
-                data, sr = sf.read(adm_path, always_2d=True)
-                if data.size == 0:
-                    logger.error("Fallback mixdown failed: empty audio")
+                from .atmos_downmix import downmix_to_stereo_file
+                result = downmix_to_stereo_file(
+                    adm_path,
+                    temp_stereo,
+                    include_lfe=False,
+                    normalize=True,
+                    bit_depth=16
+                )
+                if result is None:
+                    logger.error("Professional downmix fallback failed")
                     return None
-                # Average all channels to mono, then duplicate for stereo
-                mono = data.mean(axis=1)
-                stereo = np.stack([mono, mono], axis=1)
-                sf.write(temp_stereo, stereo, sr, subtype='PCM_16')
-                logger.info("Fallback full-channel mixdown to stereo completed")
+                logger.info("Fallback ITU-R BS.775 downmix to stereo completed")
             except Exception as e:
-                logger.error(f"Fallback full-channel mixdown failed: {e}")
+                logger.error(f"Fallback professional downmix failed: {e}")
                 return None
         else:
             logger.info(f"✅ ADM rendered to stereo: {temp_stereo}")

@@ -170,7 +170,7 @@ class CoreAudioEngine {
                     console.log(`[Audio] Trying proxy for ${type}: ${rawPath}`);
                     try {
                         this.updateProgress(`Transcoding ${type} via proxy...`, 60);
-                        const proxyUrl = `/api/v1/files/proxy-audio?path=${encodeURIComponent(rawPath)}&format=wav`;
+                        const proxyUrl = `/api/v1/files/proxy-audio?path=${encodeURIComponent(rawPath)}&format=wav&role=${type}`;
                         console.log(`[Audio] Proxy URL for ${type}: ${proxyUrl}`);
                         const pResp = await fetch(proxyUrl, { credentials: 'same-origin' });
                         console.log(`[Audio] Proxy response for ${type}: ${pResp.status}`);

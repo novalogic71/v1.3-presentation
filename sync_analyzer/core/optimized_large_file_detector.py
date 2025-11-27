@@ -144,7 +144,16 @@ class OptimizedLargeFileDetector:
                     data, sr = sf.read(video_path, always_2d=True)
                     if data.size == 0:
                         raise RuntimeError("empty audio during fallback mixdown")
-                    mono = np.mean(data, axis=1, dtype=np.float64)
+                    # Use L+R bed channels for multichannel (matches stereo masters better)
+                    if data.shape[1] > 2:
+                        try:
+                            from ..dolby.atmos_downmix import downmix_lr_bed_only
+                            mono = downmix_lr_bed_only(data)
+                        except ImportError:
+                            # Fallback to L+R average
+                            mono = (data[:, 0] + data[:, 1]) / 2 if data.shape[1] >= 2 else data[:, 0]
+                    else:
+                        mono = np.mean(data, axis=1, dtype=np.float64)
                     mono = np.clip(mono, -1.0, 1.0)
                     target_sr = self.sample_rate
                     if sr and sr != target_sr:
@@ -700,6 +709,174 @@ class OptimizedLargeFileDetector:
         except Exception as e:
             self.logger.error(f"Error in cross-correlation: {e}")
             return {'offset_seconds': 0.0, 'confidence': 0.0}
+
+    def _detect_chunk_offset_direct(self, master_path: str, dub_path: str,
+                                     master_start: float, master_duration: float,
+                                     dub_start: float, dub_duration: float,
+                                     global_offset: float = 0.0) -> Dict[str, Any]:
+        """
+        Detect offset using cross-correlation with explicit master and dub positions.
+        
+        This method reads audio from the specified positions without any additional
+        offset calculation, allowing for pre-computed skip values.
+        
+        Returns:
+            Dict with fine offset within the chunk and total offset including global.
+        """
+        try:
+            sr = self.sample_rate
+            duration = min(master_duration, dub_duration)
+            n_frames = int(duration * sr)
+            
+            # Read master from explicit position
+            master_start_frame = int(master_start * sr)
+            if master_start_frame < 0:
+                return {'offset_seconds': 0.0, 'confidence': 0.0, 'error': 'negative master position'}
+            
+            y1, _ = sf.read(master_path, start=master_start_frame, frames=n_frames, dtype='float32', always_2d=False)
+            if y1.ndim > 1:
+                y1 = y1.mean(axis=1)
+            
+            # Read dub from explicit position
+            dub_start_frame = int(dub_start * sr)
+            if dub_start_frame < 0:
+                return {'offset_seconds': 0.0, 'confidence': 0.0, 'error': 'negative dub position'}
+            
+            y2, _ = sf.read(dub_path, start=dub_start_frame, frames=n_frames, dtype='float32', always_2d=False)
+            if y2.ndim > 1:
+                y2 = y2.mean(axis=1)
+            
+            if len(y1) == 0 or len(y2) == 0:
+                return {'offset_seconds': 0.0, 'confidence': 0.0, 'error': 'empty audio'}
+            
+            # Normalize
+            y1 = (y1 - np.mean(y1)) / (np.std(y1) + 1e-8)
+            y2 = (y2 - np.mean(y2)) / (np.std(y2) + 1e-8)
+            
+            # Cross-correlation
+            correlation = correlate(y1, y2, mode='full', method='fft')
+            lags = np.arange(-(len(y2)-1), len(y1))
+            
+            # Find peak
+            peak_idx = np.argmax(np.abs(correlation))
+            fine_offset_samples = lags[peak_idx]
+            fine_offset_seconds = fine_offset_samples / sr
+            
+            # Confidence from normalized correlation
+            peak_val = correlation[peak_idx]
+            confidence = min(1.0, abs(peak_val) / (len(y2) * 0.5))
+            
+            # Total offset = global offset + fine offset
+            # If global_offset is -21s and fine_offset is 0s, total is -21s
+            total_offset = global_offset + fine_offset_seconds
+            
+            return {
+                'offset_seconds': fine_offset_seconds,
+                'total_offset_seconds': total_offset,
+                'global_offset': global_offset,
+                'confidence': confidence,
+                'master_position': master_start,
+                'dub_position': dub_start
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in direct chunk offset detection: {e}")
+            return {'offset_seconds': 0.0, 'confidence': 0.0, 'error': str(e)}
+
+    def detect_offset_cross_correlation_aligned(self, master_path: str, dub_path: str,
+                                                dub_start_time: float, duration: float,
+                                                global_offset: float = 0.0) -> Dict[str, Any]:
+        """
+        Detect offset using cross-correlation with global alignment offset.
+        
+        Reads dub from [dub_start_time, dub_start_time + duration]
+        Reads master from [dub_start_time + global_offset, ...] 
+        
+        The detected offset is the FINE offset within the search window,
+        relative to the globally-aligned position.
+        """
+        try:
+            sr = self.sample_rate
+            
+            # Dub: read from dub_start_time
+            dub_start_frame = int(dub_start_time * sr)
+            n_frames = int(duration * sr)
+            
+            y2, _ = sf.read(dub_path, start=dub_start_frame, frames=n_frames, dtype='float32', always_2d=False)
+            if y2.ndim > 1:
+                y2 = y2.mean(axis=1)
+            
+            # Master: read from dub_start_time + global_offset
+            master_start_frame = int((dub_start_time + global_offset) * sr)
+            y1, _ = sf.read(master_path, start=master_start_frame, frames=n_frames, dtype='float32', always_2d=False)
+            if y1.ndim > 1:
+                y1 = y1.mean(axis=1)
+            
+            if len(y1) == 0 or len(y2) == 0:
+                return {'offset_seconds': 0.0, 'confidence': 0.0, 'global_offset': global_offset}
+            
+            # Ensure same length and normalize
+            min_len = min(len(y1), len(y2))
+            y1 = y1[:min_len]
+            y2 = y2[:min_len]
+            y1 = y1 - np.mean(y1)
+            y2 = y2 - np.mean(y2)
+            y1_std = np.std(y1) + 1e-8
+            y2_std = np.std(y2) + 1e-8
+            y1 = y1 / y1_std
+            y2 = y2 / y2_std
+
+            # Limit search window
+            max_lag_samples = min(int(sr * min(duration * 0.6, 20.0)), min_len - 1)
+
+            # Cross-correlation via FFT
+            corr = correlate(y1, y2, mode='full', method='fft')
+            lags = correlation_lags(len(y1), len(y2), mode='full')
+            if max_lag_samples > 0:
+                mask = np.abs(lags) <= max_lag_samples
+                corr = corr[mask]
+                lags = lags[mask]
+
+            corr_abs = np.abs(corr)
+            max_idx = int(np.argmax(corr_abs))
+            peak_val = float(corr_abs[max_idx])
+
+            # Prefer smallest shift when multiple peaks share max value
+            near_max_mask = np.isclose(corr_abs, peak_val, rtol=1e-6, atol=1e-6)
+            if np.any(near_max_mask):
+                candidate_lags = lags[near_max_mask]
+                candidate_idxs = np.nonzero(near_max_mask)[0]
+                best_local_idx = int(candidate_idxs[np.argmin(np.abs(candidate_lags))])
+                max_idx = best_local_idx
+                peak_val = float(corr_abs[max_idx])
+
+            offset_samples = int(lags[max_idx])
+            fine_offset_seconds = offset_samples / float(sr)
+            
+            # The total offset from dub to master is:
+            # global_offset + fine_offset
+            # But we report the FINE offset here (the difference from perfect alignment)
+            total_offset_seconds = global_offset + fine_offset_seconds
+
+            # Confidence from peak prominence
+            mean_corr = float(np.mean(corr_abs))
+            std_corr = float(np.std(corr_abs))
+            snr = (peak_val - mean_corr) / (std_corr + 1e-8)
+            confidence = float(min(max(snr / 8, 0.0), 1.0))
+            
+            return {
+                'offset_seconds': fine_offset_seconds,  # Fine offset from global alignment
+                'total_offset_seconds': total_offset_seconds,  # Total offset including global
+                'offset_samples': offset_samples,
+                'global_offset': global_offset,
+                'confidence': confidence,
+                'correlation_peak': peak_val,
+                'gpu_used': False
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in aligned cross-correlation: {e}")
+            return {'offset_seconds': 0.0, 'confidence': 0.0, 'global_offset': global_offset}
     
     def analyze_sync_chunked(self, master_path: str, dub_path: str) -> Dict[str, Any]:
         """Enhanced multi-pass chunked sync analysis method"""
@@ -722,9 +899,18 @@ class OptimizedLargeFileDetector:
 
             self.logger.info(f"Durations - Master: {master_duration:.1f}s, Dub: {dub_duration:.1f}s")
 
+            # PASS 0: Global alignment search if master is much longer than dub
+            # This finds WHERE in the master the dub content is located
+            global_offset = 0.0
+            if master_duration > dub_duration * 2 and dub_duration > 30:
+                self.logger.info("🌍 PASS 0: Global alignment search (master >> dub)")
+                global_offset = self._find_global_alignment(master_audio, dub_audio, master_duration, dub_duration)
+                if global_offset != 0.0:
+                    self.logger.info(f"📍 Global alignment found: dub starts at {global_offset:.2f}s in master")
+
             # PASS 1: Coarse analysis with standard chunking
             self.logger.info("🔍 PASS 1: Coarse drift detection")
-            pass1_results = self._analyze_pass1_coarse(master_audio, dub_audio, master_duration, dub_duration)
+            pass1_results = self._analyze_pass1_coarse(master_audio, dub_audio, master_duration, dub_duration, global_offset)
 
             # Determine if Pass 2 refinement is needed
             final_result = pass1_results
@@ -748,13 +934,170 @@ class OptimizedLargeFileDetector:
             self.logger.error(f"Error in multi-pass analysis: {e}")
             return {'error': str(e)}
 
-    def _analyze_pass1_coarse(self, master_audio: str, dub_audio: str, master_duration: float, dub_duration: float) -> Dict[str, Any]:
+    def _find_global_alignment(self, master_audio: str, dub_audio: str, 
+                                master_duration: float, dub_duration: float) -> float:
+        """
+        Find where the dub content is located within a much longer master file.
+        
+        Uses downsampled cross-correlation to search the entire master for the dub content.
+        Returns the time offset (in seconds) where dub content starts in the master.
+        """
+        try:
+            sr = self.sample_rate
+            
+            # Find where actual audio starts in the dub (skip silence/leader)
+            # Read first 60 seconds to scan for audio
+            scan_duration = min(60.0, dub_duration)
+            scan_frames = int(scan_duration * sr)
+            dub_scan, _ = sf.read(dub_audio, frames=scan_frames, dtype='float32', always_2d=False)
+            if dub_scan.ndim > 1:
+                dub_scan = dub_scan.mean(axis=1)
+            
+            # Find first position where RMS > threshold (in 1-second windows)
+            silence_threshold = 0.001
+            audio_start = 0.0
+            for start_s in range(0, int(scan_duration)):
+                start_idx = int(start_s * sr)
+                end_idx = int((start_s + 1) * sr)
+                window_rms = np.sqrt(np.mean(dub_scan[start_idx:end_idx]**2))
+                if window_rms > silence_threshold:
+                    audio_start = float(start_s)
+                    break
+            
+            if audio_start > 0:
+                self.logger.info(f"Global alignment: Detected audio start at {audio_start:.0f}s (skipping silence)")
+            
+            # Use audio starting from detected position
+            dub_sample_start = audio_start
+            dub_sample_duration = min(30.0, dub_duration - dub_sample_start)
+            
+            if dub_sample_duration < 10:
+                self.logger.warning(f"Global alignment: Insufficient audio after silence ({dub_sample_duration:.1f}s)")
+                return 0.0
+            
+            # Read the dub sample from audio start
+            dub_start_frame = int(dub_sample_start * sr)
+            dub_n_frames = int(dub_sample_duration * sr)
+            
+            dub_sample, _ = sf.read(dub_audio, start=dub_start_frame, frames=dub_n_frames, 
+                                    dtype='float32', always_2d=False)
+            if dub_sample.ndim > 1:
+                dub_sample = dub_sample.mean(axis=1)
+            
+            if len(dub_sample) == 0:
+                self.logger.warning("Global alignment: Empty dub sample")
+                return 0.0
+            
+            # Downsample for faster search (factor of 4 = ~5.5kHz effective)
+            downsample_factor = 4
+            dub_ds = dub_sample[::downsample_factor]
+            dub_ds = dub_ds - np.mean(dub_ds)
+            dub_ds = dub_ds / (np.std(dub_ds) + 1e-8)
+            
+            # Search the master in overlapping windows
+            # Window size: slightly larger than dub sample to allow for offset detection
+            search_window = dub_sample_duration * 1.5
+            search_stride = dub_sample_duration * 0.5  # 50% overlap
+            
+            best_correlation = 0.0
+            best_position = 0.0
+            
+            search_positions = []
+            pos = 0.0
+            while pos + search_window <= master_duration:
+                search_positions.append(pos)
+                pos += search_stride
+            
+            self.logger.info(f"Global alignment: Searching {len(search_positions)} positions across {master_duration:.0f}s master")
+            
+            for search_pos in search_positions:
+                # Read master segment
+                master_start_frame = int(search_pos * sr)
+                master_n_frames = int(search_window * sr)
+                
+                try:
+                    master_segment, _ = sf.read(master_audio, start=master_start_frame, 
+                                                frames=master_n_frames, dtype='float32', always_2d=False)
+                    if master_segment.ndim > 1:
+                        master_segment = master_segment.mean(axis=1)
+                except Exception:
+                    continue
+                
+                if len(master_segment) < len(dub_sample) // downsample_factor:
+                    continue
+                
+                # Downsample master segment
+                master_ds = master_segment[::downsample_factor]
+                master_ds = master_ds - np.mean(master_ds)
+                master_ds = master_ds / (np.std(master_ds) + 1e-8)
+                
+                # Cross-correlate with NORMALIZED correlation (0-1 range)
+                corr = correlate(master_ds, dub_ds, mode='valid', method='fft')
+                if len(corr) == 0:
+                    continue
+                
+                # Normalize correlation to 0-1 range
+                # Since both signals are already normalized to unit variance,
+                # divide by length to get normalized cross-correlation coefficient
+                norm_corr = corr / len(dub_ds)
+                max_corr = float(np.max(np.abs(norm_corr)))
+                
+                if max_corr > best_correlation:
+                    best_correlation = max_corr
+                    # Find peak position within this window
+                    peak_idx = np.argmax(np.abs(norm_corr))
+                    # Convert back to time: search_pos + (peak_idx * downsample_factor / sr)
+                    best_position = search_pos + (peak_idx * downsample_factor / sr)
+            
+            # Confidence threshold - if best normalized correlation is too low, return 0
+            # A good match should have correlation > 0.3 (30%)
+            if best_correlation < 0.3:
+                self.logger.info(f"Global alignment: Low confidence (corr={best_correlation:.3f}), using default position")
+                return 0.0
+            
+            # Calculate the offset: where dub starts in master
+            # best_position is where we found the dub_sample (which starts at dub_sample_start in the dub)
+            global_offset = best_position - dub_sample_start
+            
+            self.logger.info(f"Global alignment: Best match at {best_position:.1f}s (normalized_corr={best_correlation:.3f})")
+            self.logger.info(f"Global alignment: Dub (at {dub_sample_start:.1f}s) matches master at {best_position:.1f}s")
+            self.logger.info(f"Global alignment: Sync offset = {global_offset:.2f}s ({global_offset*23.976:.1f} frames @23.976)")
+            
+            # Don't clamp to 0 - negative offset means dub is ahead of master
+            # This is valid and important for correct sync detection
+            return global_offset
+            
+        except Exception as e:
+            self.logger.error(f"Global alignment search failed: {e}")
+            return 0.0
+
+    def _analyze_pass1_coarse(self, master_audio: str, dub_audio: str, master_duration: float, 
+                              dub_duration: float, global_offset: float = 0.0) -> Dict[str, Any]:
         """
         Pass 1: Coarse analysis using standard chunking with content classification
+        
+        Args:
+            global_offset: Time offset (seconds) where dub content starts in master.
+                          Positive: dub starts after master (common)
+                          Negative: dub starts before master (dub has more leader)
         """
-        # Create standard chunks for initial analysis
-        chunks = self.create_audio_chunks(master_audio, min(master_duration, dub_duration))
+        # Handle negative offset: skip the non-overlapping part of dub
+        # When offset is negative, dub has extra content at start that doesn't exist in master
+        dub_skip = abs(global_offset) if global_offset < 0 else 0.0
+        master_skip = global_offset if global_offset > 0 else 0.0
+        
+        # Calculate overlapping duration
+        if global_offset < 0:
+            # Dub starts before master: skip beginning of dub
+            overlap_duration = min(dub_duration - dub_skip, master_duration)
+        else:
+            # Normal case: skip beginning of master
+            overlap_duration = min(dub_duration, master_duration - global_offset)
+        
+        chunks = self.create_audio_chunks(master_audio, overlap_duration)
         self.logger.info(f"Pass 1: Analyzing {len(chunks)} coarse chunks")
+        if global_offset != 0.0:
+            self.logger.info(f"Pass 1: Global offset {global_offset:.2f}s (dub_skip={dub_skip:.1f}s, master_skip={master_skip:.1f}s)")
 
         chunk_results = []
         try:
@@ -764,9 +1107,17 @@ class OptimizedLargeFileDetector:
             iterator = enumerate(chunks)
 
         for i, (start, end) in iterator:
-            # Extract features from both files
-            master_features = self.extract_chunk_features(master_audio, start, end)
-            dub_features = self.extract_chunk_features(dub_audio, start, end)
+            # Adjust positions based on where content overlaps
+            # Dub: read from [start + dub_skip, end + dub_skip]
+            # Master: read from [start + master_skip, end + master_skip]
+            dub_start = start + dub_skip
+            dub_end = end + dub_skip
+            master_start = start + master_skip
+            master_end = end + master_skip
+            
+            # Extract features from both files at their respective positions
+            master_features = self.extract_chunk_features(master_audio, master_start, master_end)
+            dub_features = self.extract_chunk_features(dub_audio, dub_start, dub_end)
 
             # Classify content type for adaptive processing
             master_content = self.classify_audio_content(master_features)
@@ -777,13 +1128,16 @@ class OptimizedLargeFileDetector:
                 dub_content.get('content_type') == 'silence'):
                 chunk_result = {
                     'chunk_index': i,
-                    'start_time': start,
-                    'end_time': end,
-                    'duration': end - start,
+                    'start_time': dub_start,  # Use dub position
+                    'end_time': dub_end,
+                    'duration': dub_end - dub_start,
+                    'master_start': master_start,
+                    'master_end': master_end,
                     'content_type': 'silence',
                     'similarities': {'overall': 0.0, 'skipped': True},
-                    'offset_detection': {'offset_seconds': 0.0, 'confidence': 0.0},
-                    'quality': 'Skipped'
+                    'offset_detection': {'offset_seconds': 0.0, 'total_offset_seconds': global_offset, 'confidence': 0.0},
+                    'quality': 'Skipped',
+                    'global_offset_applied': global_offset
                 }
                 chunk_results.append(chunk_result)
                 continue
@@ -794,20 +1148,27 @@ class OptimizedLargeFileDetector:
             )
 
             # Detect offset for this chunk
-            offset_result = self.detect_offset_cross_correlation(
-                master_audio, dub_audio, start, end - start)
+            # Use actual positions (already adjusted for global offset via dub_skip/master_skip)
+            offset_result = self._detect_chunk_offset_direct(
+                master_audio, dub_audio, 
+                master_start, master_end - master_start,
+                dub_start, dub_end - dub_start,
+                global_offset)
 
             chunk_result = {
                 'chunk_index': i,
-                'start_time': start,
-                'end_time': end,
-                'duration': end - start,
+                'start_time': dub_start,  # Use dub position for reporting
+                'end_time': dub_end,
+                'duration': dub_end - dub_start,
+                'master_start': master_start,
+                'master_end': master_end,
                 'master_content': master_content,
                 'dub_content': dub_content,
                 'similarities': similarities,
                 'offset_detection': offset_result,
                 'quality': self._assess_chunk_quality(similarities, offset_result),
-                'pass_number': 1
+                'pass_number': 1,
+                'global_offset_applied': global_offset
             }
 
             # Apply ensemble confidence scoring
@@ -818,6 +1179,7 @@ class OptimizedLargeFileDetector:
         pass1_result = self._aggregate_chunk_results(chunk_results, master_duration, dub_duration)
         pass1_result['pass_1_chunks'] = len(chunks)
         pass1_result['pass_1_results'] = chunk_results
+        pass1_result['global_offset_used'] = global_offset
 
         return pass1_result
 
@@ -1138,7 +1500,8 @@ class OptimizedLargeFileDetector:
                 best_chunk = None
             if best_chunk and best_chunk.get('offset_detection'):
                 od = best_chunk['offset_detection']
-                offset = float(od.get('offset_seconds') or 0.0)
+                # Prefer total_offset_seconds which includes global alignment
+                offset = float(od.get('total_offset_seconds', od.get('offset_seconds', 0.0)))
                 confidence = float(od.get('confidence') or 0.0)
                 return {
                     'analysis_date': datetime.now().isoformat(),
@@ -1170,12 +1533,21 @@ class OptimizedLargeFileDetector:
             }
         
         # Calculate weighted average offset (weight by confidence)
+        # Use total_offset_seconds if available (includes global alignment),
+        # otherwise fall back to offset_seconds (fine offset only)
         total_weighted_offset = 0.0
         total_weights = 0.0
+        global_offset_applied = 0.0
         
         for chunk in acceptable_chunks:
-            offset = chunk['offset_detection'].get('offset_seconds', 0)
-            confidence = chunk['offset_detection'].get('confidence', 0)
+            od = chunk.get('offset_detection', {})
+            # Prefer total_offset_seconds which includes global alignment
+            offset = od.get('total_offset_seconds', od.get('offset_seconds', 0))
+            confidence = od.get('confidence', 0)
+            
+            # Track global offset for reporting
+            if od.get('global_offset', 0) != 0:
+                global_offset_applied = od.get('global_offset', 0)
             
             if confidence > 0:
                 total_weighted_offset += offset * confidence
@@ -1183,8 +1555,12 @@ class OptimizedLargeFileDetector:
         
         final_offset = total_weighted_offset / total_weights if total_weights > 0 else 0.0
         
-        # Calculate sync drift metrics
-        chunk_offsets = [chunk['offset_detection'].get('offset_seconds', 0) for chunk in acceptable_chunks]
+        # Calculate sync drift metrics (use total offset for consistency)
+        chunk_offsets = [
+            chunk['offset_detection'].get('total_offset_seconds', 
+                                          chunk['offset_detection'].get('offset_seconds', 0)) 
+            for chunk in acceptable_chunks
+        ]
         drift_analysis = self._analyze_sync_drift(acceptable_chunks, chunk_results)
         
         # Calculate overall confidence
@@ -1222,7 +1598,7 @@ class OptimizedLargeFileDetector:
         else:
             overall_quality = 'Poor'
         
-        return {
+        result = {
             'analysis_date': datetime.now().isoformat(),
             'sync_status': sync_status,
             'confidence': float(avg_confidence),
@@ -1242,6 +1618,15 @@ class OptimizedLargeFileDetector:
             'gpu_used': self.gpu_available,
             'chunk_details': chunk_results
         }
+        
+        # Add global alignment info if it was used
+        if global_offset_applied != 0:
+            result['global_alignment'] = {
+                'offset_seconds': global_offset_applied,
+                'description': f'Dub content starts at {global_offset_applied:.2f}s in master'
+            }
+        
+        return result
 
     @staticmethod
     def _weighted_median(values: List[float], weights: Optional[List[float]] = None) -> float:

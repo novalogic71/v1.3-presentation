@@ -851,8 +851,8 @@ class SyncAnalyzerUI {
 
                 if (usedFallback) {
                     // Fallback to FastAPI streaming proxy (no pre-create step)
-                    const masterUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.master.path)}&format=wav`;
-                    const dubUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.dub.path)}&format=wav`;
+                    const masterUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.master.path)}&format=wav&role=master`;
+                    const dubUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.dub.path)}&format=wav&role=dub`;
                     newItem.masterProxyUrl = masterUrl;
                     newItem.dubProxyUrl = dubUrl;
                     this.addLog('info', 'Using streaming proxy fallback from API');
@@ -3324,8 +3324,8 @@ class SyncAnalyzerUI {
                 dubFile: dubPath ? dubPath.split('/').pop() : (this.selectedDub?.name || 'Dub'),
                 detectedOffset: parseFloat(button.dataset.offset || '0') || 0,
                 confidence: res.confidence || 0,
-                masterUrl: this.getAudioUrlForFile(masterPath || this.selectedMaster?.path),
-                dubUrl: this.getAudioUrlForFile(dubPath || this.selectedDub?.path),
+                masterUrl: this.getAudioUrlForFile(masterPath || this.selectedMaster?.path, 'master'),
+                dubUrl: this.getAudioUrlForFile(dubPath || this.selectedDub?.path, 'dub'),
                 perChannel: res.per_channel_results || null,
                 dubPath: dubPath,
                 timeline: res.timeline || [],
@@ -3342,7 +3342,7 @@ class SyncAnalyzerUI {
         }
     }
 
-    getAudioUrlForFile(filePath) {
+    getAudioUrlForFile(filePath, role = 'master') {
         if (!filePath) return null;
         
         // Check file extension to determine if we need audio extraction
@@ -3352,8 +3352,8 @@ class SyncAnalyzerUI {
         
         if (videoExtensions.includes(ext)) {
             // Use audio proxy endpoint for video files (WAV for WebAudio decode)
-            console.log(`Using audio proxy (wav) for video file: ${filePath}`);
-            return `/api/v1/files/proxy-audio?path=${encodeURIComponent(filePath)}&format=wav`;
+            console.log(`Using audio proxy (wav) for video file: ${filePath} (role=${role})`);
+            return `/api/v1/files/proxy-audio?path=${encodeURIComponent(filePath)}&format=wav&role=${role}`;
         } else if (audioExtensions.includes(ext)) {
             // Use raw endpoint for audio files
             console.log(`Using raw endpoint for audio file: ${filePath}`);
@@ -3397,8 +3397,8 @@ class SyncAnalyzerUI {
                     dubFile: dubPath.split('/').pop(),
                     detectedOffset: offset,
                     confidence: typeof res.confidence === 'number' ? res.confidence : 0.85,
-                    masterUrl: this.getAudioUrlForFile(masterPath),
-                    dubUrl: this.getAudioUrlForFile(dubPath),
+                    masterUrl: this.getAudioUrlForFile(masterPath, 'master'),
+                    dubUrl: this.getAudioUrlForFile(dubPath, 'dub'),
                     timeline: res.timeline || [],
                     operatorTimeline: res.operator_timeline || null,
                     frameRate: itemFps
@@ -3410,8 +3410,8 @@ class SyncAnalyzerUI {
                     dubFile: this.selectedDub?.name || 'Unknown Dub',
                     detectedOffset: offset,
                     confidence: 0.85, // Mock confidence - would come from analysis
-                    masterUrl: this.getAudioUrlForFile(this.selectedMaster?.path),
-                    dubUrl: this.getAudioUrlForFile(this.selectedDub?.path),
+                    masterUrl: this.getAudioUrlForFile(this.selectedMaster?.path, 'master'),
+                    dubUrl: this.getAudioUrlForFile(this.selectedDub?.path, 'dub'),
                     timeline: [],
                     operatorTimeline: null,
                     frameRate: this.detectedFrameRate

@@ -18,6 +18,16 @@ ROOT_DIR="$SCRIPT_DIR"
 echo "🎵 Professional Audio Sync Analyzer - Starting All Services"
 echo "==========================================================="
 
+# Cleanup old temp files on startup
+if [ -f "$ROOT_DIR/cleanup_temp.py" ]; then
+    echo "🧹 Cleaning up old temp files..."
+    python3 "$ROOT_DIR/cleanup_temp.py" --max-age 12 2>/dev/null || true
+fi
+
+# Atmos/IAB processing settings
+export IAB_HEAD_DURATION_SECONDS=300  # 5 minutes trim for Atmos files
+export SYNC_TEMP_DIR="$ROOT_DIR/temp_jobs"  # Organized temp file storage
+
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 # Function to check if port is in use (tries lsof, ss, then Python socket)

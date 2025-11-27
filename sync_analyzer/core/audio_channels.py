@@ -252,9 +252,12 @@ def is_atmos_file(file_path: str) -> bool:
         metadata = extract_atmos_metadata(file_path)
         if metadata:
             # ADM WAV files have is_adm_wav flag set (they use PCM codec)
-            # IAB files have is_iab flag set
+            # IAB files have is_iab flag set  
             # Other Atmos formats are detected by codec
-            is_atmos = metadata.is_adm_wav or metadata.is_iab or metadata.is_mxf or is_atmos_codec(metadata.codec)
+            # NOTE: is_mxf alone should NOT trigger Atmos processing!
+            #       Regular MXF with PCM audio is handled by FFmpeg directly.
+            #       Only IAB MXF (detected via ffprobe metadata) needs Dolby tools.
+            is_atmos = metadata.is_adm_wav or metadata.is_iab or is_atmos_codec(metadata.codec)
             logger.info(f"Atmos detection for {Path(file_path).name}: is_adm_wav={metadata.is_adm_wav}, "
                        f"is_iab={metadata.is_iab}, is_mxf={metadata.is_mxf}, "
                        f"codec={metadata.codec}, result={is_atmos}")
@@ -320,31 +323,34 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
     logger = _logging.getLogger(__name__)
     temp_wav_paths: List[str] = []
 
-    # Quick path: mix all available channels to stereo using soundfile (ignores ADM metadata)
+    # Quick path: use ITU-R BS.775 professional downmix via atmos_downmix module
     try:
-        import soundfile as sf
-        import numpy as np
-
-        audio, sr = sf.read(input_path, always_2d=True)
-        if audio.size == 0:
-            raise RuntimeError("input audio is empty")
-
-        # Average all channels to mono, then duplicate to stereo
-        mono = np.mean(audio, axis=1, dtype=np.float64)
-        mono = np.clip(mono, -1.0, 1.0)
-        target_sr = sr
-        if sample_rate:
-            target_sr = sample_rate
-            if sr and sr != sample_rate:
-                # Simple linear resample to target_sr to avoid speed shift
-                import numpy as _np
-                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
-                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
-                mono = _np.interp(t_new, t_orig, mono)
-        stereo = np.stack([mono, mono], axis=1)
-        sf.write(output_path, stereo, int(target_sr or sample_rate or sr), subtype="PCM_16")
-        logger.info(f"[ATMOS PIPELINE] Fallback/full mixdown to stereo via soundfile -> {output_path}")
-        return output_path
+        from ..dolby.atmos_downmix import downmix_to_stereo_file
+        result = downmix_to_stereo_file(
+            input_path,
+            output_path,
+            include_lfe=False,
+            normalize=True,
+            bit_depth=16
+        )
+        if result:
+            # Resample if needed
+            if sample_rate:
+                import soundfile as sf
+                import numpy as np
+                audio, sr = sf.read(result, always_2d=True)
+                if sr != sample_rate:
+                    import numpy as _np
+                    t_orig = _np.linspace(0.0, 1.0, num=len(audio), endpoint=False)
+                    t_new = _np.linspace(0.0, 1.0, num=int(len(audio) * sample_rate / sr), endpoint=False)
+                    resampled = np.column_stack([
+                        _np.interp(t_new, t_orig, audio[:, 0]),
+                        _np.interp(t_new, t_orig, audio[:, 1])
+                    ])
+                    sf.write(output_path, resampled, sample_rate, subtype="PCM_16")
+                    logger.info(f"[ATMOS PIPELINE] Resampled {sr}Hz -> {sample_rate}Hz")
+            logger.info(f"[ATMOS PIPELINE] ITU-R BS.775 downmix to stereo -> {output_path}")
+            return output_path
     except Exception as e:
         logger.warning(f"[ATMOS PIPELINE] soundfile mixdown failed, proceeding to converter: {e}")
 
@@ -383,7 +389,7 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
                 iab_proc = IabProcessor()
                 if iab_proc.is_available():
                     logger.info("[IAB] Converting IAB to ADM WAV via Dolby Atmos Conversion Tool")
-                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "300") or "300")
+                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "180") or "180")
                     head_trim = head_seconds if head_seconds > 0 else None
                     adm_wav = tempfile.mktemp(suffix=".adm", prefix="iab_to_adm_")
                     converted = iab_proc.convert_to_adm_wav(
@@ -395,24 +401,34 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
                     if converted and Path(adm_wav).exists():
                         temp_wav_paths.append(adm_wav)
                         try:
-                            import soundfile as sf
-                            import numpy as _np
-
-                            data, sr = sf.read(adm_wav, always_2d=True)
-                            if data.size == 0:
-                                raise RuntimeError("ADM audio is empty")
-                            mono = _np.mean(data, axis=1, dtype=_np.float64)
-                            mono = _np.clip(mono, -1.0, 1.0)
-                            target_sr = sr
-                            if sr and sample_rate and sr != sample_rate:
-                                t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
-                                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
-                                mono = _np.interp(t_new, t_orig, mono)
-                                target_sr = sample_rate
-                            stereo = _np.stack([mono, mono], axis=1)
-                            sf.write(output_path, stereo, int(target_sr or sample_rate or sr), subtype="PCM_16")
-                            logger.info(f"[IAB] ADM WAV downmixed via soundfile (stereo) -> {output_path}")
-                            return output_path
+                            # Use professional ITU-R BS.775 downmix instead of simple channel average
+                            from ..dolby.atmos_downmix import downmix_to_stereo_file
+                            result = downmix_to_stereo_file(
+                                adm_wav,
+                                output_path,
+                                include_lfe=False,
+                                normalize=True,
+                                bit_depth=16
+                            )
+                            if result and Path(result).exists():
+                                # Resample if needed
+                                if sample_rate:
+                                    import soundfile as sf
+                                    import numpy as _np
+                                    audio, sr = sf.read(result, always_2d=True)
+                                    if sr != sample_rate:
+                                        t_orig = _np.linspace(0.0, 1.0, num=len(audio), endpoint=False)
+                                        t_new = _np.linspace(0.0, 1.0, num=int(len(audio) * sample_rate / sr), endpoint=False)
+                                        resampled = _np.column_stack([
+                                            _np.interp(t_new, t_orig, audio[:, 0]),
+                                            _np.interp(t_new, t_orig, audio[:, 1])
+                                        ])
+                                        sf.write(output_path, resampled, sample_rate, subtype="PCM_16")
+                                        logger.info(f"[IAB] Resampled {sr}Hz -> {sample_rate}Hz")
+                                logger.info(f"[IAB] ADM WAV downmixed via ITU-R BS.775 (stereo) -> {output_path}")
+                                return output_path
+                            else:
+                                raise RuntimeError("Professional downmix failed")
                         except Exception as exc:
                             logger.warning(f"[IAB] ADM downmix failed, continuing to Atmos pipeline: {exc}")
                         input_path = adm_wav
@@ -483,17 +499,21 @@ def extract_atmos_bed_stereo(input_path: str, output_path: str, sample_rate: int
                     data, sr = sf.read(mp4_path, always_2d=True)
                     if data.size == 0:
                         raise RuntimeError("audio-only MXF yielded empty audio")
-                    mono = _np.mean(data, axis=1, dtype=_np.float64)
-                    mono = _np.clip(mono, -1.0, 1.0)
-                    target_sr = sr
-                    if sample_rate and sr and sr != sample_rate:
-                        t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
-                        t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
-                        mono = _np.interp(t_new, t_orig, mono)
-                        target_sr = sample_rate
-                    sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
+                    # Use professional downmix for multichannel, simple average for stereo
+                    if data.shape[1] > 2:
+                        from ..dolby.atmos_downmix import downmix_to_stereo
+                        stereo = downmix_to_stereo(data, include_lfe=False)
+                        sf.write(output_path, stereo, sr, subtype="PCM_16")
+                        logger.info(f"[ATMOS PIPELINE] Audio-only MXF extracted via soundfile (stereo) -> {output_path}")
+                    else:
+                        # Stereo or mono - output as stereo
+                        if data.shape[1] == 1:
+                            stereo = _np.stack([data[:, 0], data[:, 0]], axis=1)
+                        else:
+                            stereo = data
+                        sf.write(output_path, stereo, sr, subtype="PCM_16")
+                        logger.info(f"[ATMOS PIPELINE] Audio-only MXF extracted via soundfile -> {output_path}")
                     temp_wav_paths.append(mp4_path)
-                    logger.info(f"[ATMOS PIPELINE] Audio-only MXF extracted via soundfile -> {output_path}")
                     return output_path
                 except Exception as exc:
                     logger.warning(f"[ATMOS PIPELINE] Audio-only MXF handling failed, attempting ffmpeg: {exc}")
@@ -663,8 +683,9 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
     logger = _logging.getLogger(__name__)
     temp_wav_paths: List[str] = []
 
-    # Quick path: mix all channels to mono using soundfile (ignores ADM metadata)
+    # Quick path: use ITU-R BS.775 professional downmix, then convert to mono
     try:
+        from ..dolby.atmos_downmix import downmix_to_stereo
         import soundfile as sf
         import numpy as np
 
@@ -672,19 +693,25 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
         if audio.size == 0:
             raise RuntimeError("input audio is empty")
 
-        mono = np.mean(audio, axis=1, dtype=np.float64)
+        # Apply professional downmix if multichannel, then convert to mono
+        if audio.shape[1] > 2:
+            stereo = downmix_to_stereo(audio, include_lfe=False)
+            mono = np.mean(stereo, axis=1, dtype=np.float64)
+        else:
+            mono = np.mean(audio, axis=1, dtype=np.float64)
+        
         mono = np.clip(mono, -1.0, 1.0)
         target_sr = sr
         if sample_rate:
             target_sr = sample_rate
             if sr and sr != sample_rate:
-                # Simple linear resample to target_sr to avoid slowing/fast audio
+                # Simple linear resample to target_sr
                 import numpy as _np
                 t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
                 t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
                 mono = _np.interp(t_new, t_orig, mono)
         sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
-        logger.info(f"[ATMOS PIPELINE] Fallback/full mixdown to mono via soundfile -> {output_path}")
+        logger.info(f"[ATMOS PIPELINE] ITU-R BS.775 downmix to mono -> {output_path}")
         return output_path
     except Exception as e:
         logger.warning(f"[ATMOS PIPELINE] soundfile mixdown failed, proceeding to converter: {e}")
@@ -719,7 +746,7 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
                 iab_proc = IabProcessor()
                 if iab_proc.is_available():
                     logger.info("[IAB] Converting IAB to ADM WAV via Dolby Atmos Conversion Tool")
-                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "300") or "300")
+                    head_seconds = int(os.getenv("IAB_HEAD_DURATION_SECONDS", "180") or "180")
                     head_trim = head_seconds if head_seconds > 0 else None
                     adm_wav = tempfile.mktemp(suffix=".adm", prefix="iab_to_adm_")
                     converted = iab_proc.convert_to_adm_wav(
@@ -731,25 +758,36 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
                     if converted and Path(adm_wav).exists():
                         temp_wav_paths.append(adm_wav)
                         try:
+                            # Use L+R bed channels for sync detection (matches stereo masters better)
+                            # The ITU-R BS.775 downmix adds surround/height which differs from stereo masters
+                            from ..dolby.atmos_downmix import downmix_lr_bed_only, _normalize_audio
                             import soundfile as sf
                             import numpy as _np
-
-                            data, sr = sf.read(adm_wav, always_2d=True)
-                            if data.size == 0:
-                                raise RuntimeError("ADM audio is empty")
-                            mono = _np.mean(data, axis=1, dtype=_np.float64)
-                            mono = _np.clip(mono, -1.0, 1.0)
-                            target_sr = sr
-                            if sr and sample_rate and sr != sample_rate:
+                            
+                            data, sr = sf.read(adm_wav, always_2d=True, dtype='float32')
+                            logger.info(f"[IAB] ADM WAV: {data.shape[1]} channels, {sr}Hz, {data.shape[0]/sr:.1f}s")
+                            
+                            # Extract L+R bed channels (better for sync matching)
+                            mono = downmix_lr_bed_only(data)
+                            
+                            # Normalize
+                            mono, gain = _normalize_audio(mono, target_peak=0.9)
+                            if gain != 1.0:
+                                logger.info(f"[IAB] Normalized L+R bed: {20*_np.log10(gain):.1f} dB")
+                            
+                            # Resample if needed
+                            target_sr = sample_rate if sample_rate else sr
+                            if sr != target_sr:
                                 t_orig = _np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
-                                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * sample_rate / sr), endpoint=False)
+                                t_new = _np.linspace(0.0, 1.0, num=int(len(mono) * target_sr / sr), endpoint=False)
                                 mono = _np.interp(t_new, t_orig, mono)
-                                target_sr = sample_rate
-                            sf.write(output_path, mono, int(target_sr or sample_rate or sr), subtype="PCM_16")
-                            logger.info(f"[IAB] ADM WAV downmixed via soundfile -> {output_path}")
+                                logger.info(f"[IAB] Resampled {sr}Hz -> {target_sr}Hz")
+                            
+                            sf.write(output_path, mono, target_sr, subtype="PCM_16")
+                            logger.info(f"[IAB] ADM WAV L+R bed extracted (mono) -> {output_path}")
                             return output_path
                         except Exception as exc:
-                            logger.warning(f"[IAB] ADM downmix failed, continuing to Atmos pipeline: {exc}")
+                            logger.warning(f"[IAB] L+R bed extraction failed, continuing to Atmos pipeline: {exc}")
                         input_path = adm_wav
                         ext = ".adm"
                         logger.info("[IAB] ADM render complete; continuing with ADM pipeline")
@@ -823,7 +861,13 @@ def extract_atmos_bed_mono(input_path: str, output_path: str, sample_rate: int =
                     data, sr = sf.read(mp4_path, always_2d=True)
                     if data.size == 0:
                         raise RuntimeError("audio-only MXF yielded empty audio")
-                    mono = _np.mean(data, axis=1, dtype=_np.float64)
+                    # Use professional downmix for multichannel, simple average for stereo->mono
+                    if data.shape[1] > 2:
+                        from ..dolby.atmos_downmix import downmix_to_stereo
+                        stereo = downmix_to_stereo(data, include_lfe=False)
+                        mono = _np.mean(stereo, axis=1, dtype=_np.float64)
+                    else:
+                        mono = _np.mean(data, axis=1, dtype=_np.float64)
                     mono = _np.clip(mono, -1.0, 1.0)
                     target_sr = sr
                     if sample_rate and sr and sr != sample_rate:

@@ -103,12 +103,34 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
 
         if is_atmos_file(src_path):
             logger.info(f"Detected Atmos file, using specialized extraction: {Path(src_path).name}")
-            extract_atmos_bed_stereo(src_path, out_path, sample_rate=48000)
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                logger.info(f"Atmos proxy created successfully: {out_path}")
-                return out_path
+            # Extract to temp file first, then apply loudnorm + dub boost
+            temp_atmos_path = out_path + ".atmos_temp.wav"
+            extract_atmos_bed_stereo(src_path, temp_atmos_path, sample_rate=48000)
+            if os.path.exists(temp_atmos_path) and os.path.getsize(temp_atmos_path) > 0:
+                # Apply same loudnorm + dub boost as FFmpeg path for consistent levels
+                volume_boost = ",volume=5dB" if role == "dub" else ""
+                norm_cmd = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-i", temp_atmos_path,
+                    "-af", f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}",
+                    "-acodec", "pcm_s16le",
+                    out_path,
+                ]
+                logger.info(f"Applying loudnorm to Atmos proxy (role={role}): {' '.join(norm_cmd)}")
+                norm_result = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=300)
+                # Clean up temp file
+                try:
+                    os.remove(temp_atmos_path)
+                except Exception:
+                    pass
+                if norm_result.returncode == 0 and os.path.exists(out_path):
+                    logger.info(f"Atmos proxy created with loudnorm: {out_path}")
+                    return out_path
+                else:
+                    logger.error(f"Atmos loudnorm failed: {norm_result.stderr}")
+                    raise RuntimeError("Atmos loudnorm failed")
             else:
-                logger.error(f"Atmos extraction succeeded but output file missing/empty: {out_path}")
+                logger.error(f"Atmos extraction succeeded but output file missing/empty: {temp_atmos_path}")
                 raise RuntimeError("Atmos extraction failed to create output")
     except ImportError as e:
         logger.warning(f"Atmos detection unavailable: {e}, falling back to ffmpeg")

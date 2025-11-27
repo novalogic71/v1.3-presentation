@@ -341,7 +341,8 @@ async def probe_file(path: str = Query(..., description="Absolute path under mou
 async def proxy_audio(
     path: str = Query(..., description="Absolute path under mount to transcode/stream as browser-friendly audio"),
     format: str = Query("wav", description="Output format: wav|mp4|webm|opus|aac"),
-    max_duration: int = Query(600, description="Max duration in seconds for preview (default 600 = 10 min)")
+    max_duration: int = Query(600, description="Max duration in seconds for preview (default 600 = 10 min)"),
+    role: str = Query("master", description="Role: master or dub (dub gets +5dB boost for balance)")
 ):
     """Transcode source file's audio track to a browser-friendly audio stream.
 
@@ -386,10 +387,11 @@ async def proxy_audio(
     try:
         import subprocess, shutil
         ffmpeg_bin = shutil.which("ffmpeg") or "/home/linuxbrew/.linuxbrew/bin/ffmpeg"
-        logger.info(f"Proxy audio: extracting max {max_duration}s from {os.path.basename(path)}")
-        # Peak normalize to 0 dB - maximizes volume without clipping
+        logger.info(f"Proxy audio: extracting max {max_duration}s from {os.path.basename(path)} (role={role})")
+        # Peak normalize to 0 dB, then boost dub by 5dB to match master levels
         # Use -t to limit duration for preview (avoids timeouts on very long files)
-        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000", "-af", "loudnorm=I=-14:TP=0:LRA=7:linear=true"]
+        volume_boost = ",volume=5dB" if role.lower() == "dub" else ""
+        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000", "-af", f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}"]
         media_type = "audio/wav"
         if fmt == "wav":
             args += ["-f", "wav", "-acodec", "pcm_s16le", "pipe:1"]

@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from ..core.temp_manager import get_temp_manager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -236,7 +237,10 @@ class IabProcessor:
         renderer_name = Path(self.iab_renderer_path).name.lower()
 
         if "cmdline_atmos_conversion_tool" in renderer_name:
-            temp_dir = Path(tempfile.mkdtemp(prefix="iab_to_adm_"))
+            # Use TempManager for organized cleanup
+            mgr = get_temp_manager()
+            job = mgr.create_job("iab_to_adm")
+            temp_dir = job.path
             try:
                 cmd = [
                     self.iab_renderer_path,
@@ -264,10 +268,7 @@ class IabProcessor:
                 shutil.move(str(wav_candidates[0]), output_wav)
                 return True
             finally:
-                try:
-                    shutil.rmtree(temp_dir)
-                except Exception:
-                    pass
+                job.cleanup()
 
         # Fallback: use standard render path (may be downmixed depending on renderer)
         return self.render_iab_to_wav(
@@ -289,7 +290,10 @@ class IabProcessor:
         """
         Use Dolby Atmos Conversion Tool to convert to WAV, then downmix/re-sample with ffmpeg.
         """
-        temp_dir = Path(tempfile.mkdtemp(prefix="iab_convert_"))
+        # Use TempManager for organized cleanup
+        mgr = get_temp_manager()
+        job = mgr.create_job("iab_convert")
+        temp_dir = job.path
         try:
             cmd = [
                 self.iab_renderer_path,
@@ -317,7 +321,29 @@ class IabProcessor:
                 return False
 
             source_wav = wav_candidates[0]
-            # Normalize to requested channel count/sample rate
+            
+            # Use professional ITU-R BS.775 downmix for stereo
+            if channels == 2:
+                try:
+                    from .atmos_downmix import downmix_to_stereo_file
+                    result_path = downmix_to_stereo_file(
+                        str(source_wav),
+                        output_wav,
+                        include_lfe=False,
+                        normalize=True,
+                        bit_depth=16
+                    )
+                    if result_path:
+                        logger.info("[IAB] Applied ITU-R BS.775 professional downmix to stereo")
+                        return True
+                    else:
+                        logger.warning("[IAB] Professional downmix failed, falling back to ffmpeg")
+                except ImportError:
+                    logger.warning("[IAB] atmos_downmix module not available, using ffmpeg")
+                except Exception as dm_exc:
+                    logger.warning(f"[IAB] Professional downmix error: {dm_exc}, falling back to ffmpeg")
+            
+            # Fallback: use ffmpeg for non-stereo or if downmix failed
             ffmpeg_cmd = [
                 "ffmpeg",
                 "-hide_banner",
@@ -346,10 +372,7 @@ class IabProcessor:
                     return False
             return True
         finally:
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
+            job.cleanup()
 
     def extract_and_render(
         self,

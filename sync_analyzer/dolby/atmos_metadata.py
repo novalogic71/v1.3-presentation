@@ -188,10 +188,15 @@ def _check_adm_wav(file_path: str) -> bool:
 
 def _check_iab_stream(file_path: str) -> bool:
     """
-    Check if file contains IAB (Immersive Audio Bitstream)
+    Check if file contains IAB (Immersive Audio Bitstream) using ffprobe metadata.
 
     IAB is Dolby's SMPTE ST 2098-2 format for object-based audio.
     Can be in standalone .iab files or embedded in MXF/MP4 containers.
+
+    Detection priority (ffprobe is authoritative):
+    1. ffprobe format metadata (product_name, company_name)
+    2. ffprobe stream metadata (codec, tags)
+    3. File extension (.iab only as fallback)
 
     Args:
         file_path: Path to audio/video file
@@ -200,19 +205,72 @@ def _check_iab_stream(file_path: str) -> bool:
         True if file contains IAB, False otherwise
     """
     try:
-        # Check file extension first
         file_lower = file_path.lower()
-        if file_lower.endswith('.iab') or ".atmos" in file_lower:
+        
+        # .iab extension is definitive
+        if file_lower.endswith('.iab'):
             return True
-
-        # Check for IAB codec in streams
-        cmd = [
-            "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_streams",
-            file_path
+        
+        # PRIMARY: Check ffprobe format metadata (most reliable for MXF/containers)
+        format_cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_format", "-show_streams", file_path
         ]
+        result = subprocess.run(format_cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode != 0:
+            logger.debug(f"ffprobe failed for IAB check: {file_path}")
+            return False
+        
+        data = json.loads(result.stdout)
+        
+        # Check format-level tags (most reliable for Dolby Atmos MXF)
+        format_tags = data.get("format", {}).get("tags", {})
+        product_name = str(format_tags.get("product_name", "")).lower()
+        company_name = str(format_tags.get("company_name", "")).lower()
+        
+        # Dolby Atmos Storage System IDK = IAB MXF from Dolby tools
+        if "dolby" in company_name and "atmos" in product_name:
+            logger.info(f"[IAB] Detected from ffprobe: product_name='{product_name}', company_name='{company_name}'")
+            return True
+        
+        # Also check for Dolby company with audio-only MXF (IAB essence)
+        if "dolby" in company_name:
+            # Check if audio stream has no recognized codec (IAB can't be decoded by ffmpeg)
+            for stream in data.get("streams", []):
+                if stream.get("codec_type") == "audio":
+                    codec = stream.get("codec_name", "")
+                    # IAB streams show as "none" or unknown codec in ffprobe
+                    if codec in ["none", "", "unknown"] or codec is None:
+                        logger.info(f"[IAB] Detected Dolby MXF with undecoded audio stream (likely IAB)")
+                        return True
+        
+        # Check stream-level metadata for IAB indicators
+        for stream in data.get("streams", []):
+            if stream.get("codec_type") == "audio":
+                codec = stream.get("codec_name", "").lower()
+                codec_long = stream.get("codec_long_name", "").lower()
+
+                # Explicit IAB codec reference
+                if "iab" in codec or "iab" in codec_long:
+                    return True
+
+                # Check stream tags for IAB/SMPTE references
+                tags = stream.get("tags", {})
+                for key, value in tags.items():
+                    value_str = str(value).lower()
+                    if "iab" in key.lower() or "iab" in value_str:
+                        return True
+                    if "2098" in str(value):  # SMPTE ST 2098-2
+                        return True
+                    if "atmos" in value_str and "dolby" in value_str:
+                        return True
+
+        return False
+
+    except Exception as e:
+        logger.debug(f"IAB check failed: {e}")
+        return False
 
         result = subprocess.run(
             cmd,
