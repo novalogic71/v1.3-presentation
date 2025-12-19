@@ -1564,6 +1564,24 @@ class SyncAnalyzerUI {
         }, 5000);
     }
     
+    /**
+     * Convert seconds to SMPTE timecode format HH:MM:SS:FF
+     * @param {number} seconds - Time in seconds
+     * @param {number} fps - Frame rate (default: 23.976)
+     * @returns {string} Timecode string
+     */
+    formatTimecode(seconds, fps = 23.976) {
+        const sign = seconds < 0 ? '-' : '';
+        const absSeconds = Math.abs(seconds);
+
+        const hours = Math.floor(absSeconds / 3600);
+        const minutes = Math.floor((absSeconds % 3600) / 60);
+        const secs = Math.floor(absSeconds % 60);
+        const frames = Math.round((absSeconds % 1) * fps);
+
+        return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+    }
+
     isAudioFile(filename) {
         const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.ogg', '.ec3', '.eac3', '.adm', '.iab'];
         return audioExtensions.some(ext => filename.toLowerCase().endsWith(ext));
@@ -1628,29 +1646,28 @@ class SyncAnalyzerUI {
     }
 
     /**
-     * Format offset for display with seconds and frames
+     * Format offset for display with timecode and frames
      * @param {number} offsetSeconds - Offset in seconds
      * @param {boolean} includeFrames - Whether to include frame count (default: true)
-     * @param {number} defaultFps - Default frame rate to use (default: 24)
-     * @returns {string} Formatted offset string
+     * @param {number} defaultFps - Default frame rate to use (default: 23.976)
+     * @returns {string} Formatted offset string with timecode
      */
-    formatOffsetDisplay(offsetSeconds, includeFrames = true, defaultFps = 24) {
+    formatOffsetDisplay(offsetSeconds, includeFrames = true, defaultFps = 23.976) {
         if (typeof offsetSeconds !== 'number' || isNaN(offsetSeconds)) {
             return 'N/A';
         }
 
-        const sign = offsetSeconds >= 0 ? '+' : '';
-        const seconds = `${sign}${offsetSeconds.toFixed(3)}s`;
+        const timecode = this.formatTimecode(offsetSeconds, defaultFps);
 
         if (!includeFrames) {
-            return seconds;
+            return timecode;
         }
 
         const frames = Math.round(Math.abs(offsetSeconds) * defaultFps);
         const frameSign = offsetSeconds < 0 ? '-' : '+';
         const framesStr = `${frameSign}${frames}f @ ${defaultFps}fps`;
 
-        return `${seconds} (${framesStr})`;
+        return `${timecode} (${framesStr})`;
     }
 
     /**

@@ -11,18 +11,36 @@ class RepairPreviewInterface {
         this.analysisData = null;
         this.isInitialized = false;
         this.currentMode = 'original';
-        
+
         // UI state
         this.isPlaying = false;
         this.currentTime = 0;
         this.duration = 0;
-        
+
         // Visualization
         this.waveformCanvas = null;
         this.waveformContext = null;
         this.segmentMarkers = [];
-        
+
         this.setupEventListeners();
+    }
+
+    /**
+     * Convert seconds to SMPTE timecode format HH:MM:SS:FF
+     * @param {number} seconds - Time in seconds
+     * @param {number} fps - Frame rate (default: 23.976)
+     * @returns {string} Timecode string
+     */
+    formatTimecode(seconds, fps = 23.976) {
+        const sign = seconds < 0 ? '-' : '';
+        const absSeconds = Math.abs(seconds);
+
+        const hours = Math.floor(absSeconds / 3600);
+        const minutes = Math.floor((absSeconds % 3600) / 60);
+        const secs = Math.floor(absSeconds % 60);
+        const frames = Math.round((absSeconds % 1) * fps);
+
+        return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
     }
     
     async initialize(masterUrl, dubUrl, analysisData) {
@@ -381,10 +399,11 @@ class RepairPreviewInterface {
         }
         
         if (offsetInfoEl) {
-            const fps = this.syncData?.frameRate || 24;
+            const fps = this.syncData?.frameRate || 23.976;
             const frames = Math.round(Math.abs(correctionInfo.overallOffset) * fps);
             const frameSign = correctionInfo.overallOffset < 0 ? '-' : '+';
-            offsetInfoEl.textContent = `Offset: ${correctionInfo.overallOffset >= 0 ? '+' : ''}${correctionInfo.overallOffset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+            const timecode = this.formatTimecode(correctionInfo.overallOffset, fps);
+            offsetInfoEl.textContent = `Timecode Offset: ${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
         }
         
         // Update total time display
@@ -585,10 +604,11 @@ class RepairPreviewInterface {
                 segmentTimeEl.textContent = `${this.formatTime(currentSegment.startTime)} - ${this.formatTime(currentSegment.endTime)}`;
             }
             if (segmentOffsetEl) {
-                const fps = this.syncData?.frameRate || 24;
+                const fps = this.syncData?.frameRate || 23.976;
                 const frames = Math.round(Math.abs(currentSegment.offsetSeconds) * fps);
                 const frameSign = currentSegment.offsetSeconds < 0 ? '-' : '+';
-                segmentOffsetEl.textContent = `Offset: ${currentSegment.offsetSeconds >= 0 ? '+' : ''}${currentSegment.offsetSeconds.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+                const timecode = this.formatTimecode(currentSegment.offsetSeconds, fps);
+                segmentOffsetEl.textContent = `Offset: ${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
             }
             if (segmentQualityEl) {
                 segmentQualityEl.textContent = `Quality: ${currentSegment.quality}`;

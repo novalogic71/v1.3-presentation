@@ -8,9 +8,27 @@ class QCInterface {
         this.audioEngine = null;
         this.currentData = null;
         this.isVisible = false;
-        
+
         this.initializeModal();
         this.setupEventListeners();
+    }
+
+    /**
+     * Convert seconds to SMPTE timecode format HH:MM:SS:FF
+     * @param {number} seconds - Time in seconds
+     * @param {number} fps - Frame rate (default: 23.976)
+     * @returns {string} Timecode string
+     */
+    formatTimecode(seconds, fps = 23.976) {
+        const sign = seconds < 0 ? '-' : '';
+        const absSeconds = Math.abs(seconds);
+
+        const hours = Math.floor(absSeconds / 3600);
+        const minutes = Math.floor((absSeconds % 3600) / 60);
+        const secs = Math.floor(absSeconds % 60);
+        const frames = Math.round((absSeconds % 1) * fps);
+
+        return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
     }
 
     initializeModal() {
@@ -357,11 +375,11 @@ class QCInterface {
         document.getElementById('qc-dub-file').textContent = syncData.dubFile || 'Unknown';
 
         const offset = syncData.detectedOffset || 0;
-        const fps = syncData.frameRate || 24;
+        const fps = syncData.frameRate || 23.976;
         const frames = Math.round(Math.abs(offset) * fps);
-        const sign = offset >= 0 ? '+' : '';
         const frameSign = offset < 0 ? '-' : '+';
-        document.getElementById('qc-offset-value').textContent = `${sign}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+        const timecode = this.formatTimecode(offset, fps);
+        document.getElementById('qc-offset-value').textContent = `${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
 
         const confidence = syncData.confidence || 0;
         document.getElementById('qc-confidence-value').textContent = `${Math.round(confidence * 100)}%`;
@@ -585,10 +603,11 @@ class QCInterface {
                 // Offset label - describe the natural sync problem
                 ctx.fillStyle = '#fbbf24';
                 ctx.font = 'bold 14px Arial';
-                const fps = this.currentData?.frameRate || 24;
+                const fps = this.currentData?.frameRate || 23.976;
                 const frames = Math.round(Math.abs(offset) * fps);
                 const frameSign = offset < 0 ? '-' : '+';
-                const offsetText = `Sync Problem: ${offset >= 0 ? '+' : ''}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps) ${offset > 0 ? 'dub early' : 'dub late'}`;
+                const timecode = this.formatTimecode(offset, fps);
+                const offsetText = `Sync Problem: ${timecode} (${frameSign}${frames}f @ ${fps}fps) ${offset > 0 ? 'dub early' : 'dub late'}`;
                 const textX = Math.abs(offsetPixels) + 10;
                 const textY = height / 2;
                 ctx.fillText(offsetText, textX > width - 100 ? textX - 120 : textX, textY);
@@ -611,10 +630,11 @@ class QCInterface {
         }
 
         const detectedOffset = this.currentData?.detectedOffset || 0;
-        const fps = this.currentData?.frameRate || 24;
+        const fps = this.currentData?.frameRate || 23.976;
         const frames = Math.round(Math.abs(detectedOffset) * fps);
         const frameSign = detectedOffset < 0 ? '-' : '+';
-        const offsetDisplay = `${detectedOffset >= 0 ? '+' : ''}${detectedOffset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+        const timecode = this.formatTimecode(detectedOffset, fps);
+        const offsetDisplay = `${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
 
         // Play button logic (normal - not reversed):
         // Before Fix button: Play natural sync problem
@@ -719,10 +739,11 @@ class QCInterface {
             m.style.width = `${w}px`;
             m.style.top = '0px';
             m.style.pointerEvents = 'auto';
-            const fps = this.currentData?.frameRate || 24;
+            const fps = this.currentData?.frameRate || 23.976;
             const frames = Math.round(Math.abs(offset) * fps);
             const frameSign = offset < 0 ? '-' : '+';
-            m.title = `${start.toFixed(2)}s → ${end.toFixed(2)}s • ${offset >= 0 ? '+' : ''}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)` + (seg.reliable ? ' • reliable' : '');
+            const timecode = this.formatTimecode(offset, fps);
+            m.title = `${start.toFixed(2)}s → ${end.toFixed(2)}s • ${timecode} (${frameSign}${frames}f @ ${fps}fps)` + (seg.reliable ? ' • reliable' : '');
             m.style.background = 'transparent';
 
             const line = document.createElement('div');
