@@ -2519,6 +2519,14 @@ class SyncAnalyzerUI {
     }
 
     async initBatchQueue() {
+        // If localStorage already loaded valid data, don't overwrite with server data
+        // localStorage is the source of truth for recent results
+        if (this.batchQueue.length > 0) {
+            console.log('Using localStorage batch queue, skipping server fetch');
+            return;
+        }
+
+        // Only fetch from server if localStorage was empty
         try {
             const resp = await fetch(`${this.FASTAPI_BASE}/ui/state/batch-queue`);
             if (resp.ok) {
@@ -2528,23 +2536,13 @@ class SyncAnalyzerUI {
                     this.batchQueue = items;
                     this.updateBatchTable();
                     this.updateBatchSummary();
-                    this.addLog('info', `Restored ${items.length} batch item(s) from save`);
-                    // Rehydrate results from DB only for items missing results (don't overwrite existing)
-                    try { await this.rehydrateBatchResults(false); } catch (e) { console.warn('Rehydrate failed:', e); }
+                    this.addLog('info', `Restored ${items.length} batch item(s) from server`);
                     return;
                 }
             }
         } catch (e) {
             console.warn('Failed to load persisted batch queue:', e);
         }
-        // If we already have a local queue (e.g., from localStorage), only fill in missing results
-        if (this.batchQueue.length) {
-            try { await this.rehydrateBatchResults(false); } catch (e) { console.warn('Rehydrate failed:', e); }
-            return;
-        }
-        // Optional: add demo entry only if nothing restored
-        // DISABLED: Remove test entries for production - users want to see only their actual results
-        // try { this.addTestBatchEntry(); } catch {}
     }
 
     async persistBatchQueue() {
