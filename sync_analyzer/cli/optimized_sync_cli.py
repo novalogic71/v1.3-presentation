@@ -17,6 +17,45 @@ from core.optimized_large_file_detector import OptimizedLargeFileDetector
 from reports.sync_reporter import ProfessionalSyncReporter
 
 
+def format_timecode(seconds: float, fps: float = 23.976) -> str:
+    """
+    Convert seconds to SMPTE timecode format HH:MM:SS:FF
+
+    Args:
+        seconds: Time in seconds (can be negative)
+        fps: Frame rate (default: 23.976)
+
+    Returns:
+        Timecode string in format HH:MM:SS:FF
+    """
+    sign = '-' if seconds < 0 else ''
+    abs_seconds = abs(seconds)
+
+    hours = int(abs_seconds // 3600)
+    minutes = int((abs_seconds % 3600) // 60)
+    secs = int(abs_seconds % 60)
+    frames = int((abs_seconds % 1) * fps)
+
+    return f"{sign}{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
+
+
+def format_offset_display(offset_seconds: float, fps: float = 23.976) -> str:
+    """
+    Format offset for display with timecode and frame count
+
+    Args:
+        offset_seconds: Offset in seconds
+        fps: Frame rate (default: 23.976)
+
+    Returns:
+        Formatted string like "00:00:15:00 (-360f @ 23.976fps)"
+    """
+    timecode = format_timecode(offset_seconds, fps)
+    total_frames = round(abs(offset_seconds) * fps)
+    frame_sign = '-' if offset_seconds < 0 else '+'
+    return f"{timecode} ({frame_sign}{total_frames}f @ {fps}fps)"
+
+
 def get_default_repair_output(dub_file: str) -> str:
     """Generate default output filename for repaired file"""
     dub_path = Path(dub_file)
@@ -238,7 +277,7 @@ Examples:
         if not args.quiet:
             print("📊 SYNC ANALYSIS RESULTS:")
             print(f"   Sync Status:    {results['sync_status']}")
-            print(f"   Offset:         {results['offset_milliseconds']:+.1f} ms")
+            print(f"   Timecode:       {format_offset_display(results['offset_seconds'])}")
             print(f"   Confidence:     {results['confidence']:.2f}")
             print(f"   Quality:        {results['quality']}")
             print(f"   Chunks Used:    {results['chunks_reliable']}/{results['chunks_analyzed']}")
@@ -439,7 +478,7 @@ GPU Used: {'Yes' if results['gpu_used'] else 'No'}"""
             if offset_ms >= args.repair_threshold:
                 if not args.quiet:
                     print("🔧 AUTO-REPAIR TRIGGERED")
-                    print(f"   Detected offset: {offset_ms:.1f}ms >= threshold: {args.repair_threshold}ms")
+                    print(f"   Detected: {format_offset_display(results.get('offset_seconds', 0))} >= {args.repair_threshold}ms threshold")
                 
                 # Perform repair
                 repair_performed = perform_auto_repair(
@@ -456,7 +495,7 @@ GPU Used: {'Yes' if results['gpu_used'] else 'No'}"""
             else:
                 if not args.quiet:
                     print("✅ No repair needed")
-                    print(f"   Offset: {offset_ms:.1f}ms < threshold: {args.repair_threshold}ms")
+                    print(f"   Offset: {format_offset_display(results.get('offset_seconds', 0))} < {args.repair_threshold}ms threshold")
         
         if not args.quiet:
             if not args.auto_repair:
