@@ -15,7 +15,7 @@ class SyncAnalyzerUI {
         this.batchQueue = [];
         this.batchProcessing = false;
         this.currentBatchIndex = -1;
-        this.detectedFrameRate = 24.0; // Default frame rate
+        this.detectedFrameRate = 23.976; // Default frame rate (industry standard)
 
         // Initialize Operator Console
         this.operatorConsole = null;
@@ -663,6 +663,7 @@ class SyncAnalyzerUI {
                     sample_rate: config.sampleRate,
                     window_size: config.windowSize,
                     confidence_threshold: config.confidenceThreshold,
+                    frame_rate: this.detectedFrameRate,
                     // Request-level preferences to align UI with API behavior
                     prefer_gpu: !!config.enableGpu,
                     prefer_gpu_bypass_chunked: !!config.enableGpu,
@@ -804,6 +805,7 @@ class SyncAnalyzerUI {
             newItem.status = 'completed';
             newItem.progress = 100;
             newItem.result = adapted;
+            newItem.frameRate = this.detectedFrameRate; // Store detected frame rate with the item
             this.updateBatchTableRow(newItem);
             await this.persistBatchQueue().catch(() => {});
 
@@ -1673,14 +1675,14 @@ class SyncAnalyzerUI {
     /**
      * Detect frame rate from video file using ffprobe
      * @param {string} filePath - Path to the video file
-     * @returns {Promise<number>} Detected frame rate or default (24.0)
+     * @returns {Promise<number>} Detected frame rate or default (23.976)
      */
     async detectFrameRate(filePath) {
         try {
             const response = await fetch(`${this.FASTAPI_BASE}/files/probe?path=${encodeURIComponent(filePath)}`);
             if (!response.ok) {
                 console.warn('Failed to probe file for frame rate');
-                return 24.0;
+                return 23.976;
             }
             const data = await response.json();
             if (data.video_summary && data.video_summary.frame_rate && data.video_summary.frame_rate > 0) {
@@ -1691,7 +1693,7 @@ class SyncAnalyzerUI {
         } catch (error) {
             console.warn('Error detecting frame rate:', error);
         }
-        return 24.0; // Default fallback
+        return 23.976; // Default fallback (industry standard)
     }
 
     // Simple logging replacement (since we removed the log UI)
@@ -1971,7 +1973,8 @@ class SyncAnalyzerUI {
                         aiModel: cfg.aiModel || 'wav2vec2',
                         enableGpu: !!cfg.enableGpu,
                         channelStrategy: cfg.channelStrategy || 'mono_downmix',
-                        targetChannels: cfg.targetChannels || []
+                        targetChannels: cfg.targetChannels || [],
+                        frameRate: itemFrameRate
                     })
                 });
                 

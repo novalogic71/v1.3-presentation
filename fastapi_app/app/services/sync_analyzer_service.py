@@ -368,6 +368,7 @@ class SyncAnalyzerService:
                 processing_time=result["processing_time"],
                 created_at=analysis_record["created_at"],
                 completed_at=datetime.utcnow(),
+                frame_rate=request.frame_rate,
                 overall_confidence=result["overall_confidence"],
                 method_agreement=result["method_agreement"],
                 sync_status=result["sync_status"],

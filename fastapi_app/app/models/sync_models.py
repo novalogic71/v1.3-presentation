@@ -187,6 +187,12 @@ class SyncAnalysisRequest(BaseModel):
         le=1.0,
         description="Confidence threshold for reliable detection"
     )
+    frame_rate: float = Field(
+        default=23.976,
+        ge=1.0,
+        le=120.0,
+        description="Video frame rate for frame count calculations"
+    )
     generate_plots: bool = Field(default=True, description="Generate visualization plots")
     output_format: str = Field(default="json", description="Output format (json, text, both)")
     # Multi-channel handling
@@ -399,6 +405,7 @@ class SyncAnalysisResult(BaseModel):
     processing_time: float = Field(..., description="Total processing time in seconds")
     created_at: datetime = Field(..., description="Analysis creation timestamp")
     completed_at: Optional[datetime] = Field(None, description="Analysis completion timestamp")
+    frame_rate: float = Field(default=23.976, description="Detected video frame rate")
     
     # Quality metrics
     overall_confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence score")

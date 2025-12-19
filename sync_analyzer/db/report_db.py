@@ -49,6 +49,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 dub_file TEXT NOT NULL,
                 consensus_offset_seconds REAL NOT NULL,
                 confidence_score REAL NOT NULL,
+                frame_rate REAL DEFAULT 23.976,
                 methods_used TEXT,
                 detailed_results TEXT,
                 ai_result TEXT,
@@ -57,6 +58,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
             );
             """
         )
+        # Add frame_rate column if it doesn't exist (migration for existing DBs)
+        try:
+            conn.execute("ALTER TABLE reports ADD COLUMN frame_rate REAL DEFAULT 23.976;")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_reports_pair_time ON reports(master_file, dub_file, created_at DESC);"
         )
@@ -109,12 +116,21 @@ def save_report_from_cli_json(report_json: Dict[str, Any], db_path: Optional[Pat
     ai_result = analysis_metadata.get("ai_result") or None
     created_at = analysis_metadata.get("timestamp") or datetime.utcnow().isoformat()
 
+    # Extract frame_rate from the report (check multiple possible locations)
+    frame_rate = float(
+        sync_results.get("frame_rate") or
+        analysis_metadata.get("frame_rate") or
+        report_json.get("frame_rate") or
+        23.976
+    )
+
     payload = {
         "analysis_id": analysis_id,
         "master_file": master_file,
         "dub_file": dub_file,
         "consensus_offset_seconds": consensus,
         "confidence_score": confidence,
+        "frame_rate": frame_rate,
         "methods_used": _safe_json_dumps(methods_used),
         "detailed_results": _safe_json_dumps(detailed_results),
         "ai_result": _safe_json_dumps(ai_result) if ai_result is not None else None,
@@ -160,12 +176,16 @@ def save_report_from_model(result: Any, db_path: Optional[Path] = None) -> None:
     # The correction was corrupting correct results, turning -15.024s into -10.025s
     consensus_corrected = float(consensus or 0.0)
 
+    # Extract frame_rate from the result (default to 23.976 if not present)
+    frame_rate = float(as_dict.get("frame_rate") or as_dict.get("detected_frame_rate") or 23.976)
+
     payload = {
         "analysis_id": analysis_id,
         "master_file": master_file,
         "dub_file": dub_file,
         "consensus_offset_seconds": consensus_corrected,
         "confidence_score": float(confidence or 0.0),
+        "frame_rate": frame_rate,
         "methods_used": _safe_json_dumps(methods),
         "detailed_results": _safe_json_dumps(detailed),
         "ai_result": _safe_json_dumps(as_dict.get("ai_result")) if as_dict.get("ai_result") is not None else None,
@@ -184,14 +204,15 @@ def _insert_or_replace(payload: Dict[str, Any], db_path: Optional[Path] = None) 
                 """
                 INSERT INTO reports (
                     analysis_id, master_file, dub_file,
-                    consensus_offset_seconds, confidence_score,
+                    consensus_offset_seconds, confidence_score, frame_rate,
                     methods_used, detailed_results, ai_result, full_report, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(analysis_id) DO UPDATE SET
                     master_file=excluded.master_file,
                     dub_file=excluded.dub_file,
                     consensus_offset_seconds=excluded.consensus_offset_seconds,
                     confidence_score=excluded.confidence_score,
+                    frame_rate=excluded.frame_rate,
                     methods_used=excluded.methods_used,
                     detailed_results=excluded.detailed_results,
                     ai_result=excluded.ai_result,
@@ -205,6 +226,7 @@ def _insert_or_replace(payload: Dict[str, Any], db_path: Optional[Path] = None) 
                     p.get("dub_file"),
                     p.get("consensus_offset_seconds"),
                     p.get("confidence_score"),
+                    p.get("frame_rate", 23.976),
                     p.get("methods_used"),
                     p.get("detailed_results"),
                     p.get("ai_result"),
@@ -234,7 +256,7 @@ def get_by_analysis_id(analysis_id: str, db_path: Optional[Path] = None) -> Opti
         cur = conn.execute(
             """
             SELECT analysis_id, master_file, dub_file, consensus_offset_seconds, confidence_score,
-                   methods_used, detailed_results, ai_result, full_report, created_at
+                   frame_rate, methods_used, detailed_results, ai_result, full_report, created_at
             FROM reports
             WHERE analysis_id = ?
             LIMIT 1
@@ -276,7 +298,7 @@ def get_latest_by_pair(
         cur = conn.execute(
             """
             SELECT analysis_id, master_file, dub_file, consensus_offset_seconds, confidence_score,
-                   methods_used, detailed_results, ai_result, full_report, created_at
+                   frame_rate, methods_used, detailed_results, ai_result, full_report, created_at
             FROM reports
             WHERE master_file = ? AND dub_file = ?
             """
