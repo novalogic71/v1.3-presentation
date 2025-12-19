@@ -336,9 +336,158 @@ class SyncAnalyzerUI {
         if (this.elements.operatorMode) {
             this.elements.operatorMode.addEventListener('change', () => this.setOperatorMode());
         }
-        
+
+        // New redesigned action button handlers (event delegation)
+        this.setupActionButtonHandlers();
+
         // Initialize configuration
         this.initializeConfiguration();
+    }
+
+    /**
+     * Setup event handlers for redesigned action buttons with keyboard shortcuts
+     */
+    setupActionButtonHandlers() {
+        // Event delegation for all action buttons
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.action-btn-v2');
+            if (!btn || btn.disabled) return;
+
+            const action = btn.dataset.action;
+            const itemId = btn.dataset.itemId;
+
+            if (!action || !itemId) return;
+
+            this.handleActionButton(action, itemId, btn);
+        });
+
+        // Keyboard shortcuts (when a table row is focused)
+        document.addEventListener('keydown', (e) => {
+            // Only handle if a batch table row is focused
+            const focusedRow = document.activeElement.closest('tr[data-item-id]');
+            if (!focusedRow) return;
+
+            const itemId = focusedRow.dataset.itemId;
+            const item = this.batchQueue.find(i => i.id === itemId);
+            if (!item || item.status !== 'completed') return;
+
+            // Keyboard shortcuts
+            if (e.key === 'q' || e.key === 'Q') {
+                e.preventDefault();
+                const qcBtn = focusedRow.querySelector('.action-btn-v2.qc');
+                if (qcBtn && !qcBtn.disabled) {
+                    this.handleActionButton('qc', itemId, qcBtn);
+                }
+            } else if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                const repairBtn = focusedRow.querySelector('.action-btn-v2.repair');
+                if (repairBtn && !repairBtn.disabled) {
+                    this.handleActionButton('repair', itemId, repairBtn);
+                }
+            } else if (e.key === 'd' || e.key === 'D') {
+                e.preventDefault();
+                const detailsBtn = focusedRow.querySelector('.action-btn-v2.details');
+                if (detailsBtn && !detailsBtn.disabled) {
+                    this.handleActionButton('details', itemId, detailsBtn);
+                }
+            } else if (e.key === 'Delete') {
+                e.preventDefault();
+                this.handleActionButton('remove', itemId, null);
+            }
+        });
+    }
+
+    /**
+     * Handle action button clicks with unified logic
+     */
+    handleActionButton(action, itemId, btn) {
+        const item = this.batchQueue.find(i => i.id === itemId);
+        if (!item) return;
+
+        switch (action) {
+            case 'qc':
+                this.openQCInterface(btn);
+                break;
+            case 'repair':
+                this.openRepairQCInterface(btn);
+                break;
+            case 'details':
+                this.toggleBatchDetails(item);
+                break;
+            case 'remove':
+                this.confirmRemoveBatchItem(itemId);
+                break;
+        }
+    }
+
+    /**
+     * Show confirmation dialog before removing batch item
+     */
+    confirmRemoveBatchItem(itemId) {
+        const item = this.batchQueue.find(i => i.id === itemId);
+        if (!item) return;
+
+        // Create confirmation dialog
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-dialog-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'confirm-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-labelledby', 'confirm-dialog-title');
+        dialog.setAttribute('aria-describedby', 'confirm-dialog-desc');
+
+        dialog.innerHTML = `
+            <div class="confirm-dialog-header">
+                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                <h3 id="confirm-dialog-title">Remove from Batch?</h3>
+            </div>
+            <div class="confirm-dialog-body" id="confirm-dialog-desc">
+                <p><strong>${item.master.name}</strong> vs <strong>${item.dub.name}</strong></p>
+                <p>This will remove the analysis from the batch queue. This action cannot be undone.</p>
+            </div>
+            <div class="confirm-dialog-actions">
+                <button class="confirm-dialog-btn" data-action="cancel">Cancel</button>
+                <button class="confirm-dialog-btn danger" data-action="confirm">Remove</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(dialog);
+
+        // Focus the confirm button
+        const confirmBtn = dialog.querySelector('[data-action="confirm"]');
+        confirmBtn.focus();
+
+        // Handle button clicks
+        dialog.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+
+            if (btn.dataset.action === 'confirm') {
+                this.removeBatchItem(itemId);
+            }
+
+            // Close dialog
+            overlay.remove();
+            dialog.remove();
+        });
+
+        // Close on overlay click
+        overlay.addEventListener('click', () => {
+            overlay.remove();
+            dialog.remove();
+        });
+
+        // Close on Escape key
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                overlay.remove();
+                dialog.remove();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
     }
 
     showToast(level, message, title = null, timeoutMs = 6000) {
@@ -2124,29 +2273,55 @@ class SyncAnalyzerUI {
             <td class="actions-cell">
                 <div class="action-buttons">
                     ${item.status === 'completed' ? `
-                        <button class="action-btn qc-btn qc-open-btn" 
-                                data-master-id="${item.master.id || item.id + '_master'}" 
-                                data-dub-id="${item.dub.id || item.id + '_dub'}" 
+                        <button class="action-btn-v2 qc"
+                                data-item-id="${item.id}"
+                                data-action="qc"
+                                data-master-id="${item.master.id || item.id + '_master'}"
+                                data-dub-id="${item.dub.id || item.id + '_dub'}"
                                 data-offset="${item.result?.offset_seconds || 0}"
                                 data-master-path="${item.master.path}"
                                 data-dub-path="${item.dub.path}"
-                                title="Open Quality Control Interface">
-                            <i class="fas fa-microscope"></i> QC
+                                title="Open Quality Control Interface (Keyboard: Q)"
+                                aria-label="Open Quality Control Interface for ${item.master.name}">
+                            <i class="fas fa-microscope" aria-hidden="true"></i>
+                            <span class="btn-label-full">QC</span>
+                            <span class="btn-label-short">QC</span>
+                            <span class="shortcut-hint">Q</span>
                         </button>
-                        <button class="action-btn repair qc-btn repair-qc-open-btn"
+                        <button class="action-btn-v2 repair"
+                                data-item-id="${item.id}"
+                                data-action="repair"
                                 data-master-path="${item.master.path}"
                                 data-dub-path="${item.dub.path}"
                                 data-offset="${item.result?.offset_seconds || 0}"
-                                title="Open Repair QC Interface">
-                            <i class="fas fa-toolbox"></i> Repair QC
+                                title="Open Repair Interface (Keyboard: R)"
+                                aria-label="Open Repair Interface for ${item.master.name}">
+                            <i class="fas fa-wrench" aria-hidden="true"></i>
+                            <span class="btn-label-full">Repair</span>
+                            <span class="btn-label-short">Rep</span>
+                            <span class="shortcut-hint">R</span>
                         </button>
-                        <button class="action-btn repair-btn" onclick="app.repairBatchItem('${item.id}')" title="Repair sync issues">
-                            <i class="fas fa-tools"></i>
+                        <button class="action-btn-v2 details"
+                                data-item-id="${item.id}"
+                                data-action="details"
+                                title="View Analysis Details (Keyboard: D)"
+                                aria-label="View detailed analysis for ${item.master.name}">
+                            <i class="fas fa-chart-line" aria-hidden="true"></i>
+                            <span class="btn-label-full">Details</span>
+                            <span class="btn-label-short">Det</span>
+                            <span class="shortcut-hint">D</span>
                         </button>
                     ` : ''}
-                    <button class="action-btn remove-btn" onclick="app.removeBatchItem('${item.id}')" 
-                            ${this.batchProcessing ? 'disabled' : ''} title="Remove from batch">
-                        <i class="fas fa-trash"></i>
+                    <button class="action-btn-v2 remove"
+                            data-item-id="${item.id}"
+                            data-action="remove"
+                            ${this.batchProcessing ? 'disabled' : ''}
+                            title="Remove from batch (Keyboard: Delete)"
+                            aria-label="Remove ${item.master.name} from batch">
+                        <i class="fas fa-trash" aria-hidden="true"></i>
+                        <span class="btn-label-full">Remove</span>
+                        <span class="btn-label-short">Rem</span>
+                        <span class="shortcut-hint">Del</span>
                     </button>
                 </div>
             </td>
@@ -2270,159 +2445,18 @@ class SyncAnalyzerUI {
         }
         
         this.addLog('info', `Showing detailed results for: ${item.master.name}`);
-        
-        contentDiv.innerHTML = `
-            <div class="details-layout">
-              <div class="details-main">
-                <div class="details-header-info">
-                    <h3><i class="fas fa-chart-line"></i> Analysis Results</h3>
-                    <div class="file-pair-info">
-                        <div class="file-info"><strong>Master:</strong> ${item.master.name}</div>
-                        <div class="file-info"><strong>Dub:</strong> ${item.dub.name}</div>
-                    </div>
-                </div>
-                <div class="results-summary">
-                    <div class="result-card">
-                        <h3>Sync Offset</h3>
-                        <div class="result-value ${Math.abs(offsetSeconds) > 0.1 ? 'critical' : 'good'}">${offsetSeconds >= 0 ? '+' : ''}${offsetSeconds.toFixed(3)}s</div>
-                        <div class="result-detail"><div>${offsetFrames}</div></div>
-                    </div>
-                    <div class="result-card">
-                        <h3>Sync Reliability</h3>
-                        <div class="result-value ${confidence > 0.8 ? 'good' : confidence > 0.5 ? 'warning' : 'critical'}">
-                            ${confidence > 0.8 ? '✅ RELIABLE' : confidence > 0.5 ? '⚠️ UNCERTAIN' : '🔴 PROBLEM'}
-                        </div>
-                        <div class="result-detail">${(confidence * 100).toFixed(0)}% detection confidence</div>
-                    </div>
-                    <div class="result-card">
-                        <h3>Detection Method</h3>
-                        <div class="result-value">${methodDisplayName}</div>
-                        <div class="result-detail">Analysis technique used</div>
-                    </div>
-                    <div class="result-card">
-                        <h3>Audio Analysis</h3>
-                        <div class="result-value ${qualityScore > 0.7 ? 'good' : qualityScore > 0.4 ? 'warning' : 'critical'}">
-                            ${qualityScore > 0.7 ? '🔵 CLEAR' : qualityScore > 0.4 ? '🟡 MIXED' : '🟠 POOR'}
-                        </div>
-                        <div class="result-detail">${(qualityScore * 100).toFixed(0)}% audio clarity</div>
-                    </div>
-                </div>
-                <!-- Action Recommendations Panel -->
-                <div class="action-recommendations-panel" id="recommendations-${item.id}">
-                    <div class="recommendations-loading">
-                        <i class="fas fa-lightbulb"></i>
-                        <span>Generating action recommendations...</span>
-                    </div>
-                </div>
-                <div class="enhanced-waveform-visualization" id="enhanced-waveform-${item.id}">
-                    <div class="waveform-loading"><i class="fas fa-spinner fa-spin"></i><span>Generating exact waveform representation...</span></div>
-                </div>
-              </div>
-              <div class="details-side">
-                <div class="batch-repair-controls">
-                    <h3><i class="fas fa-tools"></i> Repair</h3>
-                    <div class="repair-buttons">
-                        <label class="keepdur" style="margin-right:12px;display:flex;align-items:center;gap:6px;">
-                            <input type="checkbox" id="keep-duration-${item.id}" checked>
-                            <span>Keep duration</span>
-                        </label>
-                        <button class="repair-btn auto" onclick="app.repairBatchItem('${item.id}', 'auto')">Auto Repair</button>
-                        <button class="repair-btn manual" onclick="app.repairBatchItem('${item.id}', 'manual')">Manual Repair</button>
-                    </div>
-                    <div class="perch-repair">
-                        <h4><i class="fas fa-stream"></i> Per-Channel Repair</h4>
-                        <div class="perch-row">
-                            <label>Output Path</label>
-                            <input type="text" id="perch-out-${item.id}" placeholder="/absolute/output/path.mov" value="/mnt/data/amcmurray/Sync_dub/Sync_dub_final/repaired_sync_files/${item.dub.name.replace(/\.[^.]+$/, '')}_perch.mov">
-                            <label class="keepdur"><input type="checkbox" id="perch-keep-${item.id}" checked> Keep duration</label>
-                            <button class="repair-btn" id="perch-btn-${item.id}"><i class="fas fa-wrench"></i> Run Per-Channel Repair</button>
-                        </div>
-                        <div class="hint">Uses per-channel offsets reported above. Video is copied; audio re-encoded PCM 48k.</div>
-                    </div>
-                </div>
-                <div class="analysis-json-data">
-                    <h3><i class="fas fa-code"></i> Analysis Data</h3>
-                    <div class="json-container"><pre class="json-display">${JSON.stringify(result, null, 2)}</pre></div>
-                </div>
-              </div>
-            </div>
-        `;
 
-        // Bind fullscreen toggle
-        try {
-            const fsBtn = document.getElementById('toggle-fullscreen-btn');
-            const detailsDivEl = this.elements.batchDetails;
-            if (fsBtn && detailsDivEl) {
-                fsBtn.onclick = () => {
-                    const entering = !detailsDivEl.classList.contains('fullscreen');
-                    if (entering) {
-                        if (!detailsDivEl._fsRestore) {
-                            detailsDivEl._fsRestore = { parent: detailsDivEl.parentNode, next: detailsDivEl.nextSibling };
-                        }
-                        document.body.appendChild(detailsDivEl);
-                        detailsDivEl.classList.add('fullscreen');
-                        document.body.classList.add('no-scroll');
-                        fsBtn.classList.add('fs-active');
-                        fsBtn.title = 'Collapse details';
-                    } else {
-                        detailsDivEl.classList.remove('fullscreen');
-                        document.body.classList.remove('no-scroll');
-                        fsBtn.classList.remove('fs-active');
-                        fsBtn.title = 'Expand details';
-                        const r = detailsDivEl._fsRestore;
-                        if (r && r.parent) {
-                            if (r.next && r.next.parentNode === r.parent) {
-                                r.parent.insertBefore(detailsDivEl, r.next);
-                            } else {
-                                r.parent.appendChild(detailsDivEl);
-                            }
-                        }
-                    }
-                };
-                const onKey = (e) => { if (e.key === 'Escape' && detailsDivEl.classList.contains('fullscreen')) { fsBtn.click(); } };
-                window.addEventListener('keydown', onKey, { once: true });
-            }
-        } catch {}
+        // Generate enhanced details view
+        contentDiv.innerHTML = this.generateEnhancedDetailsView(item, result, offsetSeconds, confidence, methodDisplayName, qualityScore, offsetFrames, itemFps);
 
-        // If per-channel results present, render a compact table
-        try {
-            const per = result.per_channel_results || null;
-            if (per && typeof per === 'object' && Object.keys(per).length) {
-                const rows = Object.entries(per).map(([role, r]) => {
-                    if (r && typeof r === 'object' && 'offset_seconds' in r) {
-                        const offsetFormatted = this.formatOffsetDisplay(r.offset_seconds, true, itemFps);
-                        const conf = (Number(r.confidence || 0) * 100).toFixed(0);
-                        return `<tr><td>${role}</td><td>${offsetFormatted}</td><td>${conf}%</td><td>${r.method || ''}</td></tr>`;
-                    }
-                    return `<tr><td>${role}</td><td colspan="3">${(r && r.error) ? r.error : 'n/a'}</td></tr>`;
-                }).join('');
-                const table = `
-                    <div class="per-channel-section">
-                        <h3><i class="fas fa-stream"></i> Per-Channel Results</h3>
-                        <table class="per-channel-table">
-                            <thead><tr><th>Channel</th><th>Offset</th><th>Reliability</th><th>Method</th></tr></thead>
-                            <tbody>${rows}</tbody>
-                        </table>
-                    </div>`;
-                contentDiv.insertAdjacentHTML('beforeend', table);
-            }
-        } catch (e) { console.warn('Render per-channel failed:', e); }
-        
         // Store current item ID and show details
         detailsDiv.dataset.currentItem = item.id.toString();
         detailsDiv.style.display = 'block';
-        
+
         // Initialize the enhanced waveform visualizer
         this.initializeEnhancedWaveform(item, offsetSeconds);
-        
-        // Simulate loading delay for better UX
-        setTimeout(() => {
-            loadingDiv.style.display = 'none';
-            detailsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            this.addLog('success', 'Analysis details loaded with exact waveform representation');
-        }, 800);
 
-        // Bind per-channel repair button
+        // Bind per-channel repair button if per-channel results exist
         try {
             const btn = document.getElementById(`perch-btn-${item.id}`);
             if (btn) {
@@ -2457,7 +2491,328 @@ class SyncAnalyzerUI {
                     }
                 });
             }
-        } catch (e) { console.warn('Per-channel repair bind failed:', e); }
+        } catch (e) {
+            console.warn('Per-channel repair bind failed:', e);
+        }
+
+        // Scroll details into view
+        detailsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /**
+     * Generate enhanced details view with new design
+     */
+    generateEnhancedDetailsView(item, result, offsetSeconds, confidence, methodDisplayName, qualityScore, offsetFrames, itemFps) {
+        // Determine confidence badge
+        const confidenceBadge = confidence > 0.8 ? 'high-confidence' : confidence > 0.5 ? 'medium-confidence' : 'low-confidence';
+        const confidenceText = confidence > 0.8 ? 'High Confidence' : confidence > 0.5 ? 'Medium Confidence' : 'Low Confidence';
+
+        // Determine severity for operator guidance
+        const offsetAbs = Math.abs(offsetSeconds);
+        const severity = offsetAbs > 0.5 ? 'high' : offsetAbs > 0.1 ? 'medium' : 'low';
+        const severityText = offsetAbs > 0.5 ? 'Critical' : offsetAbs > 0.1 ? 'Moderate' : 'Minor';
+
+        const timecode = this.formatTimecode(offsetSeconds, itemFps);
+
+        return `
+            <div class="details-content-v2">
+                <!-- Quick Summary Header -->
+                <div class="details-summary">
+                    <div class="summary-card">
+                        <div class="summary-card-header">
+                            <i class="fas fa-clock"></i>
+                            <span>Sync Offset</span>
+                        </div>
+                        <div class="summary-card-value">${timecode}</div>
+                        <div class="summary-card-label">${offsetFrames}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-card-header">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>Confidence</span>
+                        </div>
+                        <div class="summary-card-value">${(confidence * 100).toFixed(0)}%</div>
+                        <div class="summary-card-label">
+                            <span class="status-badge-v2 ${confidenceBadge}">${confidenceText}</span>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-card-header">
+                            <i class="fas fa-film"></i>
+                            <span>Frame Rate</span>
+                        </div>
+                        <div class="summary-card-value">${itemFps}</div>
+                        <div class="summary-card-label">fps (detected)</div>
+                    </div>
+                </div>
+
+                <!-- Operator Guidance Panel -->
+                ${this.generateOperatorGuidance(item, offsetSeconds, confidence, severity, severityText)}
+
+                <!-- Expandable Sections -->
+                <div class="details-section expanded" id="section-waveform-${item.id}">
+                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <div class="section-title">
+                            <i class="fas fa-waveform"></i>
+                            <span>Waveform Visualization</span>
+                        </div>
+                        <i class="fas fa-chevron-down section-toggle"></i>
+                    </div>
+                    <div class="section-content">
+                        <div class="enhanced-waveform-visualization" id="enhanced-waveform-${item.id}">
+                            <div class="waveform-loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>Generating waveform visualization...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                ${this.generatePerChannelSection(item, result)}
+
+                ${this.generateMethodResultsSection(item, result)}
+
+                ${this.generateMetadataSection(item, result, methodDisplayName, qualityScore)}
+
+                <!-- Repair Controls Section -->
+                <div class="details-section" id="section-repair-${item.id}">
+                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <div class="section-title">
+                            <i class="fas fa-wrench"></i>
+                            <span>Repair Options</span>
+                        </div>
+                        <i class="fas fa-chevron-down section-toggle"></i>
+                    </div>
+                    <div class="section-content">
+                        <div class="batch-repair-controls">
+                            <div class="repair-buttons">
+                                <label class="keepdur" style="margin-right:12px;display:flex;align-items:center;gap:6px;">
+                                    <input type="checkbox" id="keep-duration-${item.id}" checked>
+                                    <span>Keep duration</span>
+                                </label>
+                                <button class="repair-btn auto" onclick="app.repairBatchItem('${item.id}', 'auto')">Auto Repair</button>
+                                <button class="repair-btn manual" onclick="app.repairBatchItem('${item.id}', 'manual')">Manual Repair</button>
+                            </div>
+                            <div class="perch-repair">
+                                <h4><i class="fas fa-stream"></i> Per-Channel Repair</h4>
+                                <div class="perch-row">
+                                    <label>Output Path</label>
+                                    <input type="text" id="perch-out-${item.id}" placeholder="/absolute/output/path.mov" value="/mnt/data/amcmurray/Sync_dub/Sync_dub_final/repaired_sync_files/${item.dub.name.replace(/\.[^.]+$/, '')}_perch.mov">
+                                    <label class="keepdur"><input type="checkbox" id="perch-keep-${item.id}" checked> Keep duration</label>
+                                    <button class="repair-btn" id="perch-btn-${item.id}"><i class="fas fa-wrench"></i> Run Per-Channel Repair</button>
+                                </div>
+                                <div class="hint">Uses per-channel offsets reported above. Video is copied; audio re-encoded PCM 48k.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Raw Data Section -->
+                <div class="details-section" id="section-raw-${item.id}">
+                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <div class="section-title">
+                            <i class="fas fa-code"></i>
+                            <span>Raw Analysis Data</span>
+                        </div>
+                        <i class="fas fa-chevron-down section-toggle"></i>
+                    </div>
+                    <div class="section-content">
+                        <div class="analysis-json-data">
+                            <div class="json-container">
+                                <pre class="json-display">${JSON.stringify(result, null, 2)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Generate operator guidance panel
+     */
+    generateOperatorGuidance(item, offsetSeconds, confidence, severity, severityText) {
+        const offsetAbs = Math.abs(offsetSeconds);
+
+        let recommendation = '';
+        let actions = '';
+
+        if (offsetAbs < 0.05 && confidence > 0.8) {
+            recommendation = 'Files appear to be in sync. No repair needed.';
+            actions = '<button class="guidance-btn">Export Report</button>';
+        } else if (offsetAbs < 0.5 && confidence > 0.7) {
+            recommendation = 'Minor sync offset detected. Consider applying automatic repair for optimal synchronization.';
+            actions = `
+                <button class="guidance-btn primary" onclick="app.repairBatchItem('${item.id}', 'auto')">
+                    <i class="fas fa-magic"></i> Auto-Repair
+                </button>
+                <button class="guidance-btn" onclick="app.handleActionButton('qc', '${item.id}', null)">
+                    <i class="fas fa-microscope"></i> Review in QC
+                </button>
+            `;
+        } else if (confidence < 0.5) {
+            recommendation = 'Low confidence detection. Manual review recommended before applying repairs. Check audio quality and try different analysis methods.';
+            actions = `
+                <button class="guidance-btn primary" onclick="app.handleActionButton('qc', '${item.id}', null)">
+                    <i class="fas fa-microscope"></i> Manual Review Required
+                </button>
+            `;
+        } else {
+            recommendation = 'Significant sync offset detected. Manual review in QC interface is recommended to verify detection accuracy before repair.';
+            actions = `
+                <button class="guidance-btn primary" onclick="app.handleActionButton('qc', '${item.id}', null)">
+                    <i class="fas fa-microscope"></i> Review in QC
+                </button>
+                <button class="guidance-btn" onclick="app.handleActionButton('repair', '${item.id}', null)">
+                    <i class="fas fa-wrench"></i> Open Repair
+                </button>
+            `;
+        }
+
+        return `
+            <div class="operator-guidance">
+                <div class="guidance-header">
+                    <i class="fas fa-lightbulb"></i>
+                    <h3>Recommended Action</h3>
+                    <span class="priority-badge ${severity}">${severityText} Priority</span>
+                </div>
+                <div class="guidance-content">
+                    ${recommendation}
+                </div>
+                <div class="guidance-actions">
+                    ${actions}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Generate per-channel analysis section
+     */
+    generatePerChannelSection(item, result) {
+        const perChannelResults = result?.per_channel_results || {};
+        const hasPerChannel = Object.keys(perChannelResults).length > 0;
+
+        if (!hasPerChannel) return '';
+
+        const channelCards = Object.entries(perChannelResults).map(([channel, data]) => {
+            const offset = data?.offset_seconds || 0;
+            const conf = data?.confidence || 0;
+            const fps = item.frameRate || this.detectedFrameRate;
+            const timecode = this.formatTimecode(offset, fps);
+
+            return `
+                <div class="channel-card">
+                    <div class="channel-name">${channel}</div>
+                    <div class="channel-offset">${timecode}</div>
+                    <div class="channel-confidence">Confidence: ${(conf * 100).toFixed(0)}%</div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="details-section" id="section-channels-${item.id}">
+                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <div class="section-title">
+                        <i class="fas fa-stream"></i>
+                        <span>Per-Channel Analysis</span>
+                    </div>
+                    <i class="fas fa-chevron-down section-toggle"></i>
+                </div>
+                <div class="section-content">
+                    <div class="channel-grid">
+                        ${channelCards}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Generate method results section
+     */
+    generateMethodResultsSection(item, result) {
+        const methodResults = result?.method_results || [];
+        if (methodResults.length === 0) return '';
+
+        const fps = item.frameRate || this.detectedFrameRate;
+        const rows = methodResults.map(method => {
+            const offset = method?.offset_seconds || 0;
+            const conf = method?.confidence || 0;
+            const name = method?.method || 'Unknown';
+            const timecode = this.formatTimecode(offset, fps);
+
+            return `
+                <tr>
+                    <td class="method-name-cell">${name}</td>
+                    <td class="method-offset-cell">${timecode}</td>
+                    <td class="method-confidence-cell">${(conf * 100).toFixed(1)}%</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="details-section" id="section-methods-${item.id}">
+                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <div class="section-title">
+                        <i class="fas fa-microscope"></i>
+                        <span>Detection Methods</span>
+                    </div>
+                    <i class="fas fa-chevron-down section-toggle"></i>
+                </div>
+                <div class="section-content">
+                    <table class="methods-table">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Offset</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Generate metadata section
+     */
+    generateMetadataSection(item, result, methodDisplayName, qualityScore) {
+        return `
+            <div class="details-section" id="section-metadata-${item.id}">
+                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <div class="section-title">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Analysis Metadata</span>
+                    </div>
+                    <i class="fas fa-chevron-down section-toggle"></i>
+                </div>
+                <div class="section-content">
+                    <div class="metadata-grid">
+                        <div class="metadata-item">
+                            <div class="metadata-label">Detection Method</div>
+                            <div class="metadata-value">${methodDisplayName}</div>
+                        </div>
+                        <div class="metadata-item">
+                            <div class="metadata-label">Audio Quality</div>
+                            <div class="metadata-value">${(qualityScore * 100).toFixed(0)}%</div>
+                        </div>
+                        <div class="metadata-item">
+                            <div class="metadata-label">Master File</div>
+                            <div class="metadata-value">${item.master.name}</div>
+                        </div>
+                        <div class="metadata-item">
+                            <div class="metadata-label">Dub File</div>
+                            <div class="metadata-value">${item.dub.name}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
     
     closeBatchDetails() {
