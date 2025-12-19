@@ -26,7 +26,7 @@ class QCInterface {
         const hours = Math.floor(absSeconds / 3600);
         const minutes = Math.floor((absSeconds % 3600) / 60);
         const secs = Math.floor(absSeconds % 60);
-        const frames = Math.round((absSeconds % 1) * fps);
+        const frames = Math.floor((absSeconds % 1) * fps);
 
         return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
     }
