@@ -399,10 +399,11 @@ class RepairPreviewInterface {
         }
         
         if (offsetInfoEl) {
+            const offset = correctionInfo.overallOffset || 0;
             const fps = this.syncData?.frameRate || 23.976;
-            const frames = Math.round(Math.abs(correctionInfo.overallOffset) * fps);
-            const frameSign = correctionInfo.overallOffset < 0 ? '-' : '+';
-            const timecode = this.formatTimecode(correctionInfo.overallOffset, fps);
+            const frames = Math.round(Math.abs(offset) * fps);
+            const frameSign = offset < 0 ? '-' : '+';
+            const timecode = this.formatTimecode(offset, fps);
             offsetInfoEl.textContent = `Timecode Offset: ${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
         }
         
@@ -604,10 +605,11 @@ class RepairPreviewInterface {
                 segmentTimeEl.textContent = `${this.formatTime(currentSegment.startTime)} - ${this.formatTime(currentSegment.endTime)}`;
             }
             if (segmentOffsetEl) {
+                const offset = currentSegment.offsetSeconds || 0;
                 const fps = this.syncData?.frameRate || 23.976;
-                const frames = Math.round(Math.abs(currentSegment.offsetSeconds) * fps);
-                const frameSign = currentSegment.offsetSeconds < 0 ? '-' : '+';
-                const timecode = this.formatTimecode(currentSegment.offsetSeconds, fps);
+                const frames = Math.round(Math.abs(offset) * fps);
+                const frameSign = offset < 0 ? '-' : '+';
+                const timecode = this.formatTimecode(offset, fps);
                 segmentOffsetEl.textContent = `Offset: ${timecode} (${frameSign}${frames}f @ ${fps}fps)`;
             }
             if (segmentQualityEl) {

@@ -9,10 +9,10 @@ mkdir -p "${UPLOAD_DIR:-/opt/app/uploads}" "${AI_MODEL_CACHE_DIR:-/opt/app/ai_mo
 
 case "$mode" in
   api)
-    exec uvicorn fastapi_app.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}"
+    exec uvicorn main:app --app-dir /opt/app/fastapi_app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}"
     ;;
   all)
-    uvicorn fastapi_app.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}" &
+    uvicorn main:app --app-dir /opt/app/fastapi_app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}" &
     exec python web_ui/server.py
     ;;
   ui)

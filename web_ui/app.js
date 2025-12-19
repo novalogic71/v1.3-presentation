@@ -2247,7 +2247,12 @@ class SyncAnalyzerUI {
         // Get frame display with fallback
         let offsetFrames = 'N/A';
         try {
-            offsetFrames = this.getFrameDisplayString(offsetSeconds);
+            if (typeof offsetSeconds === 'number' && !Number.isNaN(offsetSeconds) &&
+                typeof itemFps === 'number' && !Number.isNaN(itemFps)) {
+                const frames = Math.round(Math.abs(offsetSeconds) * itemFps);
+                const frameSign = offsetSeconds < 0 ? '-' : '+';
+                offsetFrames = `${frameSign}${frames}f @ ${itemFps}fps`;
+            }
         } catch (error) {
             console.warn('Frame display calculation failed:', error);
             offsetFrames = `${(offsetSeconds * itemFps).toFixed(0)} frames @ ${itemFps}fps`;
@@ -2524,17 +2529,17 @@ class SyncAnalyzerUI {
                     this.updateBatchTable();
                     this.updateBatchSummary();
                     this.addLog('info', `Restored ${items.length} batch item(s) from save`);
-                    // Rehydrate results from DB in case some items were saved without inline results
-                    try { await this.rehydrateBatchResults(true); } catch (e) { console.warn('Rehydrate failed:', e); }
+                    // Rehydrate results from DB only for items missing results (don't overwrite existing)
+                    try { await this.rehydrateBatchResults(false); } catch (e) { console.warn('Rehydrate failed:', e); }
                     return;
                 }
             }
         } catch (e) {
             console.warn('Failed to load persisted batch queue:', e);
         }
-        // If we already have a local queue (e.g., from localStorage), refresh it from DB
+        // If we already have a local queue (e.g., from localStorage), only fill in missing results
         if (this.batchQueue.length) {
-            try { await this.rehydrateBatchResults(true); } catch (e) { console.warn('Rehydrate failed:', e); }
+            try { await this.rehydrateBatchResults(false); } catch (e) { console.warn('Rehydrate failed:', e); }
             return;
         }
         // Optional: add demo entry only if nothing restored
