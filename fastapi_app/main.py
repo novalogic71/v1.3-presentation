@@ -72,25 +72,32 @@ def create_application() -> FastAPI:
     app = FastAPI(
         title="Professional Audio Sync Analyzer API",
         description="""
-        A comprehensive RESTful API for professional audio synchronization analysis.
+## 🎬 Professional Audio Sync Analyzer API v1.3.0
 
-        ### Highlights
-        - Multi-method detection (MFCC, onset, spectral, correlation) and optional AI.
-        - Sub-frame accuracy with millisecond offsets, production-ready reporting.
-        - File browse/proxy helpers to enable browser playback during dev.
+A comprehensive RESTful API for professional audio synchronization analysis, repair, and packaging.
 
-        ### Using Swagger (local/dev)
-        - When `DEBUG=true`, this docs page uses a relative server so Try it out hits the current host.
-        - CORS is open in DEBUG for easier testing (no credentials).
-        - If you see CORS errors, ensure the Servers dropdown points to this host/port.
+### ✨ Key Features
+- **Multi-method detection**: MFCC, onset, spectral, correlation, and AI (Wav2Vec2, YAMNet)
+- **Sub-frame accuracy**: Millisecond-level offset detection with confidence scoring
+- **End-to-end workflows**: Analyze → Repair → Package in a single API call
+- **Real-time progress**: Server-Sent Events (SSE) for live progress updates
+- **Batch processing**: CSV upload for processing multiple file pairs
+- **Per-channel repair**: Individual offset correction for multichannel/multi-mono audio
+- **Proxy streaming**: Transcode Atmos/E-AC-3 to browser-friendly formats
 
-        ### Quick Start
-        1) Browse files: `GET /api/v1/files/?path=/mnt/data`
-        2) Probe media: `GET /api/v1/files/probe?path=/abs/video_or_audio`
-        3) Stream proxy audio: `GET /api/v1/files/proxy-audio?path=/abs/media&format=wav`
-        4) Analyze sync: `POST /api/v1/analysis/sync` with master/dub paths
+### 🚀 Quick Start
+1. **Browse files**: `GET /api/v1/files/?path=/mnt/data`
+2. **Probe media**: `GET /api/v1/files/probe?path=/path/to/file`
+3. **Analyze sync**: `POST /api/v1/analysis/sync` with master/dub paths
+4. **Monitor progress**: `GET /api/v1/analysis/{id}/progress/stream` (SSE)
+5. **Complete workflow**: `POST /api/v1/workflows/analyze-and-repair`
+
+### 📡 Using Swagger
+- In `DEBUG=true` mode, this docs page uses relative URLs for Try-it-out
+- CORS is open in DEBUG for easier local testing
+- Use the **Servers** dropdown to select your deployment
         """,
-        version="2.0.0",
+        version="1.3.0",
         contact={
             "name": "AI Audio Engineer",
             "email": "support@sync-analyzer.com",
@@ -111,31 +118,47 @@ def create_application() -> FastAPI:
         tags_metadata=[
             {
                 "name": "analysis",
-                "description": "Core sync analysis operations. Upload files and analyze sync offsets.",
+                "description": "Core sync analysis operations. Start analysis, monitor progress via SSE, get timeline data.",
                 "externalDocs": {
                     "description": "Analysis Documentation",
                     "url": "https://docs.sync-analyzer.com/analysis",
                 },
             },
             {
+                "name": "batch",
+                "description": "Batch processing via CSV upload. Upload CSV files and process multiple file pairs in parallel.",
+            },
+            {
+                "name": "workflows",
+                "description": "Complete end-to-end workflows. Analyze-and-repair combines analysis, repair, and packaging.",
+            },
+            {
+                "name": "repair",
+                "description": "Audio repair operations. Apply per-channel offsets to multichannel/multi-mono files.",
+            },
+            {
                 "name": "files",
-                "description": "File management and playback helpers (browse, probe, raw/proxy streaming).",
+                "description": "File management and playback helpers. Browse, probe, upload, and proxy-stream audio/video.",
                 "externalDocs": {
-                    "description": "File ops & troubleshooting",
+                    "description": "FFprobe Documentation",
                     "url": "https://ffmpeg.org/ffprobe.html",
                 }
             },
             {
                 "name": "reports",
-                "description": "Report generation and retrieval. Get detailed sync analysis reports.",
+                "description": "Report generation and retrieval. Get formatted reports, search by file pair.",
             },
             {
                 "name": "ai",
-                "description": "AI-powered sync detection using deep learning embeddings.",
+                "description": "AI-powered sync detection using Wav2Vec2, YAMNet, and spectral embeddings.",
             },
             {
                 "name": "health",
-                "description": "Health checks and system status monitoring.",
+                "description": "Health checks and system status. Monitor FFmpeg, AI models, filesystem, and system resources.",
+            },
+            {
+                "name": "ui-state",
+                "description": "UI state persistence. Save and restore batch queue state across browser sessions.",
             },
         ],
     )
@@ -192,13 +215,14 @@ def create_application() -> FastAPI:
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         """Handle general exceptions."""
+        from datetime import datetime
         logger.error(f"Unhandled exception: {exc}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={
                 "error": "Internal server error",
                 "error_code": "INTERNAL_ERROR",
-                "timestamp": "2025-08-27T19:00:00",
+                "timestamp": datetime.utcnow().isoformat(),
                 "path": str(request.url),
             }
         )
@@ -214,11 +238,12 @@ def create_application() -> FastAPI:
     @app.get("/health", tags=["health"])
     async def health_check():
         """Health check endpoint for monitoring."""
+        from datetime import datetime
         return {
             "status": "healthy",
             "service": "Professional Audio Sync Analyzer API",
-            "version": "2.0.0",
-            "timestamp": "2025-08-27T19:00:00"
+            "version": "1.3.0",
+            "timestamp": datetime.utcnow().isoformat()
         }
     
     # API help endpoint
@@ -227,22 +252,53 @@ def create_application() -> FastAPI:
         """Get API usage information and examples."""
         return {
             "message": "Professional Audio Sync Analyzer API Help",
-            "version": "2.0.0",
+            "version": "1.3.0",
             "endpoints": {
                 "analysis": {
                     "description": "Core sync analysis operations",
                     "endpoints": [
-                        "POST /api/v1/analysis/sync - Analyze sync between master and dub files",
-                        "POST /api/v1/analysis/batch - Batch sync analysis",
-                        "GET /api/v1/analysis/{analysis_id} - Get analysis results",
-                        "DELETE /api/v1/analysis/{analysis_id} - Delete analysis"
+                        "POST /api/v1/analysis/sync - Start sync analysis",
+                        "GET /api/v1/analysis/{analysis_id} - Get analysis status/results",
+                        "GET /api/v1/analysis/{analysis_id}/progress/stream - SSE progress stream",
+                        "GET /api/v1/analysis/sync/{analysis_id}/timeline - Get timeline data",
+                        "DELETE /api/v1/analysis/{analysis_id} - Cancel analysis",
+                        "GET /api/v1/analysis/ - List all analyses"
+                    ]
+                },
+                "batch": {
+                    "description": "Batch processing via CSV upload",
+                    "endpoints": [
+                        "POST /api/v1/analysis/batch/upload-csv - Upload batch CSV",
+                        "POST /api/v1/analysis/batch/{batch_id}/start - Start batch processing",
+                        "GET /api/v1/analysis/batch/{batch_id}/status - Get batch status",
+                        "GET /api/v1/analysis/batch/{batch_id}/results - Get batch results",
+                        "DELETE /api/v1/analysis/batch/{batch_id} - Cancel batch"
+                    ]
+                },
+                "workflows": {
+                    "description": "Complete end-to-end workflows",
+                    "endpoints": [
+                        "POST /api/v1/workflows/analyze-and-repair - Start complete workflow",
+                        "GET /api/v1/workflows/analyze-and-repair/{workflow_id}/status - Get workflow status",
+                        "GET /api/v1/workflows/analyze-and-repair/{workflow_id}/download/{file_type} - Download outputs",
+                        "GET /api/v1/workflows/analyze-and-repair/workflows - List all workflows",
+                        "DELETE /api/v1/workflows/analyze-and-repair/{workflow_id} - Cleanup workflow"
+                    ]
+                },
+                "repair": {
+                    "description": "Audio repair operations",
+                    "endpoints": [
+                        "POST /api/v1/repair/repair/per-channel - Apply per-channel offsets"
                     ]
                 },
                 "files": {
-                    "description": "File management operations",
+                    "description": "File management and streaming",
                     "endpoints": [
-                        "GET /api/v1/files - List files in directory",
+                        "GET /api/v1/files/ - List files in directory",
                         "POST /api/v1/files/upload - Upload audio/video files",
+                        "GET /api/v1/files/probe - FFprobe file analysis",
+                        "GET /api/v1/files/proxy-audio - Transcode to browser-friendly audio",
+                        "GET /api/v1/files/raw - Get raw file",
                         "GET /api/v1/files/{file_id} - Get file information",
                         "DELETE /api/v1/files/{file_id} - Delete file"
                     ]
@@ -251,32 +307,51 @@ def create_application() -> FastAPI:
                     "description": "Report generation and retrieval",
                     "endpoints": [
                         "GET /api/v1/reports/{analysis_id} - Get analysis report",
-                        "POST /api/v1/reports/{analysis_id}/export - Export report",
-                        "GET /api/v1/reports - List all reports"
+                        "GET /api/v1/reports/{analysis_id}/formatted - Get formatted HTML/Markdown report",
+                        "GET /api/v1/reports/search - Search reports by file pair",
+                        "GET /api/v1/reports/ - List all reports"
                     ]
                 },
                 "ai": {
-                    "description": "AI-powered sync detection",
+                    "description": "AI model information",
                     "endpoints": [
-                        "POST /api/v1/ai/embedding - Extract audio embeddings",
-                        "POST /api/v1/ai/sync - AI-based sync detection",
-                        "GET /api/v1/ai/models - List available AI models"
+                        "GET /api/v1/ai/models - List available AI models",
+                        "GET /api/v1/ai/models/{model_name} - Get model details"
+                    ]
+                },
+                "health": {
+                    "description": "System health monitoring",
+                    "endpoints": [
+                        "GET /api/v1/health/status - Comprehensive health status",
+                        "GET /api/v1/health/ffmpeg - FFmpeg availability",
+                        "GET /api/v1/health/ai-models - AI models status",
+                        "GET /api/v1/health/filesystem - File system health",
+                        "GET /api/v1/health/system - System resources"
+                    ]
+                },
+                "ui_state": {
+                    "description": "UI state persistence",
+                    "endpoints": [
+                        "GET /api/v1/ui/state/batch-queue - Get batch queue state",
+                        "POST /api/v1/ui/state/batch-queue - Save batch queue state",
+                        "DELETE /api/v1/ui/state/batch-queue - Clear batch queue"
                     ]
                 }
             },
             "curl_examples": {
-                "basic_sync_analysis": "curl -X POST 'http://localhost:8000/api/v1/analysis/sync' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"master_file\": \"/path/to/master.wav\", \"dub_file\": \"/path/to/dub.wav\"}'",
-                "file_upload": "curl -X POST 'http://localhost:8000/api/v1/files/upload' \\\n  -F 'file=@/path/to/audio.wav' \\\n  -F 'file_type=audio'",
-                "get_analysis": "curl -X GET 'http://localhost:8000/api/v1/analysis/{analysis_id}'"
+                "basic_sync_analysis": "curl -X POST 'http://localhost:8000/api/v1/analysis/sync' -H 'Content-Type: application/json' -d '{\"master_file\": \"/path/to/master.wav\", \"dub_file\": \"/path/to/dub.wav\"}'",
+                "monitor_progress_sse": "curl -N 'http://localhost:8000/api/v1/analysis/{analysis_id}/progress/stream'",
+                "analyze_and_repair": "curl -X POST 'http://localhost:8000/api/v1/workflows/analyze-and-repair' -H 'Content-Type: application/json' -d '{\"master_file\": \"/path/to/master.mov\", \"dub_file\": \"/path/to/dub.mov\", \"auto_repair\": true}'",
+                "file_probe": "curl 'http://localhost:8000/api/v1/files/probe?path=/path/to/media.mov'",
+                "proxy_audio": "curl 'http://localhost:8000/api/v1/files/proxy-audio?path=/path/to/media.mov&format=wav' --output preview.wav",
+                "per_channel_repair": "curl -X POST 'http://localhost:8000/api/v1/repair/repair/per-channel' -H 'Content-Type: application/json' -d '{\"file_path\": \"/path/to/dub.mov\", \"per_channel_results\": {\"FL\": {\"offset_seconds\": -0.023}}}'"
             },
             "documentation": {
                 "swagger_ui": "/docs",
                 "redoc": "/redoc",
-                "openapi_spec": "/openapi.json"
-            },
-            "curl_examples_extra": {
-                "file_probe": "curl 'http://localhost:8000/api/v1/files/probe?path=/abs/media.mov' | jq",
-                "audio_proxy_wav": "curl -L 'http://localhost:8000/api/v1/files/proxy-audio?path=/abs/media.mov&format=wav' --output preview.wav"
+                "openapi_spec": "/openapi.json",
+                "api_workflow": "See API_WORKFLOW.md",
+                "curl_examples": "See CURL_EXAMPLES.md"
             }
         }
     

@@ -493,8 +493,8 @@ if (window.WaveformVisualizer) {
         try {
             const out = this.audioEngine?.masterOutputValue ?? 1.0;
             const bal = this.audioEngine?.balanceValue ?? 0.0;
-            const mBase = this.audioEngine?.masterGainValue ?? 0.8;
-            const dBase = this.audioEngine?.dubGainValue ?? 0.8;
+            const mBase = this.audioEngine?.masterGainValue ?? 1.0;
+            const dBase = this.audioEngine?.dubGainValue ?? 1.0;
             const mScale = (this.audioEngine?.muteMaster ? 0 : 1) * (1 - Math.max(0, bal)) * out * mBase;
             const dScale = (this.audioEngine?.muteDub ? 0 : 1) * (1 - Math.max(0, -bal)) * out * dBase;
             m.volume = Math.max(0, Math.min(1, mScale));

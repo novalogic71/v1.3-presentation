@@ -8,9 +8,11 @@ All examples use `http://localhost:8000` as the base URL. Adjust this for your d
 ## Authentication
 Currently, the API doesn't require authentication. In production, you may need to add appropriate headers.
 
+---
+
 ## Health and Status Endpoints
 
-### 1. Health Check
+### 1. Basic Health Check
 ```bash
 curl -X GET "http://localhost:8000/health"
 ```
@@ -20,7 +22,7 @@ curl -X GET "http://localhost:8000/health"
 curl -X GET "http://localhost:8000/api/help"
 ```
 
-### 3. System Health Status
+### 3. Comprehensive System Health Status
 ```bash
 curl -X GET "http://localhost:8000/api/v1/health/status"
 ```
@@ -44,6 +46,97 @@ curl -X GET "http://localhost:8000/api/v1/health/filesystem"
 ```bash
 curl -X GET "http://localhost:8000/api/v1/health/system"
 ```
+
+---
+
+## File Management Endpoints
+
+### 1. List Files
+
+#### List Mount Directory
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/"
+```
+
+#### List Specific Directory
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/?path=/mnt/data/audio"
+```
+
+#### List Subdirectory
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/?path=/mnt/data/audio/master_files"
+```
+
+### 2. Upload File
+
+#### Basic Upload
+```bash
+curl -X POST "http://localhost:8000/api/v1/files/upload" \
+  -F "file=@/path/to/local/audio.wav"
+```
+
+#### Upload with Metadata
+```bash
+curl -X POST "http://localhost:8000/api/v1/files/upload" \
+  -F "file=@/path/to/local/master_audio.wav" \
+  -F "file_type=audio" \
+  -F "description=Master audio track for sync analysis" \
+  -F "tags=master,audio,sync,professional"
+```
+
+#### Upload Video File
+```bash
+curl -X POST "http://localhost:8000/api/v1/files/upload" \
+  -F "file=@/path/to/local/video.mov" \
+  -F "file_type=video" \
+  -F "description=Master video file" \
+  -F "tags=master,video,sync"
+```
+
+### 3. Probe File (FFprobe)
+
+Get detailed codec/container information:
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/probe?path=/mnt/data/audio/master.mov"
+```
+
+### 4. Proxy Audio Stream
+
+Stream audio in browser-friendly format:
+```bash
+# Default WAV output
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/master.mov" --output preview.wav
+
+# AAC output for smaller size
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/master.mov&format=mp4" --output preview.m4a
+
+# WebM/Opus output
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/master.mov&format=webm" --output preview.webm
+
+# With duration limit (10 minutes max)
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/master.mov&max_duration=600" --output preview.wav
+
+# With role-based loudness (dub gets +5dB boost)
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/dub.mov&role=dub" --output dub_preview.wav
+```
+
+### 5. Get Raw File
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/raw?path=/mnt/data/audio/master.wav" --output master.wav
+```
+
+### 6. Get File Information
+```bash
+curl -X GET "http://localhost:8000/api/v1/files/file_abc123"
+```
+
+### 7. Delete File
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/files/file_abc123"
+```
+
+---
 
 ## Analysis Endpoints
 
@@ -102,12 +195,28 @@ curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
 curl -X GET "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345"
 ```
 
-### 3. Cancel Analysis
+### 3. Monitor Analysis Progress (SSE Stream)
+
+Connect to real-time progress stream:
+```bash
+# Using curl with streaming
+curl -N "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345/progress/stream"
+
+# Monitor with watch (polling alternative)
+watch -n 2 'curl -s "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345" | jq ".progress, .message"'
+```
+
+### 4. Get Analysis Timeline
+```bash
+curl -X GET "http://localhost:8000/api/v1/analysis/sync/analysis_20250827_143052_abc12345/timeline"
+```
+
+### 5. Cancel Analysis
 ```bash
 curl -X DELETE "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345"
 ```
 
-### 4. Batch Analysis
+### 6. Batch Analysis
 
 #### Simple Batch
 ```bash
@@ -155,7 +264,7 @@ curl -X POST "http://localhost:8000/api/v1/analysis/batch" \
   }'
 ```
 
-### 5. List Analyses
+### 7. List Analyses
 
 #### Get First Page
 ```bash
@@ -172,60 +281,176 @@ curl -X GET "http://localhost:8000/api/v1/analysis/?status=completed&page=1&page
 curl -X GET "http://localhost:8000/api/v1/analysis/?page=3&page_size=15"
 ```
 
-## File Management Endpoints
+---
 
-### 1. List Files
+## Batch Processing Endpoints (CSV Upload)
 
-#### List Mount Directory
+### 1. Upload Batch CSV
 ```bash
-curl -X GET "http://localhost:8000/api/v1/files/"
+curl -X POST "http://localhost:8000/api/v1/analysis/batch/upload-csv" \
+  -F "file=@batch_analysis.csv" \
+  -F "description=Daily sync analysis batch" \
+  -F "priority=normal"
 ```
 
-#### List Specific Directory
+### 2. Start Batch Processing
 ```bash
-curl -X GET "http://localhost:8000/api/v1/files/?path=/mnt/data/audio"
+curl -X POST "http://localhost:8000/api/v1/analysis/batch/batch_20250828_140600/start" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parallel_jobs": 4,
+    "priority": "high",
+    "notification_webhook": "https://your-server.com/webhook/batch-complete"
+  }'
 ```
 
-#### List Subdirectory
+### 3. Get Batch Status
 ```bash
-curl -X GET "http://localhost:8000/api/v1/files/?path=/mnt/data/audio/master_files"
+# Basic status
+curl -X GET "http://localhost:8000/api/v1/analysis/batch/batch_20250828_140600/status"
+
+# With detailed item status
+curl -X GET "http://localhost:8000/api/v1/analysis/batch/batch_20250828_140600/status?include_details=true"
 ```
 
-### 2. Upload File
-
-#### Basic Upload
+### 4. Get Batch Results
 ```bash
-curl -X POST "http://localhost:8000/api/v1/files/upload" \
-  -F "file=@/path/to/local/audio.wav"
+curl -X GET "http://localhost:8000/api/v1/analysis/batch/batch_20250828_140600/results"
 ```
 
-#### Upload with Metadata
+### 5. Cancel Batch
 ```bash
-curl -X POST "http://localhost:8000/api/v1/files/upload" \
-  -F "file=@/path/to/local/master_audio.wav" \
-  -F "file_type=audio" \
-  -F "description=Master audio track for sync analysis" \
-  -F "tags=master,audio,sync,professional"
+curl -X DELETE "http://localhost:8000/api/v1/analysis/batch/batch_20250828_140600"
 ```
 
-#### Upload Video File
+---
+
+## Analyze-and-Repair Workflow Endpoints
+
+### 1. Start Analyze-and-Repair Workflow
+
+#### Basic Workflow
 ```bash
-curl -X POST "http://localhost:8000/api/v1/files/upload" \
-  -F "file=@/path/to/local/video.mov" \
-  -F "file_type=video" \
-  -F "description=Master video file" \
-  -F "tags=master,video,sync"
+curl -X POST "http://localhost:8000/api/v1/workflows/analyze-and-repair" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_file": "/mnt/data/master.mov",
+    "dub_file": "/mnt/data/dub.mov",
+    "episode_name": "Episode 101",
+    "auto_repair": true,
+    "create_package": true
+  }'
 ```
 
-### 3. Get File Information
+#### Full Configuration
 ```bash
-curl -X GET "http://localhost:8000/api/v1/files/file_abc123"
+curl -X POST "http://localhost:8000/api/v1/workflows/analyze-and-repair" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_file": "/mnt/data/master.mov",
+    "dub_file": "/mnt/data/dub.mov",
+    "episode_name": "Episode 101 - Pilot",
+    "chunk_size": 30.0,
+    "enable_gpu": true,
+    "auto_repair": true,
+    "repair_threshold": 100.0,
+    "repair_output_path": null,
+    "create_package": true,
+    "include_visualization": true,
+    "create_zip": true,
+    "output_directory": "./repair_workflows"
+  }'
 ```
 
-### 4. Delete File
+### 2. Get Workflow Status
 ```bash
-curl -X DELETE "http://localhost:8000/api/v1/files/file_abc123"
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_20250828_140600_abc12345/status"
 ```
+
+### 3. Download Workflow Files
+
+#### Download Complete Package (ZIP)
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123/download/package" \
+  --output package.zip
+```
+
+#### Download Repaired File
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123/download/repaired" \
+  --output repaired.mov
+```
+
+#### Download Analysis JSON
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123/download/analysis" \
+  --output analysis.json
+```
+
+#### Download Report
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123/download/report" \
+  --output report.md
+```
+
+#### Download Visualization
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123/download/visualization" \
+  --output visualization.png
+```
+
+### 4. List All Workflows
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflows"
+```
+
+### 5. Cleanup Workflow
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/workflows/analyze-and-repair/workflow_123"
+```
+
+---
+
+## Per-Channel Repair Endpoint
+
+### Apply Per-Channel Offsets
+
+#### 5.1 Surround (Multichannel)
+```bash
+curl -X POST "http://localhost:8000/api/v1/repair/repair/per-channel" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_path": "/mnt/data/audio/dub_5.1.mov",
+    "per_channel_results": {
+      "FL": {"offset_seconds": -0.023},
+      "FR": {"offset_seconds": -0.021},
+      "FC": {"offset_seconds": -0.025},
+      "LFE": {"offset_seconds": 0.0},
+      "SL": {"offset_seconds": -0.019},
+      "SR": {"offset_seconds": -0.020}
+    },
+    "output_path": "/mnt/data/audio/dub_5.1_repaired.mov",
+    "keep_duration": true
+  }'
+```
+
+#### Multi-Mono MOV (Multiple Audio Streams)
+```bash
+curl -X POST "http://localhost:8000/api/v1/repair/repair/per-channel" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_path": "/mnt/data/audio/dub_multi_mono.mov",
+    "per_channel_results": {
+      "S0": {"offset_seconds": -0.023},
+      "S1": {"offset_seconds": -0.021},
+      "S2": {"offset_seconds": -0.025},
+      "S3": {"offset_seconds": -0.018}
+    },
+    "keep_duration": true
+  }'
+```
+
+---
 
 ## AI Endpoints
 
@@ -247,6 +472,8 @@ curl -X GET "http://localhost:8000/api/v1/ai/models/yamnet"
 curl -X GET "http://localhost:8000/api/v1/ai/models/spectral"
 ```
 
+---
+
 ## Reports Endpoints
 
 ### 1. Get Analysis Report
@@ -254,7 +481,20 @@ curl -X GET "http://localhost:8000/api/v1/ai/models/spectral"
 curl -X GET "http://localhost:8000/api/v1/reports/analysis_20250827_143052_abc12345"
 ```
 
-### 2. List Reports
+### 2. Get Formatted Report (HTML/Markdown)
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/analysis_20250827_143052_abc12345/formatted?episode_name=Episode%20101"
+```
+
+### 3. Search Reports by File Pair
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/search?master_file=/mnt/data/master.wav&dub_file=/mnt/data/dub.wav"
+
+# Prefer highest confidence match
+curl -X GET "http://localhost:8000/api/v1/reports/search?master_file=/mnt/data/master.wav&dub_file=/mnt/data/dub.wav&prefer_high_confidence=true"
+```
+
+### 4. List Reports
 
 #### Get First Page
 ```bash
@@ -265,6 +505,73 @@ curl -X GET "http://localhost:8000/api/v1/reports/?page=1&page_size=20"
 ```bash
 curl -X GET "http://localhost:8000/api/v1/reports/?page=2&page_size=15"
 ```
+
+### 5. Debug Report Data
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/debug/analysis_20250827_143052_abc12345"
+```
+
+### 6. Upload Batch CSV (Reports Endpoint)
+```bash
+curl -X POST "http://localhost:8000/api/v1/reports/batch/csv" \
+  -F "file=@batch_episodes.csv" \
+  -F "output_dir=batch_results"
+```
+
+### 7. Start Batch Processing (Reports)
+```bash
+curl -X POST "http://localhost:8000/api/v1/reports/batch/batch_abc123/process?max_workers=4&generate_plots=true"
+```
+
+### 8. Get Batch Status (Reports)
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/batch/batch_abc123/status"
+```
+
+---
+
+## UI State Endpoints
+
+### 1. Get Batch Queue State
+```bash
+curl -X GET "http://localhost:8000/api/v1/ui/state/batch-queue"
+```
+
+### 2. Save Batch Queue State
+```bash
+curl -X POST "http://localhost:8000/api/v1/ui/state/batch-queue" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "id": "1",
+        "master": {"name": "master.wav", "path": "/mnt/data/master.wav"},
+        "dub": {"name": "dub.wav", "path": "/mnt/data/dub.wav"},
+        "status": "queued",
+        "progress": 0
+      },
+      {
+        "id": "2",
+        "master": {"name": "master2.wav", "path": "/mnt/data/master2.wav"},
+        "dub": {"name": "dub2.wav", "path": "/mnt/data/dub2.wav"},
+        "status": "completed",
+        "progress": 100,
+        "result": {
+          "offset_seconds": -0.023,
+          "confidence": 0.95,
+          "method_used": "mfcc"
+        }
+      }
+    ]
+  }'
+```
+
+### 3. Clear Batch Queue State
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/ui/state/batch-queue"
+```
+
+---
 
 ## Advanced Usage Examples
 
@@ -304,19 +611,53 @@ curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
   }'
 ```
 
-#### Step 4: Monitor Progress
+#### Step 4: Monitor Progress (SSE)
 ```bash
-# Replace with actual analysis ID from step 3
-curl -X GET "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345"
+curl -N "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345/progress/stream"
 ```
 
 #### Step 5: Get Results
 ```bash
-# Once analysis is complete
 curl -X GET "http://localhost:8000/api/v1/reports/analysis_20250827_143052_abc12345"
 ```
 
-### 2. Batch Processing Workflow
+### 2. Complete Analyze-and-Repair Flow
+
+#### Step 1: Start Workflow
+```bash
+RESPONSE=$(curl -s -X POST "http://localhost:8000/api/v1/workflows/analyze-and-repair" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_file": "/mnt/data/master.mov",
+    "dub_file": "/mnt/data/dub.mov",
+    "episode_name": "Episode 101",
+    "auto_repair": true,
+    "create_package": true
+  }')
+
+WORKFLOW_ID=$(echo $RESPONSE | jq -r '.workflow_id')
+echo "Started workflow: $WORKFLOW_ID"
+```
+
+#### Step 2: Poll Until Complete
+```bash
+while true; do
+  STATUS=$(curl -s "http://localhost:8000/api/v1/workflows/analyze-and-repair/$WORKFLOW_ID/status" | jq -r '.status')
+  echo "Status: $STATUS"
+  if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
+    break
+  fi
+  sleep 5
+done
+```
+
+#### Step 3: Download Package
+```bash
+curl -X GET "http://localhost:8000/api/v1/workflows/analyze-and-repair/$WORKFLOW_ID/download/package" \
+  --output "episode_101_package.zip"
+```
+
+### 3. Batch Processing Workflow
 
 #### Step 1: Prepare File List
 Create a JSON file `batch_files.json`:
@@ -347,37 +688,49 @@ curl -X POST "http://localhost:8000/api/v1/analysis/batch" \
 
 #### Step 3: Monitor Batch Progress
 ```bash
-# Check all analyses
 curl -X GET "http://localhost:8000/api/v1/analysis/?status=processing"
 ```
 
-### 3. Health Monitoring
+---
 
-#### Comprehensive Health Check
+## Health Monitoring Examples
+
+### Comprehensive Health Check Script
 ```bash
-curl -X GET "http://localhost:8000/api/v1/health/status"
+#!/bin/bash
+API_URL="http://localhost:8000"
+
+echo "=== System Health Check ==="
+
+# Basic health
+echo -n "Basic Health: "
+curl -s "$API_URL/health" | jq -r '.status'
+
+# Detailed health
+echo -e "\n=== Component Status ==="
+curl -s "$API_URL/api/v1/health/status" | jq '.components | to_entries[] | "\(.key): \(.value.status)"'
+
+# FFmpeg
+echo -e "\n=== FFmpeg ==="
+curl -s "$API_URL/api/v1/health/ffmpeg" | jq '{status, version: .details.version}'
+
+# AI Models
+echo -e "\n=== AI Models ==="
+curl -s "$API_URL/api/v1/health/ai-models" | jq '{status, gpu_available: .details.gpu_available, models: .details.available_models}'
+
+# System Resources
+echo -e "\n=== System Resources ==="
+curl -s "$API_URL/api/v1/health/system" | jq '{cpu: .details.cpu_usage_percent, memory: .details.memory_usage_percent, disk: .details.disk_usage_percent}'
 ```
 
-#### Component-Specific Checks
-```bash
-# Check FFmpeg
-curl -X GET "http://localhost:8000/api/v1/health/ffmpeg"
-
-# Check AI models
-curl -X GET "http://localhost:8000/api/v1/health/ai-models"
-
-# Check file system
-curl -X GET "http://localhost:8000/api/v1/health/filesystem"
-
-# Check system resources
-curl -X GET "http://localhost:8000/api/v1/health/system"
-```
+---
 
 ## Error Handling Examples
 
 ### 1. File Not Found
 ```bash
 curl -X GET "http://localhost:8000/api/v1/analysis/nonexistent_id"
+# Returns: {"detail": "Analysis nonexistent_id not found"}
 ```
 
 ### 2. Invalid File Path
@@ -388,20 +741,17 @@ curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
     "master_file": "relative/path.wav",
     "dub_file": "/mnt/data/audio/dub.wav"
   }'
+# Returns error about unsafe path
 ```
 
 ### 3. Unsupported File Type
 ```bash
 curl -X POST "http://localhost:8000/api/v1/files/upload" \
   -F "file=@/path/to/document.txt"
+# Returns: {"detail": "File type not supported"}
 ```
 
-### 4. File Too Large
-```bash
-# This will fail if the file exceeds MAX_FILE_SIZE
-curl -X POST "http://localhost:8000/api/v1/files/upload" \
-  -F "file=@/path/to/very_large_file.wav"
-```
+---
 
 ## Performance Testing
 
@@ -417,132 +767,15 @@ for i in {1..100}; do
 done
 ```
 
-### 2. Analysis Endpoint Load Test
+### 2. Analysis Endpoint Timing
 ```bash
-# Create test payload
-cat > test_analysis.json << EOF
-{
-  "master_file": "/mnt/data/audio/test_master.wav",
-  "dub_file": "/mnt/data/audio/test_dub.wav",
-  "methods": ["mfcc"],
-  "sample_rate": 22050
-}
-EOF
-
-# Test with multiple concurrent requests
-for i in {1..10}; do
-  curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
-    -H "Content-Type: application/json" \
-    -d @test_analysis.json &
-done
-wait
+curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
+  -H "Content-Type: application/json" \
+  -d '{"master_file": "...", "dub_file": "...", "methods": ["mfcc"]}' \
+  -w "\nTotal time: %{time_total}s\n"
 ```
 
-## Scripts and Automation
-
-### 1. Health Check Script
-```bash
-#!/bin/bash
-# health_check.sh
-
-API_URL="http://localhost:8000"
-LOG_FILE="/var/log/sync_analyzer_health.log"
-
-echo "$(date): Starting health check..." >> $LOG_FILE
-
-# Check basic health
-HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health")
-if [ "$HEALTH_RESPONSE" = "200" ]; then
-    echo "$(date): Basic health check passed" >> $LOG_FILE
-else
-    echo "$(date): Basic health check failed: $HEALTH_RESPONSE" >> $LOG_FILE
-    exit 1
-fi
-
-# Check detailed health
-DETAILED_HEALTH=$(curl -s "$API_URL/api/v1/health/status")
-echo "$(date): Detailed health: $DETAILED_HEALTH" >> $LOG_FILE
-
-echo "$(date): Health check completed" >> $LOG_FILE
-```
-
-### 2. Batch Analysis Script
-```bash
-#!/bin/bash
-# batch_analysis.sh
-
-API_URL="http://localhost:8000"
-INPUT_DIR="/mnt/data/audio"
-OUTPUT_DIR="/mnt/data/reports"
-
-# Find all master-dub pairs
-find "$INPUT_DIR" -name "*master*" -type f | while read master_file; do
-    # Generate corresponding dub filename
-    dub_file=$(echo "$master_file" | sed 's/master/dub/g')
-    
-    if [ -f "$dub_file" ]; then
-        echo "Analyzing: $master_file vs $dub_file"
-        
-        # Submit analysis
-        ANALYSIS_ID=$(curl -s -X POST "$API_URL/api/v1/analysis/sync" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"master_file\": \"$master_file\",
-            \"dub_file\": \"$dub_file\",
-            \"methods\": [\"mfcc\", \"onset\"],
-            \"sample_rate\": 22050
-          }" | jq -r '.analysis_id')
-        
-        echo "Analysis started: $ANALYSIS_ID"
-        
-        # Wait for completion
-        while true; do
-            STATUS=$(curl -s "$API_URL/api/v1/analysis/$ANALYSIS_ID" | jq -r '.status')
-            if [ "$STATUS" = "completed" ]; then
-                echo "Analysis completed: $ANALYSIS_ID"
-                break
-            elif [ "$STATUS" = "failed" ]; then
-                echo "Analysis failed: $ANALYSIS_ID"
-                break
-            fi
-            sleep 5
-        done
-    fi
-done
-```
-
-## Troubleshooting
-
-### 1. Check API Status
-```bash
-# Basic connectivity
-curl -v "http://localhost:8000/health"
-
-# Check if service is running
-ps aux | grep uvicorn
-netstat -tlnp | grep :8000
-```
-
-### 2. Check Logs
-```bash
-# Application logs
-tail -f logs/app.log
-
-# System logs
-journalctl -u sync-analyzer-api -f
-```
-
-### 3. Test Individual Components
-```bash
-# Test FFmpeg
-ffmpeg -version
-
-# Test file system access
-ls -la /mnt/data/
-
-# Test Python environment
-python -c "import fastapi, uvicorn; print('Dependencies OK')"
-```
+---
 
 ## Notes
 
@@ -553,5 +786,6 @@ python -c "import fastapi, uvicorn; print('Dependencies OK')"
 - Health checks provide detailed component status information.
 - Rate limiting is enabled by default (60 requests per minute per IP).
 - All timestamps are in ISO 8601 format (UTC).
+- Use the SSE endpoint `/analysis/{id}/progress/stream` for real-time progress updates.
 
 For more information, see the API documentation at `http://localhost:8000/docs` or `http://localhost:8000/redoc`.

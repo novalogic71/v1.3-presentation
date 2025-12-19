@@ -388,10 +388,9 @@ async def proxy_audio(
         import subprocess, shutil
         ffmpeg_bin = shutil.which("ffmpeg") or "/home/linuxbrew/.linuxbrew/bin/ffmpeg"
         logger.info(f"Proxy audio: extracting max {max_duration}s from {os.path.basename(path)} (role={role})")
-        # Peak normalize to 0 dB, then boost dub by 5dB to match master levels
+        # No volume adjustments - play content as-is
         # Use -t to limit duration for preview (avoids timeouts on very long files)
-        volume_boost = ",volume=5dB" if role.lower() == "dub" else ""
-        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000", "-af", f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}"]
+        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000"]
         media_type = "audio/wav"
         if fmt == "wav":
             args += ["-f", "wav", "-acodec", "pcm_s16le", "pipe:1"]

@@ -13,7 +13,7 @@ A production-ready FastAPI application that provides RESTful API access to the P
 ### API Features ⚡
 - **RESTful Design**: Clean, intuitive REST API endpoints
 - **Async Processing**: Non-blocking analysis operations with background processing
-- **Real-time Progress**: Live progress tracking with detailed stage information
+- **Real-time Progress**: Live progress tracking with Server-Sent Events (SSE)
 - **Batch Processing**: Analyze multiple file pairs simultaneously
 - **Comprehensive Validation**: Request/response validation with Pydantic models
 - **Native Progress Bars**: Window-level progress tracking for AI models
@@ -26,62 +26,48 @@ A production-ready FastAPI application that provides RESTful API access to the P
 - **Progress Tracking**: Real-time AI processing updates with window-level progress
 - **Embedding Extraction**: High-quality audio embeddings with detailed progress reporting
 
-### 📊 Progress Tracking & Monitoring
-- **Real-time Updates**: Live progress reporting for all analysis stages
-- **AI Model Progress**: Window-by-window Wav2Vec2 processing updates
-- **Multi-stage Breakdown**: Detailed progress for embedding extraction, similarity computation, and alignment
-- **GPU Utilization**: Monitor CUDA memory usage and processing status
-- **Status Messages**: Descriptive progress messages like "Processing window 23/45"
-- **Consensus Tracking**: Progress updates for traditional methods (MFCC, onset, spectral)
-- **API Progress Monitoring**: REST endpoints for real-time progress queries
+### Workflow Features 🔧
+- **Analyze-and-Repair Workflow**: Complete end-to-end sync correction in one API call
+- **Per-Channel Repair**: Apply individual offsets to multichannel/multi-mono audio
+- **Intelligent Repair**: Automatic repair application based on configurable thresholds
+- **Package Generation**: Create ZIP packages with repaired files, reports, and visualizations
 
-#### Progress Flow Example
-```
-AI Analysis: Starting master audio processing... (5%)
-AI Analysis: Master embeddings - Processing window 10/45 (25%)
-AI Analysis: Processing dub audio... (40%)  
-AI Analysis: Dub embeddings - Processing window 30/45 (67%)
-AI Analysis: Computing similarity matrix... (75%)
-AI Analysis: Finding optimal alignment... (90%)
-AI Analysis: Complete! (100%)
-```
+### File Management 📁
+- **Proxy Audio Streaming**: Transcode any audio (including Dolby Atmos) to browser-friendly formats
+- **FFprobe Integration**: Detailed codec/container analysis for debugging
+- **Raw File Serving**: Direct file access for downloads
+- **UI State Persistence**: Save batch queue state across browser sessions
 
-## 🔧 Recent Critical Fixes (September 2025)
-
-### ✅ Fixed Offset Calculation Accuracy
-- **Issue**: Cross-correlation formulas had 1.487x scaling errors causing 7+ second offset inaccuracies
-- **Fix**: Corrected reference points in all analysis methods (MFCC, Onset, Spectral, Chunked)
-- **Accuracy**: Improved from 7+ second errors to ~0.3 second precision
-- **Sample Rate**: Fixed mismatch between 48kHz original files and 22kHz resampled analysis
-
-### ⚡ Multi-GPU Support & Batch Processing
-- **Issue**: Batch processing hung at 90% during AI analysis due to GPU memory exhaustion
-- **Fix**: Implemented automatic workload distribution across all available GPUs
-- **Performance**: Round-robin GPU assignment prevents memory buildup
-- **Result**: Batch processing now completes successfully with better resource utilization
-
-### 📂 Files Modified
-- `app/services/sync_analyzer_service.py`: Multi-GPU integration
-- `sync_analyzer/core/optimized_large_file_detector.py`: Offset formula and sample rate fixes
-- `sync_analyzer/core/audio_sync_detector.py`: Correlation reference point corrections
-- `sync_analyzer/ai/embedding_sync_detector.py`: Multi-GPU support and memory cleanup
+---
 
 ## 🏗 Architecture
 
 ```
 fastapi_app/
 ├── app/
-│   ├── api/v1/           # API endpoints and routers
-│   ├── core/             # Core configuration and utilities
-│   ├── models/           # Pydantic data models
-│   ├── services/         # Business logic services
-│   └── middleware/       # Custom middleware
-├── static/               # Static files (if any)
-├── main.py              # FastAPI application entry point
-├── requirements.txt     # Python dependencies
-├── .env.example        # Environment variables template
-└── README.md           # This file
+│   ├── api/v1/              # API endpoints and routers
+│   │   └── endpoints/
+│   │       ├── analysis.py      # Sync analysis endpoints
+│   │       ├── batch.py         # Batch processing (CSV upload)
+│   │       ├── files.py         # File management
+│   │       ├── ai.py            # AI model endpoints
+│   │       ├── health.py        # Health monitoring
+│   │       ├── reports.py       # Report generation
+│   │       ├── repair.py        # Per-channel repair
+│   │       ├── analyze_and_repair.py  # Complete workflow
+│   │       └── ui_state.py      # UI state persistence
+│   ├── core/                # Core configuration and utilities
+│   ├── models/              # Pydantic data models
+│   ├── services/            # Business logic services
+│   └── middleware/          # Custom middleware
+├── main.py                  # FastAPI application entry point
+├── requirements.txt         # Python dependencies
+├── API_WORKFLOW.md          # Comprehensive API workflow guide
+├── CURL_EXAMPLES.md         # Ready-to-use curl commands
+└── README.md                # This file
 ```
+
+---
 
 ## 📋 Prerequisites
 
@@ -107,12 +93,6 @@ sudo apt install ffmpeg python3-pip python3-venv
 brew install ffmpeg python3
 ```
 
-#### Windows
-```bash
-# Download FFmpeg from https://ffmpeg.org/download.html
-# Add to PATH environment variable
-```
-
 #### GPU Setup (Optional but Recommended)
 ```bash
 # Ubuntu/Debian - Install NVIDIA drivers and CUDA
@@ -122,10 +102,9 @@ sudo apt install nvidia-driver-545 nvidia-cuda-toolkit
 # Verify GPU and CUDA installation
 nvidia-smi
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-
-# Check GPU memory
-nvidia-smi --query-gpu=memory.used,memory.total --format=csv
 ```
+
+---
 
 ## 🛠 Installation
 
@@ -158,6 +137,8 @@ cp .env.example .env
 python -c "import fastapi, uvicorn; print('FastAPI installed successfully')"
 ffmpeg -version
 ```
+
+---
 
 ## ⚙ Configuration
 
@@ -200,37 +181,30 @@ LOG_FILE=./logs/app.log
 # Rate limiting
 ENABLE_RATE_LIMITING=true
 RATE_LIMIT_PER_MINUTE=60
-
-# Caching
-ENABLE_CACHING=true
-CACHE_TTL=3600
 ```
+
+---
 
 ## 🚀 Running the Application
 
 ### Development Mode
 ```bash
-# Activate virtual environment
 source venv/bin/activate
-
-# Run with auto-reload
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Production Mode
 ```bash
-# Run with production settings
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-### Using Docker (Optional)
+### Using Docker
 ```bash
-# Build image
 docker build -t sync-analyzer-api .
-
-# Run container
 docker run -p 8000:8000 -v /mnt/data:/mnt/data sync-analyzer-api
 ```
+
+---
 
 ## 📚 API Documentation
 
@@ -242,28 +216,90 @@ docker run -p 8000:8000 -v /mnt/data:/mnt/data sync-analyzer-api
 ### API Help
 - **API Help**: http://localhost:8000/api/help
 
-## 🔌 API Endpoints
+---
 
-### Analysis Endpoints
+## 🔌 API Endpoints Overview
 
-#### 1. Start Sync Analysis
-```http
-POST /api/v1/analysis/sync
-Content-Type: application/json
+### Health & Monitoring (`/api/v1/health/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/status` | GET | Comprehensive system health |
+| `/ffmpeg` | GET | FFmpeg availability |
+| `/ai-models` | GET | AI models status |
+| `/filesystem` | GET | File system health |
+| `/system` | GET | System resources |
 
-{
-  "master_file": "/mnt/data/audio/master.wav",
-  "dub_file": "/mnt/data/audio/dub.wav",
-  "methods": ["mfcc", "onset"],
-  "enable_ai": true,
-  "ai_model": "wav2vec2",
-  "sample_rate": 22050,
-  "window_size": 30.0,
-  "confidence_threshold": 0.8
-}
-```
+### Analysis (`/api/v1/analysis/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sync` | POST | Start sync analysis |
+| `/{analysis_id}` | GET | Get analysis status/results |
+| `/{analysis_id}/progress/stream` | GET | SSE progress stream |
+| `/{analysis_id}` | DELETE | Cancel analysis |
+| `/` | GET | List all analyses |
+| `/batch` | POST | Start batch analysis |
+| `/sync/{analysis_id}/timeline` | GET | Get timeline data |
 
-**Curl Example:**
+### Batch Processing (`/api/v1/analysis/batch/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload-csv` | POST | Upload batch CSV |
+| `/{batch_id}/start` | POST | Start batch processing |
+| `/{batch_id}/status` | GET | Get batch status |
+| `/{batch_id}/results` | GET | Get batch results |
+| `/{batch_id}` | DELETE | Cancel batch |
+
+### Workflows (`/api/v1/workflows/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/analyze-and-repair` | POST | Start complete workflow |
+| `/analyze-and-repair/{workflow_id}/status` | GET | Get workflow status |
+| `/analyze-and-repair/{workflow_id}/download/{file_type}` | GET | Download files |
+| `/analyze-and-repair/workflows` | GET | List all workflows |
+| `/analyze-and-repair/{workflow_id}` | DELETE | Cleanup workflow |
+
+### Repair (`/api/v1/repair/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/repair/per-channel` | POST | Apply per-channel offsets |
+
+### Files (`/api/v1/files/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | List files in directory |
+| `/upload` | POST | Upload file |
+| `/probe` | GET | FFprobe file analysis |
+| `/proxy-audio` | GET | Stream transcoded audio |
+| `/raw` | GET | Get raw file |
+| `/{file_id}` | GET | Get file info |
+| `/{file_id}` | DELETE | Delete file |
+
+### AI (`/api/v1/ai/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/models` | GET | List AI models |
+| `/models/{model_name}` | GET | Get model info |
+
+### Reports (`/api/v1/reports/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/{analysis_id}` | GET | Get analysis report |
+| `/{analysis_id}/formatted` | GET | Get formatted report |
+| `/search` | GET | Search by file pair |
+| `/` | GET | List reports |
+
+### UI State (`/api/v1/ui/state/`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/batch-queue` | GET | Get batch queue state |
+| `/batch-queue` | POST | Save batch queue state |
+| `/batch-queue` | DELETE | Clear batch queue |
+
+---
+
+## 📊 Quick Start Examples
+
+### Start Sync Analysis
 ```bash
 curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
   -H "Content-Type: application/json" \
@@ -276,297 +312,92 @@ curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
   }'
 ```
 
-#### 2. Get Analysis Status (with Real-time Progress)
-```http
-GET /api/v1/analysis/{analysis_id}
-```
-
-**Response Example with Progress:**
-```json
-{
-  "analysis_id": "analysis_20250827_143052_abc12345",
-  "status": "processing",
-  "progress": 67.5,
-  "status_message": "AI Analysis: Dub embeddings - Processing window 23/45",
-  "created_at": "2025-08-31T18:00:00Z",
-  "updated_at": "2025-08-31T18:02:34Z",
-  "estimated_completion": "2025-08-31T18:03:45Z"
-}
-```
-
-**Curl Example:**
+### Monitor Progress (SSE)
 ```bash
-# Get current status and progress
-curl -X GET "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345"
-
-# Monitor progress in real-time (watch every 2 seconds)
-watch -n 2 'curl -s "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345" | jq ".progress, .status_message"'
+curl -N "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345/progress/stream"
 ```
 
-#### 3. Cancel Analysis
-```http
-DELETE /api/v1/analysis/{analysis_id}
-```
-
-**Curl Example:**
+### Start Analyze-and-Repair Workflow
 ```bash
-curl -X DELETE "http://localhost:8000/api/v1/analysis/analysis_20250827_143052_abc12345"
-```
-
-#### 4. Batch Analysis
-```http
-POST /api/v1/analysis/batch
-Content-Type: application/json
-
-{
-  "file_pairs": [
-    {"master": "/mnt/data/audio/master1.wav", "dub": "/mnt/data/audio/dub1.wav"},
-    {"master": "/mnt/data/audio/master2.wav", "dub": "/mnt/data/audio/dub2.wav"}
-  ],
-  "analysis_config": {
-    "methods": ["mfcc"],
-    "sample_rate": 22050
-  },
-  "parallel_processing": true,
-  "max_workers": 4
-}
-```
-
-**Curl Example:**
-```bash
-curl -X POST "http://localhost:8000/api/v1/analysis/batch" \
+curl -X POST "http://localhost:8000/api/v1/workflows/analyze-and-repair" \
   -H "Content-Type: application/json" \
   -d '{
-    "file_pairs": [
-      {"master": "/mnt/data/audio/master1.wav", "dub": "/mnt/data/audio/dub1.wav"}
-    ],
-    "analysis_config": {
-      "methods": ["mfcc"],
-      "sample_rate": 22050
-    }
+    "master_file": "/mnt/data/master.mov",
+    "dub_file": "/mnt/data/dub.mov",
+    "episode_name": "Episode 101",
+    "auto_repair": true,
+    "create_package": true
   }'
 ```
 
-#### 5. List Analyses
-```http
-GET /api/v1/analysis/?page=1&page_size=20&status=completed
-```
-
-**Curl Examples:**
+### Proxy Audio for Browser Playback
 ```bash
-# Get first page
-curl -X GET "http://localhost:8000/api/v1/analysis/?page=1&page_size=20"
-
-# Filter by status
-curl -X GET "http://localhost:8000/api/v1/analysis/?status=completed"
-
-# Get specific page
-curl -X GET "http://localhost:8000/api/v1/analysis/?page=2&page_size=10"
+curl -X GET "http://localhost:8000/api/v1/files/proxy-audio?path=/mnt/data/audio/atmos.ec3&format=wav"
 ```
 
-### File Management Endpoints
+---
 
-#### 1. List Files
-```http
-GET /api/v1/files?path=/mnt/data/audio
-```
+## 📈 Performance
 
-**Curl Example:**
+### GPU vs CPU Performance
+| Audio Length | CPU | GPU (RTX 2080 Ti) | Speedup |
+|--------------|-----|-------------------|---------|
+| 2 minutes | ~45-60s | ~8-15s | 3-5x |
+| 10 minutes | ~4-5min | ~1-2min | 3-4x |
+| 60 minutes | ~25-30min | ~8-10min | 3x |
+
+### Multi-GPU Benefits
+- Automatic workload distribution across GPUs
+- Prevents memory exhaustion during batch processing
+- Round-robin GPU assignment for load balancing
+- Faster processing for batch workloads
+
+---
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### FFmpeg Not Found
 ```bash
-curl -X GET "http://localhost:8000/api/v1/files?path=/mnt/data/audio"
+ffmpeg -version
+sudo apt install ffmpeg  # Ubuntu/Debian
+brew install ffmpeg      # macOS
 ```
 
-#### 2. Upload File
-```http
-POST /api/v1/files/upload
-Content-Type: multipart/form-data
-
-file: @/path/to/audio.wav
-file_type: audio
-description: Master audio track
-tags: ["master", "audio", "sync"]
-```
-
-**Curl Example:**
+#### Port Already in Use
 ```bash
-curl -X POST "http://localhost:8000/api/v1/files/upload" \
-  -F "file=@/path/to/audio.wav" \
-  -F "file_type=audio" \
-  -F "description=Master audio track" \
-  -F "tags=master,audio,sync"
+lsof -i :8000
+kill -9 <PID>
+uvicorn main:app --port 8001
 ```
 
-### AI Endpoints
-
-#### 1. List AI Models
-```http
-GET /api/v1/ai/models
-```
-
-**Curl Example:**
+#### GPU Issues
 ```bash
-curl -X GET "http://localhost:8000/api/v1/ai/models"
+# Check GPU availability
+nvidia-smi
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+
+# Force CPU mode
+export USE_GPU=false
 ```
 
-#### 2. AI Analysis
-```http
-POST /api/v1/ai/sync
-Content-Type: application/json
-
-{
-  "audio_file": "/mnt/data/audio/sample.wav",
-  "model": "wav2vec2",
-  "extract_embeddings": true,
-  "analyze_sync": false
-}
-```
-
-**Curl Example:**
+### Logs and Debugging
 ```bash
-curl -X POST "http://localhost:8000/api/v1/ai/sync" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "audio_file": "/mnt/data/audio/sample.wav",
-    "model": "wav2vec2",
-    "extract_embeddings": true
-  }'
+tail -f logs/app.log
+export DEBUG=true
+export LOG_LEVEL=DEBUG
 ```
 
-### Health and Monitoring
-
-#### 1. Health Check
-```http
-GET /health
-```
-
-**Curl Example:**
-```bash
-curl -X GET "http://localhost:8000/health"
-```
-
-#### 2. API Help
-```http
-GET /api/help
-```
-
-**Curl Example:**
-```bash
-curl -X GET "http://localhost:8000/api/help"
-```
-
-## 📊 Response Examples
-
-### Successful Analysis Response
-```json
-{
-  "success": true,
-  "analysis_id": "analysis_20250827_143052_abc12345",
-  "status": "completed",
-  "result": {
-    "analysis_id": "analysis_20250827_143052_abc12345",
-    "master_file": "/mnt/data/audio/master.wav",
-    "dub_file": "/mnt/data/audio/dub.wav",
-    "status": "completed",
-    "consensus_offset": {
-      "offset_seconds": -2.456,
-      "offset_samples": -54032,
-      "offset_frames": {
-        "23.976": -58.9,
-        "24.0": -58.9,
-        "25.0": -61.4,
-        "29.97": -73.6,
-        "30.0": -73.7
-      },
-      "confidence": 0.94
-    },
-    "method_results": [
-      {
-        "method": "mfcc",
-        "offset": {
-          "offset_seconds": -2.456,
-          "offset_samples": -54032,
-          "confidence": 0.94
-        },
-        "processing_time": 3.2,
-        "quality_score": 0.92,
-        "metadata": {
-          "mfcc_coefficients": 13,
-          "window_size": 30.0
-        }
-      },
-      {
-        "method": "ai",
-        "offset": {
-          "offset_seconds": -2.445,
-          "offset_samples": -53892,
-          "confidence": 0.96
-        },
-        "processing_time": 8.7,
-        "quality_score": 0.96,
-        "metadata": {
-          "model": "wav2vec2",
-          "embedding_similarity": 0.94,
-          "temporal_consistency": 0.97,
-          "ai_analysis": true,
-          "gpu_used": true,
-          "total_windows_processed": 45
-        }
-      }
-    ],
-    "ai_result": {
-      "model": "wav2vec2",
-      "embedding_similarity": 0.94,
-      "temporal_consistency": 0.97,
-      "model_confidence": 0.96,
-      "processing_time": 8.7,
-      "model_metadata": {
-        "offset_samples": -53892,
-        "offset_seconds": -2.445,
-        "gpu_memory_used": "1184 MiB",
-        "cuda_device": "RTX 2080 Ti"
-      }
-    },
-    "overall_confidence": 0.95,
-    "method_agreement": 0.98,
-    "sync_status": "❌ SYNC CORRECTION NEEDED (> 100ms)",
-    "recommendations": [
-      "Dub audio is 2.45 seconds behind master (AI: 96% confidence, MFCC: 94% confidence)",
-      "Excellent method agreement (98%) - high reliability",
-      "AI analysis confirms traditional detection with superior precision",
-      "Recommend audio correction using FFmpeg or professional editing software"
-    ]
-  },
-  "timestamp": "2025-08-27T14:30:52Z"
-}
-```
-
-### Error Response
-```json
-{
-  "success": false,
-  "error": "File not found: /mnt/data/audio/nonexistent.wav",
-  "error_code": "FILE_NOT_FOUND",
-  "details": {
-    "file_path": "/mnt/data/audio/nonexistent.wav"
-  },
-  "timestamp": "2025-08-27T14:30:52Z"
-}
-```
+---
 
 ## 🔧 Development
 
 ### Code Quality
 ```bash
-# Format code
 black app/ tests/
-
-# Lint code
 flake8 app/ tests/
-
-# Type checking
 mypy app/
-
-# Run tests
 pytest tests/
 ```
 
@@ -575,260 +406,38 @@ pytest tests/
 2. Add Pydantic models for request/response validation
 3. Update API documentation with examples
 4. Add tests
-5. Update this README with curl examples
-
-### Testing
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app
-
-# Run specific test file
-pytest tests/test_analysis.py
-
-# Run with verbose output
-pytest -v
-```
-
-## 🚀 Deployment
-
-### Production Considerations
-- Use a production ASGI server (Gunicorn + Uvicorn)
-- Set up proper logging and monitoring
-- Configure rate limiting and security headers
-- Use environment variables for configuration
-- Set up health checks and monitoring
-- Consider using a reverse proxy (Nginx)
-
-### Docker Deployment
-```bash
-# Build production image
-docker build -t sync-analyzer-api:latest .
-
-# Run with production settings
-docker run -d \
-  --name sync-analyzer-api \
-  -p 8000:8000 \
-  -v /mnt/data:/mnt/data \
-  -e DEBUG=false \
-  -e LOG_LEVEL=INFO \
-  sync-analyzer-api:latest
-```
-
-### Systemd Service
-```ini
-[Unit]
-Description=Professional Audio Sync Analyzer API
-After=network.target
-
-[Service]
-Type=exec
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/sync-analyzer-api
-Environment=PATH=/opt/sync-analyzer-api/venv/bin
-ExecStart=/opt/sync-analyzer-api/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### FFmpeg Not Found
-```bash
-# Check if FFmpeg is installed
-ffmpeg -version
-
-# Install FFmpeg if missing
-sudo apt install ffmpeg  # Ubuntu/Debian
-brew install ffmpeg      # macOS
-```
-
-#### Port Already in Use
-```bash
-# Check what's using the port
-lsof -i :8000
-
-# Kill the process
-kill -9 <PID>
-
-# Or use a different port
-uvicorn main:app --port 8001
-```
-
-#### Memory Issues with AI Models
-- Reduce `AI_BATCH_SIZE` in configuration
-- Use CPU-only mode by setting `USE_GPU=false`
-- Increase system memory or use swap
-
-#### GPU Issues & Multi-GPU Support
-
-**Multi-GPU Configuration (NEW):**
-- The system automatically distributes workload across all available GPUs
-- Uses round-robin assignment based on process ID for load balancing
-- Resolves batch processing hang issues and memory exhaustion
-
-**GPU Troubleshooting:**
-```bash
-# Check GPU availability and count
-nvidia-smi
-python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Devices: {torch.cuda.device_count()}')"
-
-# Monitor GPU memory distribution during batch processing
-watch -n 1 nvidia-smi
-
-# Check GPU memory usage per device
-nvidia-smi --query-gpu=memory.used,memory.total --format=csv
-
-# Force CPU mode if GPU issues
-export USE_GPU=false
-
-# Monitor which GPU each process uses (NEW)
-# Look for log messages like "Using GPU 1 of 3 available GPUs"
-tail -f logs/app.log | grep "GPU"
-```
-
-**Multi-GPU Benefits:**
-- Prevents 90% hang in AI analysis during batch processing
-- Better memory utilization across multiple GPUs
-- Faster processing for batch workloads
-- Automatic cleanup prevents memory leaks
-
-#### File Permission Issues
-```bash
-# Check file permissions
-ls -la /mnt/data/
-
-# Fix permissions if needed
-chmod 755 /mnt/data/
-chown www-data:www-data /mnt/data/
-```
-
-### Logs and Debugging
-```bash
-# Check application logs
-tail -f logs/app.log
-
-# Enable debug mode
-export DEBUG=true
-export LOG_LEVEL=DEBUG
-
-# Check system resources
-htop
-df -h
-free -h
-```
-
-## 📈 Performance
-
-### Optimization Tips
-- Use appropriate analysis methods for your content
-- Enable parallel processing for batch operations
-- **Use GPU acceleration for AI models when available** (3-5x speedup typical)
-- Configure appropriate cache TTL values
-- Monitor and adjust rate limiting as needed
-- For AI analysis: GPU processing significantly faster than CPU
-  - **CPU**: ~45-60 seconds for 2-minute audio file
-  - **GPU**: ~8-15 seconds for 2-minute audio file (RTX 2080 Ti)
-  - **Memory**: GPU uses ~1GB VRAM vs ~2GB system RAM for CPU
-
-### Progress Monitoring Examples
-```bash
-# Monitor AI analysis progress in real-time
-watch -n 1 'curl -s "http://localhost:8000/api/v1/analysis/ANALYSIS_ID" | jq ".progress, .status_message"'
-
-# Monitor GPU utilization during analysis
-nvidia-smi -l 1
-
-# Check progress with detailed output
-curl -s "http://localhost:8000/api/v1/analysis/ANALYSIS_ID" | jq '
-{
-  progress: .progress,
-  status: .status,
-  message: .status_message,
-  eta: .estimated_completion
-}'
-```
-
-### Benchmarking
-```bash
-# Test API performance
-ab -n 1000 -c 10 http://localhost:8000/health
-
-# Test analysis endpoint with timing
-curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
-  -H "Content-Type: application/json" \
-  -d '{"master_file": "...", "dub_file": "...", "methods": ["ai"], "enable_ai": true}' \
-  -w "Total time: %{time_total}s\n"
-
-# Compare GPU vs CPU performance
-# GPU mode
-time curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
-  -H "Content-Type: application/json" \
-  -d '{"master_file": "...", "dub_file": "...", "methods": ["ai"], "enable_ai": true}'
-
-# CPU mode (set USE_GPU=false in .env)
-time curl -X POST "http://localhost:8000/api/v1/analysis/sync" \
-  -H "Content-Type: application/json" \
-  -d '{"master_file": "...", "dub_file": "...", "methods": ["ai"], "enable_ai": true}'
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-### Development Guidelines
-- Follow PEP 8 style guidelines
-- Use type hints throughout the code
-- Write comprehensive tests
-- Update documentation for new features
-- Add curl examples for new endpoints
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- **Documentation**: This README and API docs
-- **Issues**: GitHub Issues for bug reports
-- **Discussions**: GitHub Discussions for questions
-- **Email**: support@sync-analyzer.com
-
-## 🙏 Acknowledgments
-
-- **FastAPI team** for the excellent web framework
-- **Pydantic team** for data validation
-- **FFmpeg team** for audio/video processing
-- **PyTorch team** for AI framework and CUDA integration
-- **Hugging Face** for Transformers library and pre-trained models
-- **Facebook Research** for Wav2Vec2 model architecture
-- **NVIDIA** for CUDA toolkit and GPU acceleration support
-- All contributors to the sync analyzer project
-
-## ✨ What's New
-
-### v2.1.0 - Progress Tracking & GPU Acceleration
-- 🚀 **Real-time progress tracking** with window-level granularity
-- 🎯 **Native progress bars** for AI model processing 
-- 🔥 **Full GPU acceleration** with automatic CUDA detection
-- 📊 **Detailed progress monitoring** via REST API
-- ⚡ **3-5x speedup** with GPU processing vs CPU
-- 🎬 **Professional-grade performance** for broadcast workflows
+5. Update CURL_EXAMPLES.md
 
 ---
 
-**Built for professionals, by professionals.** 🎬🎵 **Now with GPU power!** ⚡
+## 📄 Related Documentation
+
+- [API Workflow Guide](./API_WORKFLOW.md) - Complete API workflow documentation
+- [CURL Examples](./CURL_EXAMPLES.md) - Ready-to-use curl commands
+- [Batch Processing Examples](./BATCH_PROCESSING_EXAMPLES.md) - Batch workflow examples
+
+---
+
+## ✨ What's New in v1.3.0
+
+### New Features
+- 🔧 **Analyze-and-Repair Workflow**: Complete end-to-end sync correction API
+- 🔊 **Per-Channel Repair**: Individual channel offset correction
+- 📡 **SSE Progress Streaming**: Real-time progress via Server-Sent Events
+- 🎵 **Proxy Audio Streaming**: Transcode Atmos/E-AC-3 for browser playback
+- 📊 **Timeline API**: Operator-friendly timeline data for visualization
+- 💾 **UI State Persistence**: Save batch queue across browser sessions
+- 🔍 **FFprobe Integration**: Detailed codec analysis endpoint
+- 🔎 **Report Search**: Search reports by file pair
+
+### Improvements
+- Multi-GPU support with automatic load balancing
+- Enhanced progress tracking with window-level granularity
+- Better error handling and validation
+- Comprehensive API documentation
+
+---
+
+**Built for professionals, by professionals.** 🎬🎵
 
 For enterprise licensing and support, please contact: [support@sync-analyzer.com]

@@ -11,6 +11,7 @@ services:
       - ./ai_models:/app/ai_models
       - ./logs:/app/logs
       - ./reports:/app/reports
+      - ../web_ui/proxy_cache:/app/web_ui/proxy_cache  # Proxy audio cache
       - /mnt/data:/mnt/data:ro  # Mount your data directory
     environment:
       - DEBUG=false

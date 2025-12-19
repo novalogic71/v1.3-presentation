@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # Application settings
     APP_NAME: str = "Professional Audio Sync Analyzer API"
-    VERSION: str = "2.0.0"
+    VERSION: str = "1.3.0"
     DEBUG: bool = Field(default=False, env="DEBUG")
     
     # Server settings

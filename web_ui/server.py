@@ -33,10 +33,40 @@ CORS(app)
 
 # Configuration
 MOUNT_PATH = "/mnt/data"
-PROXY_CACHE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "proxy_cache")
-)
-os.makedirs(PROXY_CACHE_DIR, exist_ok=True)
+
+
+def _resolve_proxy_cache_dir() -> str:
+    """Get a writable proxy cache directory, falling back to /tmp when needed."""
+    preferred = Path(
+        os.getenv(
+            "PROXY_CACHE_DIR",
+            os.path.join(os.path.dirname(__file__), "proxy_cache"),
+        )
+    )
+    if not preferred.is_absolute():
+        preferred = PROJECT_ROOT / preferred
+
+    fallback = Path(os.getenv("PROXY_CACHE_FALLBACK", "/tmp/sync_proxy_cache"))
+    candidates = [preferred]
+    if fallback not in candidates:
+        candidates.append(fallback)
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            test_file = candidate / ".write_test"
+            test_file.write_text(str(time.time()))
+            test_file.unlink(missing_ok=True)
+            if candidate != preferred:
+                logger.warning(f"Proxy cache not writable at {preferred}, using fallback {candidate}")
+            return str(candidate.resolve())
+        except Exception as e:
+            logger.warning(f"Proxy cache directory not usable ({candidate}): {e}")
+
+    raise RuntimeError("No writable proxy cache directory available")
+
+
+PROXY_CACHE_DIR = _resolve_proxy_cache_dir()
 ALLOWED_EXTENSIONS = {
     ".wav",
     ".mp3",
@@ -103,20 +133,18 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
 
         if is_atmos_file(src_path):
             logger.info(f"Detected Atmos file, using specialized extraction: {Path(src_path).name}")
-            # Extract to temp file first, then apply loudnorm + dub boost
+            # Extract to temp file first for Atmos processing
             temp_atmos_path = out_path + ".atmos_temp.wav"
             extract_atmos_bed_stereo(src_path, temp_atmos_path, sample_rate=48000)
             if os.path.exists(temp_atmos_path) and os.path.getsize(temp_atmos_path) > 0:
-                # Apply same loudnorm + dub boost as FFmpeg path for consistent levels
-                volume_boost = ",volume=5dB" if role == "dub" else ""
+                # No volume adjustments - transcode only
                 norm_cmd = [
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                     "-i", temp_atmos_path,
-                    "-af", f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}",
                     "-acodec", "pcm_s16le",
                     out_path,
                 ]
-                logger.info(f"Applying loudnorm to Atmos proxy (role={role}): {' '.join(norm_cmd)}")
+                logger.info(f"Transcoding Atmos proxy (role={role}): {' '.join(norm_cmd)}")
                 norm_result = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=300)
                 # Clean up temp file
                 try:
@@ -124,11 +152,11 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
                 except Exception:
                     pass
                 if norm_result.returncode == 0 and os.path.exists(out_path):
-                    logger.info(f"Atmos proxy created with loudnorm: {out_path}")
+                    logger.info(f"Atmos proxy created: {out_path}")
                     return out_path
                 else:
-                    logger.error(f"Atmos loudnorm failed: {norm_result.stderr}")
-                    raise RuntimeError("Atmos loudnorm failed")
+                    logger.error(f"Atmos transcode failed: {norm_result.stderr}")
+                    raise RuntimeError("Atmos transcode failed")
             else:
                 logger.error(f"Atmos extraction succeeded but output file missing/empty: {temp_atmos_path}")
                 raise RuntimeError("Atmos extraction failed to create output")
@@ -138,9 +166,7 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
         logger.warning(f"Atmos extraction failed: {e}, falling back to ffmpeg")
 
     # Transcode to WAV 48k stereo for Chrome/WebAudio compatibility
-    # Peak normalize to 0 dB, then boost dub by 5dB to match master levels
-    # Note: role is 'master' or 'dub' - only boost dub
-    volume_boost = ",volume=5dB" if role == "dub" else ""
+    # No volume adjustments - play content as-is
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -154,8 +180,6 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
         "2",
         "-ar",
         "48000",
-        "-af",
-        f"loudnorm=I=-14:TP=0:LRA=7:linear=true{volume_boost}",
         "-acodec",
         "pcm_s16le",
         out_path,
@@ -295,7 +319,7 @@ def api_v1_files_proxy_audio():
         # Log the duration limit for debugging
         logger.info(f"[PROXY-AUDIO] Extracting audio with max_duration={max_duration}s from {os.path.basename(path)}")
 
-        # Peak normalize to 0 dB - maximizes volume without clipping
+        # No volume adjustments - play content as-is
         # Use -t to limit duration for preview (avoids timeouts on very long files)
         args = [
             "ffmpeg",
@@ -311,8 +335,6 @@ def api_v1_files_proxy_audio():
             "2",
             "-ar",
             "48000",
-            "-af",
-            "loudnorm=I=-14:TP=0:LRA=7:linear=true",
         ]
         media_type = "audio/wav"
         if fmt == "wav":

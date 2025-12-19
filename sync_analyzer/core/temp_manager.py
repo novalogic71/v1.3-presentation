@@ -66,6 +66,29 @@ DEFAULT_MAX_AGE_HOURS = int(os.environ.get("SYNC_TEMP_MAX_AGE_HOURS", "24"))
 MIN_FREE_SPACE_GB = int(os.environ.get("SYNC_TEMP_MIN_FREE_GB", "10"))
 
 
+def _ensure_writable_dir(path: Path, fallback: Path) -> Path:
+    """
+    Make sure the target path is writable, otherwise fall back to a safe temp path.
+    """
+    candidates = []
+    if path:
+        candidates.append(path)
+    if fallback and fallback not in candidates:
+        candidates.append(fallback)
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            test_file = candidate / ".write_test"
+            test_file.write_text(str(time.time()))
+            test_file.unlink(missing_ok=True)
+            return candidate
+        except Exception as e:
+            logger.warning(f"[TempManager] Temp dir not writable ({candidate}): {e}")
+
+    raise RuntimeError("No writable temp directory available")
+
+
 @dataclass
 class TempJob:
     """Represents a single processing job with its temp directory."""
@@ -126,13 +149,17 @@ class TempManager:
     """
     
     def __init__(self, base_dir: Optional[str] = None, max_age_hours: int = DEFAULT_MAX_AGE_HOURS):
-        self.base_dir = Path(base_dir or DEFAULT_TEMP_BASE)
+        preferred_dir = Path(base_dir or DEFAULT_TEMP_BASE)
+        fallback_dir = Path("/tmp/sync_analyzer_jobs")
+        
+        resolved_dir = _ensure_writable_dir(preferred_dir, fallback_dir)
+        if resolved_dir != preferred_dir:
+            logger.warning(f"[TempManager] Using fallback temp dir: {resolved_dir} (preferred was {preferred_dir})")
+
+        self.base_dir = resolved_dir
         self.max_age_hours = max_age_hours
         self._jobs: Dict[str, TempJob] = {}
         self._lock = Lock()
-        
-        # Ensure base directory exists
-        self.base_dir.mkdir(parents=True, exist_ok=True)
         
         # Register cleanup on exit
         atexit.register(self.cleanup_all_jobs)
@@ -380,4 +407,3 @@ if __name__ == "__main__":
         print(f"  Removed {total} files from /tmp")
     
     print("\n✅ Cleanup complete!")
-

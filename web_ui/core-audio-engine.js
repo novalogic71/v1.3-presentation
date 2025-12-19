@@ -570,9 +570,9 @@ class CoreAudioEngine {
                 this.masterPan = m.panner || m; this.dubPan = d.panner || d;
 
                 // Preserve previous desired gains if set
-                // Dub defaults higher (1.2) to compensate for typically quieter dub tracks
-                this.masterGainValue = this.masterGainValue ?? 0.8;
-                this.dubGainValue = this.dubGainValue ?? 1.2;
+                // No gain adjustments - play content as-is
+                this.masterGainValue = this.masterGainValue ?? 1.0;
+                this.dubGainValue = this.dubGainValue ?? 1.0;
                 this.masterGain.gain.value = this.masterGainValue;
                 this.dubGain.gain.value = this.dubGainValue;
 
@@ -693,8 +693,8 @@ class CoreAudioEngine {
 
                     // Apply current volumes
                     // Dub defaults higher (1.2) to compensate for typically quieter dub tracks
-                    this.masterGainValue = this.masterGainValue ?? 0.8;
-                    this.dubGainValue = this.dubGainValue ?? 1.2;
+                    this.masterGainValue = this.masterGainValue ?? 1.0;
+                    this.dubGainValue = this.dubGainValue ?? 1.0;
                     masterGain.gain.value = this.masterGainValue;
                     dubGain.gain.value = this.dubGainValue;
                     
@@ -901,8 +901,8 @@ class CoreAudioEngine {
         const b = this.balanceValue ?? 0; // -1..1
         const masterScale = 1 - Math.max(0, b);
         const dubScale = 1 - Math.max(0, -b);
-        const masterBase = this.masterGainValue ?? 0.8;
-        const dubBase = this.dubGainValue ?? 1.2; // Default dub higher to match typical quieter dub tracks
+        const masterBase = this.masterGainValue ?? 1.0;
+        const dubBase = this.dubGainValue ?? 1.0; // No gain adjustments - play content as-is
         const mMute = this.muteMaster ? 0 : 1;
         const dMute = this.muteDub ? 0 : 1;
         const out = this.masterOutputValue ?? 1.0;
