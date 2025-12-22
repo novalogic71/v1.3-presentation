@@ -29,8 +29,8 @@
 }
 
 .qc-modal-content {
-    background: #1a1a1a;
-    border: 1px solid #333;
+    background: #0b0f18;
+    border: 1px solid #1f2937;
     border-radius: 12px;
     width: 95%;
     max-width: 1200px;
@@ -44,19 +44,19 @@
     justify-content: space-between;
     align-items: center;
     padding: 20px 24px;
-    border-bottom: 1px solid #333;
-    background: linear-gradient(135deg, #2d2d2d, #1a1a1a);
+    border-bottom: 1px solid #1f2937;
+    background: linear-gradient(135deg, #151a26, #0b0f18);
 }
 
 .qc-header h3 {
-    color: #e5e5e5;
+    color: #e5e7eb;
     margin: 0;
     font-size: 20px;
     font-weight: 600;
 }
 
 .qc-header h3 i {
-    color: #10b981;
+    color: #ff6b42;
     margin-right: 8px;
 }
 
@@ -114,7 +114,7 @@
 }
 
 .master-file span {
-    border-left: 3px solid #10b981;
+    border-left: 3px solid #ff6b42;
 }
 
 .dub-file span {
@@ -209,8 +209,8 @@
 }
 
 .qc-toggle-btn.active {
-    background: #10b981;
-    border-color: #10b981;
+    background: #ff6b42;
+    border-color: #ff6b42;
     color: white;
 }
 
@@ -219,7 +219,7 @@
 }
 
 .qc-toggle-btn[data-view="after"] i {
-    color: #10b981;
+    color: #ff6b42;
 }
 
 .qc-waveform-display {
@@ -262,7 +262,7 @@
 }
 
 .qc-playback-section h4 i {
-    color: #10b981;
+    color: #ff6b42;
     margin-right: 8px;
 }
 
@@ -310,8 +310,8 @@
 }
 
 .qc-play-btn.success {
-    background: #10b981;
-    border-color: #10b981;
+    background: #ff6b42;
+    border-color: #ff6b42;
 }
 
 .qc-play-btn.success:hover {
@@ -329,7 +329,7 @@
 }
 
 .qc-time-display {
-    color: #10b981;
+    color: #ff6b42;
     font-family: monospace;
     font-weight: 600;
 }
@@ -385,7 +385,7 @@
     appearance: none;
     width: 16px;
     height: 16px;
-    background: #10b981;
+    background: #ff6b42;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s;
@@ -459,8 +459,8 @@
 }
 
 .qc-action-btn.success {
-    background: #10b981;
-    border-color: #10b981;
+    background: #ff6b42;
+    border-color: #ff6b42;
 }
 
 .qc-action-btn.success:hover {
@@ -487,8 +487,8 @@
 
 /* QC Button in batch table */
 .qc-btn {
-    background: #10b981 !important;
-    border-color: #10b981 !important;
+    background: #ff6b42 !important;
+    border-color: #ff6b42 !important;
     color: white !important;
     font-size: 12px !important;
     padding: 6px 10px !important;

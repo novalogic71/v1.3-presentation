@@ -23,7 +23,7 @@
     gap: 10px;
     font-size: 14px;
     font-weight: 600;
-    color: #10b981;
+    color: #ff6b42;
 }
 
 .status-indicator-compact .status-icon {
@@ -82,7 +82,7 @@
 
 /* Status Variants */
 .status-indicator.status-ready {
-    color: #10b981;
+    color: #ff6b42;
 }
 
 .status-indicator.status-analyzing {
@@ -90,7 +90,7 @@
 }
 
 .status-indicator.status-complete {
-    color: #10b981;
+    color: #ff6b42;
 }
 
 .status-indicator.status-error {
@@ -208,7 +208,7 @@
 
 /* Severity-based styling */
 .scene-segment.severity-in_sync {
-    border-left-color: #10b981;
+    border-left-color: #ff6b42;
     background: rgba(16, 185, 129, 0.05);
 }
 

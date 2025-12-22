@@ -1,31 +1,39 @@
 /**
  * Professional Audio Sync Analyzer - UI Redesign
- * Modern, accessible interface for batch processing workflows
- * Version: 1.3-redesign
+ * Vubiquity Studio AI Color Theme
+ * Version: 1.3-vubiquity
  */
 
 /* ============================================
-   Color System - Professional A/V Palette
+   Color System - Vubiquity Brand Palette
    ============================================ */
 
 :root {
-    /* Primary Actions - QC/Analysis */
+    /* Vubiquity Brand Colors */
+    --vubiquity-orange: #ff6b42;
+    --vubiquity-orange-hover: #ff8562;
+    --vubiquity-orange-light: #ff9b82;
+    --vubiquity-blue: #3385ff;
+    --vubiquity-blue-hover: #5299ff;
+    --vubiquity-cyan: #06b6d4;
+
+    /* Primary Actions - QC/Analysis (Vubiquity Cyan) */
     --color-qc-primary: #06b6d4;
     --color-qc-hover: #0891b2;
     --color-qc-active: #0e7490;
     --color-qc-bg: rgba(6, 182, 212, 0.1);
 
-    /* Secondary Actions - Repair/Corrective */
-    --color-repair-primary: #f59e0b;
-    --color-repair-hover: #d97706;
-    --color-repair-active: #b45309;
-    --color-repair-bg: rgba(245, 158, 11, 0.1);
+    /* Secondary Actions - Repair (Vubiquity Orange) */
+    --color-repair-primary: #ff6b42;
+    --color-repair-hover: #ff8562;
+    --color-repair-active: #ec6235;
+    --color-repair-bg: rgba(255, 107, 66, 0.1);
 
     /* Neutral - Details/Utility */
-    --color-neutral-primary: #64748b;
-    --color-neutral-hover: #475569;
-    --color-neutral-active: #334155;
-    --color-neutral-bg: rgba(100, 116, 139, 0.1);
+    --color-neutral-primary: #6b7280;
+    --color-neutral-hover: #4b5563;
+    --color-neutral-active: #374151;
+    --color-neutral-bg: rgba(107, 114, 128, 0.1);
 
     /* Danger - Destructive */
     --color-danger-primary: #ef4444;
@@ -37,16 +45,18 @@
     --color-success: #22c55e;
     --color-warning: #f59e0b;
     --color-critical: #ef4444;
-    --color-info: #3b82f6;
+    --color-info: #3385ff;
 
-    /* Dark Theme Base */
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #334155;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
-    --border-color: #475569;
+    /* Vubiquity Dark Theme Base */
+    --bg-primary: #0b0f18;
+    --bg-secondary: #0f1319;
+    --bg-tertiary: #151a26;
+    --bg-surface: #151a26;
+    --text-primary: #e5e7eb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --border-color: #1f2937;
+    --border-secondary: #374151;
 
     /* Spacing */
     --spacing-xs: 4px;

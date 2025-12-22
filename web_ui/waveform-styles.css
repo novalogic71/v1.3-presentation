@@ -5,8 +5,8 @@
 
 /* Main waveform container */
 .sync-waveform-container {
-    background: #1e1e1e;
-    border: 1px solid #3d4852;
+    background: #0b0f18;
+    border: 1px solid #1f2937;
     border-radius: 12px;
     overflow: hidden;
     margin: 20px 0;
@@ -15,9 +15,9 @@
 
 /* Waveform header */
 .waveform-header {
-    background: linear-gradient(135deg, #2d3748, #1a202c);
+    background: linear-gradient(135deg, #151a26, #0f1319);
     padding: 16px 20px;
-    border-bottom: 1px solid #4a5568;
+    border-bottom: 1px solid #1f2937;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -25,7 +25,7 @@
 
 .waveform-header h4 {
     margin: 0;
-    color: #e2e8f0;
+    color: #e5e7eb;
     font-size: 16px;
     font-weight: 600;
     display: flex;
@@ -34,7 +34,7 @@
 }
 
 .waveform-header h4 i {
-    color: #4CAF50;
+    color: #ff6b42;
     font-size: 18px;
 }
 
