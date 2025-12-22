@@ -1,18 +1,43 @@
 /* ============================================
    Vubiquity Studio AI - Color Variables
+   Dark Mode Theme (Default)
    ============================================ */
 :root {
+    /* Brand Colors */
     --vubiquity-orange: #ff6b42;
     --vubiquity-orange-hover: #ff8562;
+    --vubiquity-orange-light: #ff9b82;
     --vubiquity-blue: #3385ff;
+    --vubiquity-blue-hover: #5299ff;
     --vubiquity-cyan: #06b6d4;
+    
+    /* Dark Mode Backgrounds (Default) */
     --bg-primary: #0b0f18;
     --bg-secondary: #0f1319;
     --bg-surface: #151a26;
+    
+    /* Dark Mode Text */
     --text-primary: #e5e7eb;
     --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    
+    /* Dark Mode Borders */
     --border-primary: #1f2937;
     --border-secondary: #374151;
+    
+    /* Status Colors */
+    --color-success: #22c55e;
+    --color-warning: #f59e0b;
+    --color-error: #ef4444;
+    --color-info: #3385ff;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+    
+    /* Color Scheme */
+    color-scheme: dark;
 }
 
 * {
