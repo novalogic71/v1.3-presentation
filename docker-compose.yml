@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  sync-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sync-analyzer-app
+    ports:
+      - "8000:8000"  # FastAPI backend
+      - "3002:3002"  # Flask web UI
+    volumes:
+      # Mount data directory (read-only for safety)
+      - /mnt/data:/mnt/data:ro
+      # Persistent volumes for application data
+      - ./uploads:/app/uploads
+      - ./ai_models:/app/ai_models
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./web_ui/ui_sync_reports:/app/web_ui/ui_sync_reports
+      - ./web_ui/proxy_cache:/app/web_ui/proxy_cache
+      - ./repaired_sync_files:/app/repaired_sync_files
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MOUNT_PATH=/mnt/data
+      - PORT_API=8000
+      - PORT_UI=3002
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - UPLOAD_DIR=/app/uploads
+      - AI_MODEL_CACHE_DIR=/app/ai_models
+      - LOG_FILE=/app/logs/app.log
+      # GPU support (uncomment if using GPU)
+      # - NVIDIA_VISIBLE_DEVICES=all
+      # - USE_GPU=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:3002"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    networks:
+      - sync-analyzer-network
+
+networks:
+  sync-analyzer-network:
+    driver: bridge
+
