@@ -1,21 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>Professional Audio Sync Analyzer - v1.3</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* Vubiquity Studio AI - Dark Theme Colors */
         :root {
-            --bg-dark: #1a1a1a;
-            --bg-panel: #2d3748;
-            --border-color: #4a5568;
-            --text-primary: #e0e0e0;
+            --vubiquity-orange: #ff6b42;
+            --vubiquity-orange-hover: #ff8562;
+            --vubiquity-orange-light: #ff9b82;
+            --vubiquity-blue: #3385ff;
+            --vubiquity-cyan: #06b6d4;
+            --bg-primary: #0b0f18;
+            --bg-secondary: #0f1319;
+            --bg-surface: #151a26;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
             --text-white: #ffffff;
-            --accent-green: #38a169;
-            --accent-green-light: #86efac;
-            --accent-cyan: #22d3ee;
-            --accent-violet: #a78bfa;
+            --border-primary: #1f2937;
+            --border-secondary: #374151;
+            color-scheme: dark only;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                color-scheme: dark only !important;
+            }
         }
 
         * {
@@ -26,8 +39,9 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0a0a 100%);
-            color: var(--text-primary);
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #05070a 100%) !important;
+            background-color: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -67,7 +81,7 @@
         .waveform-logo {
             width: 120px;
             height: 120px;
-            filter: drop-shadow(0 4px 20px rgba(56, 161, 105, 0.5));
+            filter: drop-shadow(0 4px 20px rgba(255, 107, 66, 0.5));
         }
 
         .waveform-path {
@@ -88,7 +102,7 @@
             font-size: 3rem;
             font-weight: 300;
             margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green-light), var(--accent-violet));
+            background: linear-gradient(135deg, var(--vubiquity-cyan), var(--vubiquity-orange), var(--vubiquity-blue));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -103,13 +117,13 @@
 
         .version-badge {
             display: inline-block;
-            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-orange-hover));
             color: white;
             padding: 0.4rem 1rem;
             border-radius: 999px;
             font-size: 0.9rem;
             font-weight: 500;
-            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3);
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.3);
         }
 
         /* Features Grid */
@@ -133,8 +147,8 @@
         }
 
         .feature-card {
-            background: rgba(45, 55, 72, 0.6);
-            border: 1px solid var(--border-color);
+            background: rgba(21, 26, 38, 0.6);
+            border: 1px solid var(--border-primary);
             border-radius: 12px;
             padding: 1.5rem;
             transition: all 0.3s ease;
@@ -143,13 +157,13 @@
 
         .feature-card:hover {
             transform: translateY(-4px);
-            border-color: var(--accent-green);
-            box-shadow: 0 8px 24px rgba(56, 161, 105, 0.2);
+            border-color: var(--vubiquity-orange);
+            box-shadow: 0 8px 24px rgba(255, 107, 66, 0.2);
         }
 
         .feature-icon {
             font-size: 2rem;
-            color: var(--accent-green);
+            color: var(--vubiquity-orange);
             margin-bottom: 1rem;
         }
 
@@ -168,8 +182,8 @@
 
         /* Quick Start Section */
         .quickstart-section {
-            background: rgba(45, 55, 72, 0.4);
-            border: 1px solid var(--border-color);
+            background: rgba(21, 26, 38, 0.4);
+            border: 1px solid var(--border-primary);
             border-radius: 12px;
             padding: 2rem;
             margin-bottom: 3rem;
@@ -191,13 +205,13 @@
             width: 50px;
             height: 50px;
             line-height: 50px;
-            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-orange-hover));
             border-radius: 50%;
             font-size: 1.5rem;
             font-weight: 600;
             color: white;
             margin-bottom: 1rem;
-            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.4);
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.4);
         }
 
         .step-title {
@@ -238,25 +252,25 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent-green), #10b981);
+            background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-orange-hover));
             color: white;
-            box-shadow: 0 4px 16px rgba(56, 161, 105, 0.4);
+            box-shadow: 0 4px 16px rgba(255, 107, 66, 0.4);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(56, 161, 105, 0.6);
+            box-shadow: 0 6px 24px rgba(255, 107, 66, 0.6);
         }
 
         .btn-secondary {
             background: transparent;
-            border: 2px solid var(--border-color);
+            border: 2px solid var(--border-secondary);
             color: var(--text-white);
         }
 
         .btn-secondary:hover {
-            border-color: var(--accent-cyan);
-            color: var(--accent-cyan);
+            border-color: var(--vubiquity-blue);
+            color: var(--vubiquity-blue);
             transform: translateY(-2px);
         }
 
@@ -272,7 +286,7 @@
             background: rgba(255, 255, 255, 0.1);
             padding: 0.25rem 0.5rem;
             border-radius: 4px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--border-primary);
             font-family: monospace;
         }
 
@@ -319,9 +333,9 @@
                 <svg class="waveform-logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
                     <defs>
                         <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
-                            <stop offset="50%" style="stop-color:#38a169;stop-opacity:1" />
-                            <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
+                            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1" />
+                            <stop offset="50%" style="stop-color:#ff6b42;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#3385ff;stop-opacity:1" />
                         </linearGradient>
                     </defs>
                     <path class="waveform-path" d="M 20,100 L 40,80 L 60,120 L 80,60 L 100,140 L 120,70 L 140,110 L 160,90 L 180,100" stroke-linecap="round" stroke-linejoin="round"/>

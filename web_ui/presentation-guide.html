@@ -1,28 +1,52 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>Presentation Guide - Professional Audio Sync Analyzer v1.3</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.2.0/github-markdown-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
+        /* Vubiquity Studio AI - Dark Theme Colors */
+        :root {
+            --vubiquity-orange: #ff6b42;
+            --vubiquity-orange-hover: #ff8562;
+            --vubiquity-blue: #3385ff;
+            --bg-primary: #0b0f18;
+            --bg-secondary: #0f1319;
+            --bg-surface: #151a26;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-primary: #1f2937;
+            --border-secondary: #374151;
+            color-scheme: dark only;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                color-scheme: dark only !important;
+            }
+        }
+
         body {
             margin: 0;
             padding: 0;
-            background: #0d1117;
-            color: #c9d1d9;
+            background: var(--bg-primary) !important;
+            background-color: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
         }
 
         .header {
-            background: linear-gradient(135deg, #1a1a1a, #2d3748);
-            border-bottom: 1px solid #4a5568;
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-surface));
+            border-bottom: 1px solid var(--border-secondary);
             padding: 1.5rem 2rem;
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
         }
 
         .header-content {
@@ -37,11 +61,11 @@
             margin: 0;
             font-size: 1.5rem;
             font-weight: 300;
-            color: #fff;
+            color: var(--text-primary);
         }
 
         .btn-back {
-            background: linear-gradient(135deg, #38a169, #10b981);
+            background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-orange-hover));
             color: white;
             padding: 0.6rem 1.5rem;
             border: none;
@@ -57,7 +81,8 @@
 
         .btn-back:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.4);
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.4);
+            background: linear-gradient(135deg, var(--vubiquity-orange-hover), var(--vubiquity-orange));
         }
 
         .container {
@@ -72,22 +97,23 @@
             max-width: 980px;
             margin: 0 auto;
             padding: 45px;
-            background: #161b22;
-            border: 1px solid #30363d;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
+            color: var(--text-primary);
         }
 
         .loading {
             text-align: center;
             padding: 3rem;
             font-size: 1.2rem;
-            color: #8b949e;
+            color: var(--text-muted);
         }
 
         .error {
             text-align: center;
             padding: 3rem;
-            color: #f85149;
+            color: #ef4444;
         }
 
         @media (max-width: 768px) {
@@ -149,7 +175,7 @@
                         <h2>Error Loading Guide</h2>
                         <p>${error.message}</p>
                         <p>Please ensure PRESENTATION_GUIDE.md exists in the parent directory.</p>
-                        <p><a href="../PRESENTATION_GUIDE.md" download style="color: #58a6ff;">Download Guide</a></p>
+                        <p><a href="../PRESENTATION_GUIDE.md" download style="color: var(--vubiquity-blue);">Download Guide</a></p>
                     </div>
                 `;
             }
