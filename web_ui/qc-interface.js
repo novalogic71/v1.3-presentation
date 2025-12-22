@@ -357,11 +357,19 @@ class QCInterface {
         document.getElementById('qc-dub-file').textContent = syncData.dubFile || 'Unknown';
 
         const offset = syncData.detectedOffset || 0;
-        const fps = syncData.frameRate || 24;
-        const frames = Math.round(Math.abs(offset) * fps);
-        const sign = offset >= 0 ? '+' : '';
-        const frameSign = offset < 0 ? '-' : '+';
-        document.getElementById('qc-offset-value').textContent = `${sign}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+        const fps = syncData.frameRate || 23.976;
+        
+        // Use the exact same calculation logic as formatOffsetDisplay in app.js for consistency
+        if (typeof offset !== 'number' || isNaN(offset)) {
+            document.getElementById('qc-offset-value').textContent = 'N/A';
+        } else {
+            // Match formatOffsetDisplay calculation exactly
+            const frames = Math.round(Math.abs(offset) * fps);
+            const frameSign = offset < 0 ? '-' : '+';
+            const sign = offset >= 0 ? '+' : '';
+            // Display format: +XX.XXXs (+/-XXXf @ XX.XXXfps) - matching app.js formatOffsetDisplay
+            document.getElementById('qc-offset-value').textContent = `${sign}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+        }
 
         const confidence = syncData.confidence || 0;
         document.getElementById('qc-confidence-value').textContent = `${Math.round(confidence * 100)}%`;
