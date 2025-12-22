@@ -1,14 +1,24 @@
 /**
  * Styles for Repair Preview Interface
+ * Vubiquity Color Schema Edition
  */
 
+:root {
+    --rp-orange: #ff6b42;
+    --rp-orange-light: #ff8562;
+    --rp-blue: #3385ff;
+    --rp-bg-primary: #0b0f18;
+    --rp-bg-surface: #151a26;
+}
+
 .repair-preview-interface {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--rp-bg-surface) 0%, var(--rp-bg-primary) 100%);
+    border: 1px solid #1f2937;
     border-radius: 12px;
     padding: 20px;
     margin: 20px 0;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    color: white;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 30px rgba(255, 107, 66, 0.1);
+    color: #e5e7eb;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 

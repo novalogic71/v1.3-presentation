@@ -1,4 +1,16 @@
-/* Professional TUI Console Styling */
+/* Professional TUI Console Styling - Vubiquity Color Schema */
+
+:root {
+    --tui-orange: #ff6b42;
+    --tui-orange-hover: #ff8562;
+    --tui-blue: #3385ff;
+    --tui-bg-primary: #0b0f18;
+    --tui-bg-surface: #151a26;
+    --tui-bg-elevated: #1f2937;
+    --tui-text-primary: #e5e7eb;
+    --tui-text-secondary: #9ca3af;
+    --tui-border: #1f2937;
+}
 
 .tui-console {
     display: flex;
@@ -13,20 +25,20 @@
 
 /* TUI Box Components */
 .tui-box {
-    background: #0f0f0f;
-    border: 1px solid #333;
+    background: var(--tui-bg-primary);
+    border: 1px solid var(--tui-border);
     border-radius: 6px;
     overflow: hidden;
     flex-shrink: 0;
 }
 
 .tui-box-header {
-    background: #1a1a1a;
-    border-bottom: 1px solid #333;
+    background: var(--tui-bg-surface);
+    border-bottom: 1px solid var(--tui-border);
     padding: 6px 12px;
     font-weight: 600;
     font-size: 11px;
-    color: #60a5fa;
+    color: var(--tui-orange);
     letter-spacing: 0.5px;
     display: flex;
     justify-content: space-between;

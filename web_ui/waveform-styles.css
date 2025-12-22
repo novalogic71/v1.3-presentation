@@ -1,23 +1,37 @@
 /**
  * Professional Waveform Visualization Styles
- * Enhanced CSS for exact audio sync representation
+ * Vubiquity Color Schema Edition
  */
+
+:root {
+    --wf-orange: #ff6b42;
+    --wf-orange-hover: #ff8562;
+    --wf-blue: #3385ff;
+    --wf-blue-hover: #5299ff;
+    --wf-bg-primary: #0b0f18;
+    --wf-bg-surface: #151a26;
+    --wf-bg-elevated: #1f2937;
+    --wf-text-primary: #e5e7eb;
+    --wf-text-secondary: #9ca3af;
+    --wf-border: #1f2937;
+    --wf-border-secondary: #374151;
+}
 
 /* Main waveform container */
 .sync-waveform-container {
-    background: #1e1e1e;
-    border: 1px solid #3d4852;
+    background: var(--wf-bg-primary);
+    border: 1px solid var(--wf-border);
     border-radius: 12px;
     overflow: hidden;
     margin: 20px 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 107, 66, 0.05);
 }
 
 /* Waveform header */
 .waveform-header {
-    background: linear-gradient(135deg, #2d3748, #1a202c);
+    background: linear-gradient(135deg, var(--wf-bg-surface), var(--wf-bg-primary));
     padding: 16px 20px;
-    border-bottom: 1px solid #4a5568;
+    border-bottom: 1px solid var(--wf-border-secondary);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -25,7 +39,7 @@
 
 .waveform-header h4 {
     margin: 0;
-    color: #e2e8f0;
+    color: var(--wf-text-primary);
     font-size: 16px;
     font-weight: 600;
     display: flex;
@@ -34,7 +48,7 @@
 }
 
 .waveform-header h4 i {
-    color: #4CAF50;
+    color: var(--wf-orange);
     font-size: 18px;
 }
 

@@ -1,13 +1,26 @@
 /**
  * Operator Console Styles
- * Clean, professional interface for operator workflow
+ * Vubiquity Color Schema Edition
  */
+
+:root {
+    --op-orange: #ff6b42;
+    --op-orange-hover: #ff8562;
+    --op-blue: #3385ff;
+    --op-bg-primary: #0b0f18;
+    --op-bg-surface: #151a26;
+    --op-bg-elevated: #1f2937;
+    --op-text-primary: #e5e7eb;
+    --op-text-secondary: #9ca3af;
+    --op-border: #1f2937;
+    --op-success: #10b981;
+}
 
 /* Compact operator console that coexists with log container */
 .operator-console-wrapper {
-    background: linear-gradient(135deg, #1e2832 0%, #252f3d 100%);
+    background: linear-gradient(135deg, var(--op-bg-surface) 0%, var(--op-bg-primary) 100%);
     border-radius: 6px;
-    border: 1px solid #2a3441;
+    border: 1px solid var(--op-border);
     margin-bottom: 8px;
     padding: 8px 12px;
 }
@@ -23,7 +36,7 @@
     gap: 10px;
     font-size: 14px;
     font-weight: 600;
-    color: #10b981;
+    color: var(--op-orange);
 }
 
 .status-indicator-compact .status-icon {
