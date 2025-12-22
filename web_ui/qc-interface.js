@@ -352,6 +352,22 @@ class QCInterface {
         };
     }
 
+    formatTimecode(seconds, fps = 23.976) {
+        /**
+         * Convert seconds to SMPTE timecode format HH:MM:SS:FF
+         * Matches formatTimecode from app.js
+         */
+        const sign = seconds < 0 ? '-' : '';
+        const absSeconds = Math.abs(seconds);
+
+        const hours = Math.floor(absSeconds / 3600);
+        const minutes = Math.floor((absSeconds % 3600) / 60);
+        const secs = Math.floor(absSeconds % 60);
+        const frames = Math.floor((absSeconds % 1) * fps);
+
+        return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+    }
+
     updateFileInfo(syncData) {
         document.getElementById('qc-master-file').textContent = syncData.masterFile || 'Unknown';
         document.getElementById('qc-dub-file').textContent = syncData.dubFile || 'Unknown';
@@ -359,16 +375,12 @@ class QCInterface {
         const offset = syncData.detectedOffset || 0;
         const fps = syncData.frameRate || 23.976;
         
-        // Use the exact same calculation logic as formatOffsetDisplay in app.js for consistency
+        // Display offset in timecode format: -00:00:15:00
         if (typeof offset !== 'number' || isNaN(offset)) {
             document.getElementById('qc-offset-value').textContent = 'N/A';
         } else {
-            // Match formatOffsetDisplay calculation exactly
-            const frames = Math.round(Math.abs(offset) * fps);
-            const frameSign = offset < 0 ? '-' : '+';
-            const sign = offset >= 0 ? '+' : '';
-            // Display format: +XX.XXXs (+/-XXXf @ XX.XXXfps) - matching app.js formatOffsetDisplay
-            document.getElementById('qc-offset-value').textContent = `${sign}${offset.toFixed(3)}s (${frameSign}${frames}f @ ${fps}fps)`;
+            const timecode = this.formatTimecode(offset, fps);
+            document.getElementById('qc-offset-value').textContent = timecode;
         }
 
         const confidence = syncData.confidence || 0;
