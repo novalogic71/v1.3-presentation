@@ -15,7 +15,7 @@ class SyncAnalyzerUI {
         this.batchQueue = [];
         this.batchProcessing = false;
         this.currentBatchIndex = -1;
-        this.detectedFrameRate = 23.976; // Default frame rate (industry standard)
+        this.detectedFrameRate = 24.0; // Default frame rate
 
         // Initialize Operator Console
         this.operatorConsole = null;
@@ -85,28 +85,6 @@ class SyncAnalyzerUI {
             const engine = this.waveformVisualizer?.audioEngine;
             if (engine && typeof engine.getStatus === 'function') {
                 console.log('Audio Engine Status:', engine.getStatus());
-            } else {
-                console.log('Audio Engine not available');
-            }
-        };
-        
-        // Helper to adjust dub volume (0-2, where 1.2 is default, 2 is max boost)
-        window.setDubVolume = (vol) => {
-            const engine = this.waveformVisualizer?.audioEngine;
-            if (engine) {
-                engine.setVolume('dub', vol);
-                console.log(`Dub volume set to ${vol} (0-2 range, 1.2 is default)`);
-            } else {
-                console.log('Audio Engine not available');
-            }
-        };
-        
-        // Helper to adjust master volume (0-1)
-        window.setMasterVolume = (vol) => {
-            const engine = this.waveformVisualizer?.audioEngine;
-            if (engine) {
-                engine.setVolume('master', vol);
-                console.log(`Master volume set to ${vol} (0-1 range, 0.8 is default)`);
             } else {
                 console.log('Audio Engine not available');
             }
@@ -314,9 +292,6 @@ class SyncAnalyzerUI {
         this.elements.methodAi.addEventListener('change', () => this.toggleAiConfig());
         this.elements.confidenceThreshold.addEventListener('input', () => this.updateConfidenceValue());
         
-        // View selector tabs for Quadrant 2
-        this.setupViewSelector();
-        
         // Configuration method selection events  
         [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi].forEach(checkbox => {
             checkbox.addEventListener('change', () => {
@@ -339,273 +314,9 @@ class SyncAnalyzerUI {
         if (this.elements.operatorMode) {
             this.elements.operatorMode.addEventListener('change', () => this.setOperatorMode());
         }
-
-        // New redesigned action button handlers (event delegation)
-        this.setupActionButtonHandlers();
-
+        
         // Initialize configuration
         this.initializeConfiguration();
-    }
-
-    /**
-     * Setup view selector tabs for Quadrant 2 (Configuration/Batch Details)
-     */
-    setupViewSelector() {
-        const viewTabs = document.querySelectorAll('.view-tab');
-        const configView = document.getElementById('config-view');
-        const detailsView = document.getElementById('batch-details-view');
-        const resetBtn = document.getElementById('reset-config-btn');
-        
-        viewTabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const view = tab.dataset.view;
-                
-                // Update active tab
-                viewTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
-                // Toggle views
-                if (view === 'config') {
-                    configView.style.display = 'block';
-                    detailsView.style.display = 'none';
-                    if (resetBtn) resetBtn.style.display = 'inline-flex';
-                } else {
-                    configView.style.display = 'none';
-                    detailsView.style.display = 'block';
-                    if (resetBtn) resetBtn.style.display = 'none';
-                }
-            });
-        });
-    }
-
-    /**
-     * Switch to Batch Details view and show item details
-     */
-    showBatchDetailsInQuadrant(itemId) {
-        const detailsTab = document.querySelector('.view-tab[data-view="details"]');
-        if (detailsTab) {
-            detailsTab.click();
-        }
-    }
-
-    /**
-     * Generate a simplified summary for Quadrant 2 (without waveform to avoid duplicate IDs)
-     */
-    generateQuadrantSummary(item, result, offsetSeconds, confidence, methodDisplayName, offsetFrames, itemFps) {
-        const offsetMs = (offsetSeconds * 1000).toFixed(2);
-        const confidenceClass = confidence >= 0.8 ? 'high' : confidence >= 0.5 ? 'medium' : 'low';
-        const offsetDirection = offsetSeconds < 0 ? 'delayed' : offsetSeconds > 0 ? 'advanced' : 'sync';
-        
-        // Determine severity
-        const absOffset = Math.abs(offsetSeconds);
-        let severityClass = 'good';
-        let severityText = 'In Sync';
-        if (absOffset > 0.5) {
-            severityClass = 'critical';
-            severityText = 'Critical';
-        } else if (absOffset > 0.1) {
-            severityClass = 'warning';
-            severityText = 'Warning';
-        } else if (absOffset > 0.04) {
-            severityClass = 'minor';
-            severityText = 'Minor';
-        }
-
-        return `
-            <div class="quadrant-summary">
-                <div class="summary-header">
-                    <h3><i class="fas fa-file-audio"></i> ${item.master?.name || 'Unknown'}</h3>
-                    <span class="severity-badge ${severityClass}">${severityText}</span>
-                </div>
-                
-                <div class="summary-metrics">
-                    <div class="metric-card">
-                        <div class="metric-label"><i class="fas fa-clock"></i> Sync Offset</div>
-                        <div class="metric-value ${offsetDirection}">${this.formatTimecode(offsetSeconds, itemFps)}</div>
-                        <div class="metric-sub">${offsetMs}ms | ${offsetFrames}</div>
-                    </div>
-                    
-                    <div class="metric-card">
-                        <div class="metric-label"><i class="fas fa-check-circle"></i> Confidence</div>
-                        <div class="metric-value confidence-${confidenceClass}">${(confidence * 100).toFixed(0)}%</div>
-                        <div class="metric-sub">${confidenceClass.toUpperCase()}</div>
-                    </div>
-                    
-                    <div class="metric-card">
-                        <div class="metric-label"><i class="fas fa-film"></i> Frame Rate</div>
-                        <div class="metric-value">${itemFps}</div>
-                        <div class="metric-sub">fps (detected)</div>
-                    </div>
-                </div>
-                
-                <div class="summary-actions">
-                    <p class="action-hint"><i class="fas fa-info-circle"></i> Click the row again to view full waveform analysis</p>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Setup event handlers for redesigned action buttons with keyboard shortcuts
-     */
-    setupActionButtonHandlers() {
-        // Event delegation for all action buttons
-        document.addEventListener('click', (e) => {
-            const btn = e.target.closest('.action-btn-v2');
-            if (!btn) return;
-
-            if (btn.disabled) {
-                console.log('Button is disabled, ignoring click');
-                return;
-            }
-
-            const action = btn.dataset.action;
-            const itemId = btn.dataset.itemId;
-
-            console.log('Button click detected:', { action, itemId, btn });
-
-            if (!action || !itemId) {
-                console.warn('Missing action or itemId:', { action, itemId });
-                return;
-            }
-
-            e.stopPropagation(); // Prevent row click handler from interfering
-            this.handleActionButton(action, itemId, btn);
-        });
-
-        // Keyboard shortcuts (when a table row is focused)
-        document.addEventListener('keydown', (e) => {
-            // Only handle if a batch table row is focused
-            const focusedRow = document.activeElement.closest('tr[data-item-id]');
-            if (!focusedRow) return;
-
-            const itemId = focusedRow.dataset.itemId;
-            const item = this.batchQueue.find(i => String(i.id) === String(itemId));
-            if (!item || item.status !== 'completed') return;
-
-            // Keyboard shortcuts
-            if (e.key === 'q' || e.key === 'Q') {
-                e.preventDefault();
-                const qcBtn = focusedRow.querySelector('.action-btn-v2.qc');
-                if (qcBtn && !qcBtn.disabled) {
-                    this.handleActionButton('qc', itemId, qcBtn);
-                }
-            } else if (e.key === 'r' || e.key === 'R') {
-                e.preventDefault();
-                const repairBtn = focusedRow.querySelector('.action-btn-v2.repair');
-                if (repairBtn && !repairBtn.disabled) {
-                    this.handleActionButton('repair', itemId, repairBtn);
-                }
-            } else if (e.key === 'd' || e.key === 'D') {
-                e.preventDefault();
-                const detailsBtn = focusedRow.querySelector('.action-btn-v2.details');
-                if (detailsBtn && !detailsBtn.disabled) {
-                    this.handleActionButton('details', itemId, detailsBtn);
-                }
-            } else if (e.key === 'Delete') {
-                e.preventDefault();
-                this.handleActionButton('remove', itemId, null);
-            }
-        });
-    }
-
-    /**
-     * Handle action button clicks with unified logic
-     */
-    handleActionButton(action, itemId, btn) {
-        // Convert itemId to string for comparison since dataset values are always strings
-        const item = this.batchQueue.find(i => String(i.id) === String(itemId));
-        if (!item) {
-            console.warn('Item not found for action:', action, 'itemId:', itemId);
-            return;
-        }
-
-        console.log('Action button clicked:', action, 'for item:', item.master.name);
-
-        switch (action) {
-            case 'qc':
-                this.openQCInterface(btn);
-                break;
-            case 'repair':
-                this.openRepairQCInterface(btn);
-                break;
-            case 'details':
-                this.toggleBatchDetails(item);
-                break;
-            case 'remove':
-                this.confirmRemoveBatchItem(itemId);
-                break;
-        }
-    }
-
-    /**
-     * Show confirmation dialog before removing batch item
-     */
-    confirmRemoveBatchItem(itemId) {
-        const item = this.batchQueue.find(i => String(i.id) === String(itemId));
-        if (!item) return;
-
-        // Create confirmation dialog
-        const overlay = document.createElement('div');
-        overlay.className = 'confirm-dialog-overlay';
-
-        const dialog = document.createElement('div');
-        dialog.className = 'confirm-dialog';
-        dialog.setAttribute('role', 'dialog');
-        dialog.setAttribute('aria-labelledby', 'confirm-dialog-title');
-        dialog.setAttribute('aria-describedby', 'confirm-dialog-desc');
-
-        dialog.innerHTML = `
-            <div class="confirm-dialog-header">
-                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
-                <h3 id="confirm-dialog-title">Remove from Batch?</h3>
-            </div>
-            <div class="confirm-dialog-body" id="confirm-dialog-desc">
-                <p><strong>${item.master.name}</strong> vs <strong>${item.dub.name}</strong></p>
-                <p>This will remove the analysis from the batch queue. This action cannot be undone.</p>
-            </div>
-            <div class="confirm-dialog-actions">
-                <button class="confirm-dialog-btn" data-action="cancel">Cancel</button>
-                <button class="confirm-dialog-btn danger" data-action="confirm">Remove</button>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-        document.body.appendChild(dialog);
-
-        // Focus the confirm button
-        const confirmBtn = dialog.querySelector('[data-action="confirm"]');
-        confirmBtn.focus();
-
-        // Handle button clicks
-        dialog.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-action]');
-            if (!btn) return;
-
-            if (btn.dataset.action === 'confirm') {
-                this.removeBatchItem(itemId);
-            }
-
-            // Close dialog
-            overlay.remove();
-            dialog.remove();
-        });
-
-        // Close on overlay click
-        overlay.addEventListener('click', () => {
-            overlay.remove();
-            dialog.remove();
-        });
-
-        // Close on Escape key
-        const escapeHandler = (e) => {
-            if (e.key === 'Escape') {
-                overlay.remove();
-                dialog.remove();
-                document.removeEventListener('keydown', escapeHandler);
-            }
-        };
-        document.addEventListener('keydown', escapeHandler);
     }
 
     showToast(level, message, title = null, timeoutMs = 6000) {
@@ -630,18 +341,10 @@ class SyncAnalyzerUI {
     
     async loadFileTree(path = this.currentPath) {
         this.elements.fileTree.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading files...</div>';
-
+        
         try {
             console.log('Loading file tree for path:', path);
-            // Add cache-busting to force fresh data
-            const cacheBuster = `_=${Date.now()}`;
-            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&${cacheBuster}`, {
-                cache: 'no-cache',
-                headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache'
-                }
-            });
+            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
             console.log('Response status:', response.status);
             const data = await response.json();
             console.log('Response data:', data);
@@ -703,10 +406,7 @@ class SyncAnalyzerUI {
             { name: 'DunkirkEC_InsideTheCockpit_ProRes_15sec.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_InsideTheCockpit_ProRes_15sec.mov' },
             // New test files
             { name: 'DunkirkEC_TheInCameraApproach1_ProRes.mov', type: 'video', path: '/mnt/data/amcmurray/_insync_master_files/DunkirkEC_TheInCameraApproach1_ProRes.mov' },
-            { name: 'DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov' },
-            // MXF files
-            { name: 'E4284683_SINNERS_OV_HDR_JG_01_EN_20_B.mxf', type: 'atmos', path: '/mnt/data/amcmurray/_insync_master_files/E4284683_SINNERS_OV_HDR_JG_01_EN_20_B.mxf' },
-            { name: 'E5168533_GRCH_LP_NEARFIELD_DOM_ATMOS_2398fps_.atmos.mxf', type: 'atmos', path: '/mnt/data/amcmurray/_outofsync_master_files/E5168533_GRCH_LP_NEARFIELD_DOM_ATMOS_2398fps_.atmos.mxf' }
+            { name: 'DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov', type: 'video', path: '/mnt/data/amcmurray/_outofsync_master_files/DunkirkEC_TheInCameraApproach1_ProRes_5sec23f.mov' }
         ];
         
         this.renderFileTree(mockFiles, '/mnt/data');
@@ -930,7 +630,6 @@ class SyncAnalyzerUI {
                     sample_rate: config.sampleRate,
                     window_size: config.windowSize,
                     confidence_threshold: config.confidenceThreshold,
-                    frame_rate: this.detectedFrameRate,
                     // Request-level preferences to align UI with API behavior
                     prefer_gpu: !!config.enableGpu,
                     prefer_gpu_bypass_chunked: !!config.enableGpu,
@@ -944,7 +643,6 @@ class SyncAnalyzerUI {
             }
             const startJson = await startResp.json();
             const analysisId = startJson.analysis_id;
-            newItem.analysisId = analysisId;
             this.addLog('info', `Analysis started: ${analysisId}`);
 
             // Live progress via SSE (fallback to polling on error)
@@ -1060,21 +758,33 @@ class SyncAnalyzerUI {
                 confidence: co.confidence ?? 0,
                 quality_score: res.overall_confidence ?? 0,
                 method_used: 'Consensus',
-                analysis_id: res.analysis_id || analysisId,
-                created_at: res.completed_at || res.created_at || null,
                 analysis_methods: Array.isArray(res.method_results) ? res.method_results.map(m => m.method) : []
             };
 
-            // Use the live API result (avoid stale DB overrides)
+            // Try to fetch the latest DB record for this master/dub pair and prefer its consensus value
+            try {
+                const dbUrl = `${this.FASTAPI_BASE}/reports/search?master_file=${encodeURIComponent(newItem.master.path)}&dub_file=${encodeURIComponent(newItem.dub.path)}`;
+                const dbResp = await fetch(dbUrl);
+                if (dbResp.ok) {
+                    const dbJson = await dbResp.json();
+                    if (dbJson && dbJson.success && dbJson.report && typeof dbJson.report.consensus_offset_seconds === 'number') {
+                        adapted.offset_seconds = dbJson.report.consensus_offset_seconds;
+                        if (typeof dbJson.report.confidence_score === 'number') {
+                            adapted.confidence = dbJson.report.confidence_score;
+                        }
+                        this.addLog('info', `DB consensus applied: ${this.formatOffsetDisplay(adapted.offset_seconds, true, this.detectedFrameRate)}`);
+                    }
+                }
+            } catch (e) {
+                this.addLog('warning', `DB lookup failed; using API result: ${e.message}`);
+            }
             this.addLog('success', `Analysis completed: ${this.formatOffsetDisplay(adapted.offset_seconds, true, this.detectedFrameRate)}`);
 
             // Update batch item
             newItem.status = 'completed';
             newItem.progress = 100;
             newItem.result = adapted;
-            newItem.frameRate = this.detectedFrameRate; // Store detected frame rate with the item
             this.updateBatchTableRow(newItem);
-            await this.persistBatchQueue().catch(() => {});
 
             // Prepare browser-compatible audio proxies for playback (with timeout + fallback)
             try {
@@ -1120,8 +830,8 @@ class SyncAnalyzerUI {
 
                 if (usedFallback) {
                     // Fallback to FastAPI streaming proxy (no pre-create step)
-                    const masterUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.master.path)}&format=wav&role=master`;
-                    const dubUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.dub.path)}&format=wav&role=dub`;
+                    const masterUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.master.path)}&format=wav`;
+                    const dubUrl = `${this.FASTAPI_BASE}/files/proxy-audio?path=${encodeURIComponent(newItem.dub.path)}&format=wav`;
                     newItem.masterProxyUrl = masterUrl;
                     newItem.dubProxyUrl = dubUrl;
                     this.addLog('info', 'Using streaming proxy fallback from API');
@@ -1249,11 +959,8 @@ class SyncAnalyzerUI {
         
         // Hide placeholder and show results
         this.elements.resultsPlaceholder.style.display = 'none';
-
-        // Use backend's pre-calculated milliseconds to avoid precision loss
-        const offsetMs = result.offset_milliseconds !== undefined
-            ? Math.abs(result.offset_milliseconds)
-            : Math.abs(result.offset_seconds * 1000);
+        
+        const offsetMs = Math.abs(result.offset_seconds * 1000);
         const absOffset = Math.abs(result.offset_seconds);
         // Branch convention: positive => dub advanced, negative => dub delayed
         const direction = result.offset_seconds > 0 ? 'advanced' : 'delayed';
@@ -1562,7 +1269,7 @@ class SyncAnalyzerUI {
         // Master file input
         this.masterFileInput = document.createElement('input');
         this.masterFileInput.type = 'file';
-        this.masterFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg,.mov,.mp4,.avi,.mkv,.wmv,.ec3,.eac3,.adm,.iab,.mxf';
+        this.masterFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg';
         this.masterFileInput.style.display = 'none';
         this.masterFileInput.addEventListener('change', (e) => {
             if (e.target.files[0]) {
@@ -1570,11 +1277,11 @@ class SyncAnalyzerUI {
             }
         });
         document.body.appendChild(this.masterFileInput);
-
+        
         // Dub file input
         this.dubFileInput = document.createElement('input');
         this.dubFileInput.type = 'file';
-        this.dubFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg,.mov,.mp4,.avi,.mkv,.wmv,.ec3,.eac3,.adm,.iab,.mxf';
+        this.dubFileInput.accept = '.wav,.mp3,.flac,.m4a,.aiff,.aac,.ogg';
         this.dubFileInput.style.display = 'none';
         this.dubFileInput.addEventListener('change', (e) => {
             if (e.target.files[0]) {
@@ -1611,7 +1318,7 @@ class SyncAnalyzerUI {
                 if (audioFile) {
                     this.loadAudioFile(audioFile, type);
                 } else {
-                    console.error('Please drop a valid media file (WAV, MP3, FLAC, M4A, AIFF, MOV, MP4, MXF, etc.)');
+                    console.error('Please drop a valid audio file (WAV, MP3, FLAC, M4A, AIFF)');
                 }
             });
         });
@@ -1748,20 +1455,12 @@ class SyncAnalyzerUI {
             'audio/m4a', 'audio/mp4',
             'audio/aiff', 'audio/x-aiff',
             'audio/aac',
-            'audio/ogg',
-            'video/quicktime',  // MOV files
-            'video/mp4',
-            'video/x-msvideo',  // AVI
-            'video/x-matroska'  // MKV
+            'audio/ogg'
         ];
-
-        const supportedExtensions = [
-            '.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg',
-            '.mov', '.mp4', '.avi', '.mkv', '.wmv',  // Video containers
-            '.ec3', '.eac3', '.adm', '.iab', '.mxf'  // Atmos and professional formats
-        ];
-
-        return supportedTypes.includes(file.type) ||
+        
+        const supportedExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.aac', '.ogg'];
+        
+        return supportedTypes.includes(file.type) || 
                supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     }
     
@@ -1833,31 +1532,13 @@ class SyncAnalyzerUI {
         }, 5000);
     }
     
-    /**
-     * Convert seconds to SMPTE timecode format HH:MM:SS:FF
-     * @param {number} seconds - Time in seconds
-     * @param {number} fps - Frame rate (default: 23.976)
-     * @returns {string} Timecode string
-     */
-    formatTimecode(seconds, fps = 23.976) {
-        const sign = seconds < 0 ? '-' : '';
-        const absSeconds = Math.abs(seconds);
-
-        const hours = Math.floor(absSeconds / 3600);
-        const minutes = Math.floor((absSeconds % 3600) / 60);
-        const secs = Math.floor(absSeconds % 60);
-        const frames = Math.floor((absSeconds % 1) * fps);
-
-        return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
-    }
-
     isAudioFile(filename) {
-        const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.ogg', '.ec3', '.eac3', '.adm', '.iab'];
+        const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a', '.aiff', '.ogg'];
         return audioExtensions.some(ext => filename.toLowerCase().endsWith(ext));
     }
-
+    
     isVideoFile(filename) {
-        const videoExtensions = ['.mov', '.mp4', '.avi', '.mkv', '.wmv', '.mxf'];
+        const videoExtensions = ['.mov', '.mp4', '.avi', '.mkv', '.wmv'];
         return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
     }
     
@@ -1915,41 +1596,42 @@ class SyncAnalyzerUI {
     }
 
     /**
-     * Format offset for display with timecode and frames
+     * Format offset for display with seconds and frames
      * @param {number} offsetSeconds - Offset in seconds
      * @param {boolean} includeFrames - Whether to include frame count (default: true)
-     * @param {number} defaultFps - Default frame rate to use (default: 23.976)
-     * @returns {string} Formatted offset string with timecode
+     * @param {number} defaultFps - Default frame rate to use (default: 24)
+     * @returns {string} Formatted offset string
      */
-    formatOffsetDisplay(offsetSeconds, includeFrames = true, defaultFps = 23.976) {
+    formatOffsetDisplay(offsetSeconds, includeFrames = true, defaultFps = 24) {
         if (typeof offsetSeconds !== 'number' || isNaN(offsetSeconds)) {
             return 'N/A';
         }
 
-        const timecode = this.formatTimecode(offsetSeconds, defaultFps);
+        const sign = offsetSeconds >= 0 ? '+' : '';
+        const seconds = `${sign}${offsetSeconds.toFixed(3)}s`;
 
         if (!includeFrames) {
-            return timecode;
+            return seconds;
         }
 
         const frames = Math.round(Math.abs(offsetSeconds) * defaultFps);
         const frameSign = offsetSeconds < 0 ? '-' : '+';
         const framesStr = `${frameSign}${frames}f @ ${defaultFps}fps`;
 
-        return `${timecode} (${framesStr})`;
+        return `${seconds} (${framesStr})`;
     }
 
     /**
      * Detect frame rate from video file using ffprobe
      * @param {string} filePath - Path to the video file
-     * @returns {Promise<number>} Detected frame rate or default (23.976)
+     * @returns {Promise<number>} Detected frame rate or default (24.0)
      */
     async detectFrameRate(filePath) {
         try {
             const response = await fetch(`${this.FASTAPI_BASE}/files/probe?path=${encodeURIComponent(filePath)}`);
             if (!response.ok) {
                 console.warn('Failed to probe file for frame rate');
-                return 23.976;
+                return 24.0;
             }
             const data = await response.json();
             if (data.video_summary && data.video_summary.frame_rate && data.video_summary.frame_rate > 0) {
@@ -1960,7 +1642,7 @@ class SyncAnalyzerUI {
         } catch (error) {
             console.warn('Error detecting frame rate:', error);
         }
-        return 23.976; // Default fallback (industry standard)
+        return 24.0; // Default fallback
     }
 
     // Simple logging replacement (since we removed the log UI)
@@ -2240,8 +1922,7 @@ class SyncAnalyzerUI {
                         aiModel: cfg.aiModel || 'wav2vec2',
                         enableGpu: !!cfg.enableGpu,
                         channelStrategy: cfg.channelStrategy || 'mono_downmix',
-                        targetChannels: cfg.targetChannels || [],
-                        frameRate: itemFrameRate
+                        targetChannels: cfg.targetChannels || []
                     })
                 });
                 
@@ -2391,55 +2072,29 @@ class SyncAnalyzerUI {
             <td class="actions-cell">
                 <div class="action-buttons">
                     ${item.status === 'completed' ? `
-                        <button class="action-btn-v2 qc"
-                                data-item-id="${item.id}"
-                                data-action="qc"
-                                data-master-id="${item.master.id || item.id + '_master'}"
-                                data-dub-id="${item.dub.id || item.id + '_dub'}"
+                        <button class="action-btn qc-btn qc-open-btn" 
+                                data-master-id="${item.master.id || item.id + '_master'}" 
+                                data-dub-id="${item.dub.id || item.id + '_dub'}" 
                                 data-offset="${item.result?.offset_seconds || 0}"
                                 data-master-path="${item.master.path}"
                                 data-dub-path="${item.dub.path}"
-                                title="Open Quality Control Interface (Keyboard: Q)"
-                                aria-label="Open Quality Control Interface for ${item.master.name}">
-                            <i class="fas fa-microscope" aria-hidden="true"></i>
-                            <span class="btn-label-full">QC</span>
-                            <span class="btn-label-short">QC</span>
-                            <span class="shortcut-hint">Q</span>
+                                title="Open Quality Control Interface">
+                            <i class="fas fa-microscope"></i> QC
                         </button>
-                        <button class="action-btn-v2 repair"
-                                data-item-id="${item.id}"
-                                data-action="repair"
+                        <button class="action-btn repair qc-btn repair-qc-open-btn"
                                 data-master-path="${item.master.path}"
                                 data-dub-path="${item.dub.path}"
                                 data-offset="${item.result?.offset_seconds || 0}"
-                                title="Open Repair Interface (Keyboard: R)"
-                                aria-label="Open Repair Interface for ${item.master.name}">
-                            <i class="fas fa-wrench" aria-hidden="true"></i>
-                            <span class="btn-label-full">Repair</span>
-                            <span class="btn-label-short">Rep</span>
-                            <span class="shortcut-hint">R</span>
+                                title="Open Repair QC Interface">
+                            <i class="fas fa-toolbox"></i> Repair QC
                         </button>
-                        <button class="action-btn-v2 details"
-                                data-item-id="${item.id}"
-                                data-action="details"
-                                title="View Analysis Details (Keyboard: D)"
-                                aria-label="View detailed analysis for ${item.master.name}">
-                            <i class="fas fa-chart-line" aria-hidden="true"></i>
-                            <span class="btn-label-full">Details</span>
-                            <span class="btn-label-short">Det</span>
-                            <span class="shortcut-hint">D</span>
+                        <button class="action-btn repair-btn" onclick="app.repairBatchItem('${item.id}')" title="Repair sync issues">
+                            <i class="fas fa-tools"></i>
                         </button>
                     ` : ''}
-                    <button class="action-btn-v2 remove"
-                            data-item-id="${item.id}"
-                            data-action="remove"
-                            ${this.batchProcessing ? 'disabled' : ''}
-                            title="Remove from batch (Keyboard: Delete)"
-                            aria-label="Remove ${item.master.name} from batch">
-                        <i class="fas fa-trash" aria-hidden="true"></i>
-                        <span class="btn-label-full">Remove</span>
-                        <span class="btn-label-short">Rem</span>
-                        <span class="shortcut-hint">Del</span>
+                    <button class="action-btn remove-btn" onclick="app.removeBatchItem('${item.id}')" 
+                            ${this.batchProcessing ? 'disabled' : ''} title="Remove from batch">
+                        <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </td>
@@ -2517,9 +2172,6 @@ class SyncAnalyzerUI {
             this.closeBatchDetails();
             return;
         }
-        
-        // Switch to Batch Details view in Quadrant 2
-        this.showBatchDetailsInQuadrant(item.id);
 
         // Show loading state first
         contentDiv.innerHTML = '';
@@ -2546,12 +2198,7 @@ class SyncAnalyzerUI {
         // Get frame display with fallback
         let offsetFrames = 'N/A';
         try {
-            if (typeof offsetSeconds === 'number' && !Number.isNaN(offsetSeconds) &&
-                typeof itemFps === 'number' && !Number.isNaN(itemFps)) {
-                const frames = Math.round(Math.abs(offsetSeconds) * itemFps);
-                const frameSign = offsetSeconds < 0 ? '-' : '+';
-                offsetFrames = `${frameSign}${frames}f @ ${itemFps}fps`;
-            }
+            offsetFrames = this.getFrameDisplayString(offsetSeconds);
         } catch (error) {
             console.warn('Frame display calculation failed:', error);
             offsetFrames = `${(offsetSeconds * itemFps).toFixed(0)} frames @ ${itemFps}fps`;
@@ -2566,39 +2213,159 @@ class SyncAnalyzerUI {
         }
         
         this.addLog('info', `Showing detailed results for: ${item.master.name}`);
+        
+        contentDiv.innerHTML = `
+            <div class="details-layout">
+              <div class="details-main">
+                <div class="details-header-info">
+                    <h3><i class="fas fa-chart-line"></i> Analysis Results</h3>
+                    <div class="file-pair-info">
+                        <div class="file-info"><strong>Master:</strong> ${item.master.name}</div>
+                        <div class="file-info"><strong>Dub:</strong> ${item.dub.name}</div>
+                    </div>
+                </div>
+                <div class="results-summary">
+                    <div class="result-card">
+                        <h3>Sync Offset</h3>
+                        <div class="result-value ${Math.abs(offsetSeconds) > 0.1 ? 'critical' : 'good'}">${offsetSeconds >= 0 ? '+' : ''}${offsetSeconds.toFixed(3)}s</div>
+                        <div class="result-detail"><div>${offsetFrames}</div></div>
+                    </div>
+                    <div class="result-card">
+                        <h3>Sync Reliability</h3>
+                        <div class="result-value ${confidence > 0.8 ? 'good' : confidence > 0.5 ? 'warning' : 'critical'}">
+                            ${confidence > 0.8 ? '✅ RELIABLE' : confidence > 0.5 ? '⚠️ UNCERTAIN' : '🔴 PROBLEM'}
+                        </div>
+                        <div class="result-detail">${(confidence * 100).toFixed(0)}% detection confidence</div>
+                    </div>
+                    <div class="result-card">
+                        <h3>Detection Method</h3>
+                        <div class="result-value">${methodDisplayName}</div>
+                        <div class="result-detail">Analysis technique used</div>
+                    </div>
+                    <div class="result-card">
+                        <h3>Audio Analysis</h3>
+                        <div class="result-value ${qualityScore > 0.7 ? 'good' : qualityScore > 0.4 ? 'warning' : 'critical'}">
+                            ${qualityScore > 0.7 ? '🔵 CLEAR' : qualityScore > 0.4 ? '🟡 MIXED' : '🟠 POOR'}
+                        </div>
+                        <div class="result-detail">${(qualityScore * 100).toFixed(0)}% audio clarity</div>
+                    </div>
+                </div>
+                <!-- Action Recommendations Panel -->
+                <div class="action-recommendations-panel" id="recommendations-${item.id}">
+                    <div class="recommendations-loading">
+                        <i class="fas fa-lightbulb"></i>
+                        <span>Generating action recommendations...</span>
+                    </div>
+                </div>
+                <div class="enhanced-waveform-visualization" id="enhanced-waveform-${item.id}">
+                    <div class="waveform-loading"><i class="fas fa-spinner fa-spin"></i><span>Generating exact waveform representation...</span></div>
+                </div>
+              </div>
+              <div class="details-side">
+                <div class="batch-repair-controls">
+                    <h3><i class="fas fa-tools"></i> Repair</h3>
+                    <div class="repair-buttons">
+                        <label class="keepdur" style="margin-right:12px;display:flex;align-items:center;gap:6px;">
+                            <input type="checkbox" id="keep-duration-${item.id}" checked>
+                            <span>Keep duration</span>
+                        </label>
+                        <button class="repair-btn auto" onclick="app.repairBatchItem('${item.id}', 'auto')">Auto Repair</button>
+                        <button class="repair-btn manual" onclick="app.repairBatchItem('${item.id}', 'manual')">Manual Repair</button>
+                    </div>
+                    <div class="perch-repair">
+                        <h4><i class="fas fa-stream"></i> Per-Channel Repair</h4>
+                        <div class="perch-row">
+                            <label>Output Path</label>
+                            <input type="text" id="perch-out-${item.id}" placeholder="/absolute/output/path.mov" value="/mnt/data/amcmurray/Sync_dub/Sync_dub_final/repaired_sync_files/${item.dub.name.replace(/\.[^.]+$/, '')}_perch.mov">
+                            <label class="keepdur"><input type="checkbox" id="perch-keep-${item.id}" checked> Keep duration</label>
+                            <button class="repair-btn" id="perch-btn-${item.id}"><i class="fas fa-wrench"></i> Run Per-Channel Repair</button>
+                        </div>
+                        <div class="hint">Uses per-channel offsets reported above. Video is copied; audio re-encoded PCM 48k.</div>
+                    </div>
+                </div>
+                <div class="analysis-json-data">
+                    <h3><i class="fas fa-code"></i> Analysis Data</h3>
+                    <div class="json-container"><pre class="json-display">${JSON.stringify(result, null, 2)}</pre></div>
+                </div>
+              </div>
+            </div>
+        `;
 
-        // Generate enhanced details view for the slide-over panel
-        const enhancedDetailsHtml = this.generateEnhancedDetailsView(item, result, offsetSeconds, confidence, methodDisplayName, qualityScore, offsetFrames, itemFps);
-        contentDiv.innerHTML = enhancedDetailsHtml;
+        // Bind fullscreen toggle
+        try {
+            const fsBtn = document.getElementById('toggle-fullscreen-btn');
+            const detailsDivEl = this.elements.batchDetails;
+            if (fsBtn && detailsDivEl) {
+                fsBtn.onclick = () => {
+                    const entering = !detailsDivEl.classList.contains('fullscreen');
+                    if (entering) {
+                        if (!detailsDivEl._fsRestore) {
+                            detailsDivEl._fsRestore = { parent: detailsDivEl.parentNode, next: detailsDivEl.nextSibling };
+                        }
+                        document.body.appendChild(detailsDivEl);
+                        detailsDivEl.classList.add('fullscreen');
+                        document.body.classList.add('no-scroll');
+                        fsBtn.classList.add('fs-active');
+                        fsBtn.title = 'Collapse details';
+                    } else {
+                        detailsDivEl.classList.remove('fullscreen');
+                        document.body.classList.remove('no-scroll');
+                        fsBtn.classList.remove('fs-active');
+                        fsBtn.title = 'Expand details';
+                        const r = detailsDivEl._fsRestore;
+                        if (r && r.parent) {
+                            if (r.next && r.next.parentNode === r.parent) {
+                                r.parent.insertBefore(detailsDivEl, r.next);
+                            } else {
+                                r.parent.appendChild(detailsDivEl);
+                            }
+                        }
+                    }
+                };
+                const onKey = (e) => { if (e.key === 'Escape' && detailsDivEl.classList.contains('fullscreen')) { fsBtn.click(); } };
+                window.addEventListener('keydown', onKey, { once: true });
+            }
+        } catch {}
 
-        // Update Quadrant 2 with a simplified summary (not full waveform to avoid duplicate IDs)
-        const q2Placeholder = document.getElementById('batch-details-placeholder');
-        const q2Content = document.getElementById('batch-details-content');
-        if (q2Placeholder && q2Content) {
-            q2Placeholder.style.display = 'none';
-            q2Content.style.display = 'block';
-            q2Content.innerHTML = this.generateQuadrantSummary(item, result, offsetSeconds, confidence, methodDisplayName, offsetFrames, itemFps);
-        }
-
+        // If per-channel results present, render a compact table
+        try {
+            const per = result.per_channel_results || null;
+            if (per && typeof per === 'object' && Object.keys(per).length) {
+                const rows = Object.entries(per).map(([role, r]) => {
+                    if (r && typeof r === 'object' && 'offset_seconds' in r) {
+                        const offsetFormatted = this.formatOffsetDisplay(r.offset_seconds, true, itemFps);
+                        const conf = (Number(r.confidence || 0) * 100).toFixed(0);
+                        return `<tr><td>${role}</td><td>${offsetFormatted}</td><td>${conf}%</td><td>${r.method || ''}</td></tr>`;
+                    }
+                    return `<tr><td>${role}</td><td colspan="3">${(r && r.error) ? r.error : 'n/a'}</td></tr>`;
+                }).join('');
+                const table = `
+                    <div class="per-channel-section">
+                        <h3><i class="fas fa-stream"></i> Per-Channel Results</h3>
+                        <table class="per-channel-table">
+                            <thead><tr><th>Channel</th><th>Offset</th><th>Reliability</th><th>Method</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+                contentDiv.insertAdjacentHTML('beforeend', table);
+            }
+        } catch (e) { console.warn('Render per-channel failed:', e); }
+        
         // Store current item ID and show details
         detailsDiv.dataset.currentItem = item.id.toString();
         detailsDiv.style.display = 'block';
+        
+        // Initialize the enhanced waveform visualizer
+        this.initializeEnhancedWaveform(item, offsetSeconds);
+        
+        // Simulate loading delay for better UX
+        setTimeout(() => {
+            loadingDiv.style.display = 'none';
+            detailsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            this.addLog('success', 'Analysis details loaded with exact waveform representation');
+        }, 800);
 
-        // Lazy-load waveform: only initialize when section is expanded
-        const waveformSection = document.getElementById(`section-waveform-${item.id}`);
-        if (waveformSection) {
-            const sectionHeader = waveformSection.querySelector('.section-header');
-            const initWaveformOnce = () => {
-                if (!waveformSection.dataset.waveformInitialized) {
-                    waveformSection.dataset.waveformInitialized = 'true';
-                    this.initializeEnhancedWaveform(item, offsetSeconds);
-                }
-            };
-            // Initialize on first expand click
-            sectionHeader?.addEventListener('click', initWaveformOnce, { once: true });
-        }
-
-        // Bind per-channel repair button if per-channel results exist
+        // Bind per-channel repair button
         try {
             const btn = document.getElementById(`perch-btn-${item.id}`);
             if (btn) {
@@ -2633,328 +2400,7 @@ class SyncAnalyzerUI {
                     }
                 });
             }
-        } catch (e) {
-            console.warn('Per-channel repair bind failed:', e);
-        }
-
-        // Scroll details into view
-        detailsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    /**
-     * Generate enhanced details view with new design
-     */
-    generateEnhancedDetailsView(item, result, offsetSeconds, confidence, methodDisplayName, qualityScore, offsetFrames, itemFps) {
-        // Determine confidence badge
-        const confidenceBadge = confidence > 0.8 ? 'high-confidence' : confidence > 0.5 ? 'medium-confidence' : 'low-confidence';
-        const confidenceText = confidence > 0.8 ? 'High Confidence' : confidence > 0.5 ? 'Medium Confidence' : 'Low Confidence';
-
-        // Determine severity for operator guidance
-        const offsetAbs = Math.abs(offsetSeconds);
-        const severity = offsetAbs > 0.5 ? 'high' : offsetAbs > 0.1 ? 'medium' : 'low';
-        const severityText = offsetAbs > 0.5 ? 'Critical' : offsetAbs > 0.1 ? 'Moderate' : 'Minor';
-
-        const timecode = this.formatTimecode(offsetSeconds, itemFps);
-
-        return `
-            <div class="details-content-v2">
-                <!-- Quick Summary Header -->
-                <div class="details-summary">
-                    <div class="summary-card">
-                        <div class="summary-card-header">
-                            <i class="fas fa-clock"></i>
-                            <span>Sync Offset</span>
-                        </div>
-                        <div class="summary-card-value">${timecode}</div>
-                        <div class="summary-card-label">${offsetFrames}</div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="summary-card-header">
-                            <i class="fas fa-chart-bar"></i>
-                            <span>Confidence</span>
-                        </div>
-                        <div class="summary-card-value">${(confidence * 100).toFixed(0)}%</div>
-                        <div class="summary-card-label">
-                            <span class="status-badge-v2 ${confidenceBadge}">${confidenceText}</span>
-                        </div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="summary-card-header">
-                            <i class="fas fa-film"></i>
-                            <span>Frame Rate</span>
-                        </div>
-                        <div class="summary-card-value">${itemFps}</div>
-                        <div class="summary-card-label">fps (detected)</div>
-                    </div>
-                </div>
-
-                <!-- Operator Guidance Panel -->
-                ${this.generateOperatorGuidance(item, offsetSeconds, confidence, severity, severityText)}
-
-                <!-- Expandable Sections -->
-                <div class="details-section" id="section-waveform-${item.id}">
-                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                        <div class="section-title">
-                            <i class="fas fa-waveform"></i>
-                            <span>Waveform Visualization</span>
-                        </div>
-                        <i class="fas fa-chevron-down section-toggle"></i>
-                    </div>
-                    <div class="section-content">
-                        <div class="enhanced-waveform-visualization" id="enhanced-waveform-${item.id}">
-                            <div class="waveform-loading">
-                                <i class="fas fa-spinner fa-spin"></i>
-                                <span>Generating waveform visualization...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                ${this.generatePerChannelSection(item, result)}
-
-                ${this.generateMethodResultsSection(item, result)}
-
-                ${this.generateMetadataSection(item, result, methodDisplayName, qualityScore)}
-
-                <!-- Repair Controls Section -->
-                <div class="details-section" id="section-repair-${item.id}">
-                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                        <div class="section-title">
-                            <i class="fas fa-wrench"></i>
-                            <span>Repair Options</span>
-                        </div>
-                        <i class="fas fa-chevron-down section-toggle"></i>
-                    </div>
-                    <div class="section-content">
-                        <div class="batch-repair-controls">
-                            <div class="repair-buttons">
-                                <label class="keepdur" style="margin-right:12px;display:flex;align-items:center;gap:6px;">
-                                    <input type="checkbox" id="keep-duration-${item.id}" checked>
-                                    <span>Keep duration</span>
-                                </label>
-                                <button class="repair-btn auto" onclick="app.repairBatchItem('${item.id}', 'auto')">Auto Repair</button>
-                                <button class="repair-btn manual" onclick="app.repairBatchItem('${item.id}', 'manual')">Manual Repair</button>
-                            </div>
-                            <div class="perch-repair">
-                                <h4><i class="fas fa-stream"></i> Per-Channel Repair</h4>
-                                <div class="perch-row">
-                                    <label>Output Path</label>
-                                    <input type="text" id="perch-out-${item.id}" placeholder="/absolute/output/path.mov" value="/mnt/data/amcmurray/Sync_dub/Sync_dub_final/repaired_sync_files/${item.dub.name.replace(/\.[^.]+$/, '')}_perch.mov">
-                                    <label class="keepdur"><input type="checkbox" id="perch-keep-${item.id}" checked> Keep duration</label>
-                                    <button class="repair-btn" id="perch-btn-${item.id}"><i class="fas fa-wrench"></i> Run Per-Channel Repair</button>
-                                </div>
-                                <div class="hint">Uses per-channel offsets reported above. Video is copied; audio re-encoded PCM 48k.</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Raw Data Section -->
-                <div class="details-section" id="section-raw-${item.id}">
-                    <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                        <div class="section-title">
-                            <i class="fas fa-code"></i>
-                            <span>Raw Analysis Data</span>
-                        </div>
-                        <i class="fas fa-chevron-down section-toggle"></i>
-                    </div>
-                    <div class="section-content">
-                        <div class="analysis-json-data">
-                            <div class="json-container">
-                                <pre class="json-display">${JSON.stringify(result, null, 2)}</pre>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Generate operator guidance panel
-     */
-    generateOperatorGuidance(item, offsetSeconds, confidence, severity, severityText) {
-        const offsetAbs = Math.abs(offsetSeconds);
-
-        let recommendation = '';
-        let actions = '';
-
-        if (offsetAbs < 0.05 && confidence > 0.8) {
-            recommendation = 'Files appear to be in sync. No repair needed.';
-            actions = '<button class="guidance-btn">Export Report</button>';
-        } else if (offsetAbs < 0.5 && confidence > 0.7) {
-            recommendation = 'Minor sync offset detected. Consider applying automatic repair for optimal synchronization.';
-            actions = `
-                <button class="guidance-btn primary" onclick="app.repairBatchItem('${item.id}', 'auto')">
-                    <i class="fas fa-magic"></i> Auto-Repair
-                </button>
-                <button class="guidance-btn" onclick="app.handleActionButton('qc', '${item.id}', null)">
-                    <i class="fas fa-microscope"></i> Review in QC
-                </button>
-            `;
-        } else if (confidence < 0.5) {
-            recommendation = 'Low confidence detection. Manual review recommended before applying repairs. Check audio quality and try different analysis methods.';
-            actions = `
-                <button class="guidance-btn primary" onclick="app.handleActionButton('qc', '${item.id}', null)">
-                    <i class="fas fa-microscope"></i> Manual Review Required
-                </button>
-            `;
-        } else {
-            recommendation = 'Significant sync offset detected. Manual review in QC interface is recommended to verify detection accuracy before repair.';
-            actions = `
-                <button class="guidance-btn primary" onclick="app.handleActionButton('qc', '${item.id}', null)">
-                    <i class="fas fa-microscope"></i> Review in QC
-                </button>
-                <button class="guidance-btn" onclick="app.handleActionButton('repair', '${item.id}', null)">
-                    <i class="fas fa-wrench"></i> Open Repair
-                </button>
-            `;
-        }
-
-        return `
-            <div class="operator-guidance">
-                <div class="guidance-header">
-                    <i class="fas fa-lightbulb"></i>
-                    <h3>Recommended Action</h3>
-                    <span class="priority-badge ${severity}">${severityText} Priority</span>
-                </div>
-                <div class="guidance-content">
-                    ${recommendation}
-                </div>
-                <div class="guidance-actions">
-                    ${actions}
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Generate per-channel analysis section
-     */
-    generatePerChannelSection(item, result) {
-        const perChannelResults = result?.per_channel_results || {};
-        const hasPerChannel = Object.keys(perChannelResults).length > 0;
-
-        if (!hasPerChannel) return '';
-
-        const channelCards = Object.entries(perChannelResults).map(([channel, data]) => {
-            const offset = data?.offset_seconds || 0;
-            const conf = data?.confidence || 0;
-            const fps = item.frameRate || this.detectedFrameRate;
-            const timecode = this.formatTimecode(offset, fps);
-
-            return `
-                <div class="channel-card">
-                    <div class="channel-name">${channel}</div>
-                    <div class="channel-offset">${timecode}</div>
-                    <div class="channel-confidence">Confidence: ${(conf * 100).toFixed(0)}%</div>
-                </div>
-            `;
-        }).join('');
-
-        return `
-            <div class="details-section" id="section-channels-${item.id}">
-                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                    <div class="section-title">
-                        <i class="fas fa-stream"></i>
-                        <span>Per-Channel Analysis</span>
-                    </div>
-                    <i class="fas fa-chevron-down section-toggle"></i>
-                </div>
-                <div class="section-content">
-                    <div class="channel-grid">
-                        ${channelCards}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Generate method results section
-     */
-    generateMethodResultsSection(item, result) {
-        const methodResults = result?.method_results || [];
-        if (methodResults.length === 0) return '';
-
-        const fps = item.frameRate || this.detectedFrameRate;
-        const rows = methodResults.map(method => {
-            const offset = method?.offset_seconds || 0;
-            const conf = method?.confidence || 0;
-            const name = method?.method || 'Unknown';
-            const timecode = this.formatTimecode(offset, fps);
-
-            return `
-                <tr>
-                    <td class="method-name-cell">${name}</td>
-                    <td class="method-offset-cell">${timecode}</td>
-                    <td class="method-confidence-cell">${(conf * 100).toFixed(1)}%</td>
-                </tr>
-            `;
-        }).join('');
-
-        return `
-            <div class="details-section" id="section-methods-${item.id}">
-                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                    <div class="section-title">
-                        <i class="fas fa-microscope"></i>
-                        <span>Detection Methods</span>
-                    </div>
-                    <i class="fas fa-chevron-down section-toggle"></i>
-                </div>
-                <div class="section-content">
-                    <table class="methods-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Offset</th>
-                                <th>Confidence</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Generate metadata section
-     */
-    generateMetadataSection(item, result, methodDisplayName, qualityScore) {
-        return `
-            <div class="details-section" id="section-metadata-${item.id}">
-                <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
-                    <div class="section-title">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Analysis Metadata</span>
-                    </div>
-                    <i class="fas fa-chevron-down section-toggle"></i>
-                </div>
-                <div class="section-content">
-                    <div class="metadata-grid">
-                        <div class="metadata-item">
-                            <div class="metadata-label">Detection Method</div>
-                            <div class="metadata-value">${methodDisplayName}</div>
-                        </div>
-                        <div class="metadata-item">
-                            <div class="metadata-label">Audio Quality</div>
-                            <div class="metadata-value">${(qualityScore * 100).toFixed(0)}%</div>
-                        </div>
-                        <div class="metadata-item">
-                            <div class="metadata-label">Master File</div>
-                            <div class="metadata-value">${item.master.name}</div>
-                        </div>
-                        <div class="metadata-item">
-                            <div class="metadata-label">Dub File</div>
-                            <div class="metadata-value">${item.dub.name}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        } catch (e) { console.warn('Per-channel repair bind failed:', e); }
     }
     
     closeBatchDetails() {
@@ -2977,16 +2423,6 @@ class SyncAnalyzerUI {
 
         detailsDiv.style.display = 'none';
         detailsDiv.dataset.currentItem = '';
-        
-        // Reset Quadrant 2 batch details view
-        const q2Placeholder = document.getElementById('batch-details-placeholder');
-        const q2Content = document.getElementById('batch-details-content');
-        if (q2Placeholder && q2Content) {
-            q2Placeholder.style.display = 'flex';
-            q2Content.style.display = 'none';
-            q2Content.innerHTML = '';
-        }
-        
         this.addLog('info', 'Analysis details closed');
     }
     
@@ -3029,14 +2465,6 @@ class SyncAnalyzerUI {
     }
 
     async initBatchQueue() {
-        // If localStorage already loaded valid data, don't overwrite with server data
-        // localStorage is the source of truth for recent results
-        if (this.batchQueue.length > 0) {
-            console.log('Using localStorage batch queue, skipping server fetch');
-            return;
-        }
-
-        // Only fetch from server if localStorage was empty
         try {
             const resp = await fetch(`${this.FASTAPI_BASE}/ui/state/batch-queue`);
             if (resp.ok) {
@@ -3046,13 +2474,18 @@ class SyncAnalyzerUI {
                     this.batchQueue = items;
                     this.updateBatchTable();
                     this.updateBatchSummary();
-                    this.addLog('info', `Restored ${items.length} batch item(s) from server`);
+                    this.addLog('info', `Restored ${items.length} batch item(s) from save`);
+                    // Rehydrate results from DB in case some items were saved without inline results
+                    try { await this.rehydrateBatchResults(); } catch (e) { console.warn('Rehydrate failed:', e); }
                     return;
                 }
             }
         } catch (e) {
             console.warn('Failed to load persisted batch queue:', e);
         }
+        // Optional: add demo entry only if nothing restored
+        // DISABLED: Remove test entries for production - users want to see only their actual results
+        // try { this.addTestBatchEntry(); } catch {}
     }
 
     async persistBatchQueue() {
@@ -3081,10 +2514,9 @@ class SyncAnalyzerUI {
     async rehydrateBatchResults(force = false) {
         const enc = encodeURIComponent;
         for (const item of this.batchQueue) {
-            const hasResult = item && item.result && typeof item.result.offset_seconds === 'number';
-            if (!force && hasResult) continue;
+            if (!force && item && item.result && typeof item.result.offset_seconds === 'number') continue;
             try {
-                const url = `${this.FASTAPI_BASE}/reports/search?master_file=${enc(item.master.path)}&dub_file=${enc(item.dub.path)}&prefer_high_confidence=true`;
+                const url = `${this.FASTAPI_BASE}/reports/search?master_file=${enc(item.master.path)}&dub_file=${enc(item.dub.path)}`;
                 const r = await fetch(url);
                 if (!r.ok) continue;
                 const j = await r.json();
@@ -3094,11 +2526,8 @@ class SyncAnalyzerUI {
                     offset_seconds: Number(rec.consensus_offset_seconds || 0),
                     confidence: Number(rec.confidence_score || 0),
                     method_used: 'Consensus',
-                    quality_score: Number(rec.confidence_score || 0),
-                    analysis_id: rec.analysis_id,
-                    created_at: rec.created_at
+                    quality_score: Number(rec.confidence_score || 0)
                 };
-                item.analysisId = rec.analysis_id || item.analysisId;
                 item.result = adapted;
                 item.status = item.status === 'queued' ? 'completed' : item.status;
                 item.progress = item.progress || 100;
@@ -3338,15 +2767,9 @@ class SyncAnalyzerUI {
     
     getAnalysisConfig() {
         const aiModel = document.querySelector('input[name="ai-model"]:checked')?.value || 'wav2vec2';
-
-        // Always include 'correlation' for sample-accurate detection
-        const methods = this.currentMethods || ['mfcc'];
-        if (!methods.includes('correlation')) {
-            methods.push('correlation');
-        }
-
+        
         return {
-            methods: methods,
+            methods: this.currentMethods || ['mfcc'],
             sampleRate: parseInt(this.elements.sampleRate.value),
             windowSize: parseFloat(this.elements.windowSize.value),
             confidenceThreshold: parseFloat(this.elements.confidenceThreshold.value),
@@ -3650,10 +3073,7 @@ class SyncAnalyzerUI {
 
             // Extract key metrics
             const offsetSeconds = Math.abs(result.offset_seconds || 0);
-            // Use backend's pre-calculated milliseconds to avoid precision loss
-            const offsetMs = result.offset_milliseconds !== undefined
-                ? Math.abs(result.offset_milliseconds)
-                : offsetSeconds * 1000;
+            const offsetMs = offsetSeconds * 1000;
             const confidence = result.confidence || 0;
             const qualityScore = result.quality_score || 0;
             const timelineData = result.timeline || [];
@@ -3854,8 +3274,8 @@ class SyncAnalyzerUI {
                 dubFile: dubPath ? dubPath.split('/').pop() : (this.selectedDub?.name || 'Dub'),
                 detectedOffset: parseFloat(button.dataset.offset || '0') || 0,
                 confidence: res.confidence || 0,
-                masterUrl: this.getAudioUrlForFile(masterPath || this.selectedMaster?.path, 'master'),
-                dubUrl: this.getAudioUrlForFile(dubPath || this.selectedDub?.path, 'dub'),
+                masterUrl: this.getAudioUrlForFile(masterPath || this.selectedMaster?.path),
+                dubUrl: this.getAudioUrlForFile(dubPath || this.selectedDub?.path),
                 perChannel: res.per_channel_results || null,
                 dubPath: dubPath,
                 timeline: res.timeline || [],
@@ -3872,18 +3292,18 @@ class SyncAnalyzerUI {
         }
     }
 
-    getAudioUrlForFile(filePath, role = 'master') {
+    getAudioUrlForFile(filePath) {
         if (!filePath) return null;
         
         // Check file extension to determine if we need audio extraction
         const ext = filePath.toLowerCase().split('.').pop();
-        const videoExtensions = ['mov', 'mp4', 'avi', 'mkv', 'wmv', 'mxf'];
-        const audioExtensions = ['wav', 'mp3', 'flac', 'm4a', 'aiff', 'ogg', 'aac', 'ec3', 'eac3', 'adm', 'iab'];
+        const videoExtensions = ['mov', 'mp4', 'avi', 'mkv', 'wmv'];
+        const audioExtensions = ['wav', 'mp3', 'flac', 'm4a', 'aiff', 'ogg', 'aac'];
         
         if (videoExtensions.includes(ext)) {
             // Use audio proxy endpoint for video files (WAV for WebAudio decode)
-            console.log(`Using audio proxy (wav) for video file: ${filePath} (role=${role})`);
-            return `/api/v1/files/proxy-audio?path=${encodeURIComponent(filePath)}&format=wav&role=${role}`;
+            console.log(`Using audio proxy (wav) for video file: ${filePath}`);
+            return `/api/v1/files/proxy-audio?path=${encodeURIComponent(filePath)}&format=wav`;
         } else if (audioExtensions.includes(ext)) {
             // Use raw endpoint for audio files
             console.log(`Using raw endpoint for audio file: ${filePath}`);
@@ -3927,8 +3347,8 @@ class SyncAnalyzerUI {
                     dubFile: dubPath.split('/').pop(),
                     detectedOffset: offset,
                     confidence: typeof res.confidence === 'number' ? res.confidence : 0.85,
-                    masterUrl: this.getAudioUrlForFile(masterPath, 'master'),
-                    dubUrl: this.getAudioUrlForFile(dubPath, 'dub'),
+                    masterUrl: this.getAudioUrlForFile(masterPath),
+                    dubUrl: this.getAudioUrlForFile(dubPath),
                     timeline: res.timeline || [],
                     operatorTimeline: res.operator_timeline || null,
                     frameRate: itemFps
@@ -3940,8 +3360,8 @@ class SyncAnalyzerUI {
                     dubFile: this.selectedDub?.name || 'Unknown Dub',
                     detectedOffset: offset,
                     confidence: 0.85, // Mock confidence - would come from analysis
-                    masterUrl: this.getAudioUrlForFile(this.selectedMaster?.path, 'master'),
-                    dubUrl: this.getAudioUrlForFile(this.selectedDub?.path, 'dub'),
+                    masterUrl: this.getAudioUrlForFile(this.selectedMaster?.path),
+                    dubUrl: this.getAudioUrlForFile(this.selectedDub?.path),
                     timeline: [],
                     operatorTimeline: null,
                     frameRate: this.detectedFrameRate
