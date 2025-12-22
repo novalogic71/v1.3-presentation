@@ -15,29 +15,46 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* Batch table UX improvements */
-        .batch-table thead th { position: sticky; top: 0; z-index: 2; background: #0f172a; }
+        /* Vubiquity Color Schema Overrides */
+        :root {
+            --vubiquity-orange: #ff6b42;
+            --vubiquity-orange-hover: #ff8562;
+            --vubiquity-blue: #3385ff;
+            --vubiquity-blue-hover: #5299ff;
+            --bg-primary: #0b0f18;
+            --bg-surface: #151a26;
+            --bg-elevated: #1f2937;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-primary: #1f2937;
+            --border-secondary: #374151;
+        }
+
+        /* Batch table UX improvements - Vubiquity themed */
+        .batch-table thead th { position: sticky; top: 0; z-index: 2; background: var(--bg-surface); }
         .file-cell .file-name { display: inline-block; max-width: 28ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: bottom; }
         .progress-container { display:flex; align-items:center; gap:8px; }
-        .progress-bar { position: relative; width: 120px; height: 6px; background:#1f2937; border-radius: 999px; overflow:hidden; }
-        .progress-fill { height:100%; background: linear-gradient(90deg,#22c55e,#10b981); transition: width .2s ease; }
+        .progress-bar { position: relative; width: 120px; height: 6px; background: var(--border-primary); border-radius: 999px; overflow:hidden; }
+        .progress-fill { height:100%; background: linear-gradient(90deg, var(--vubiquity-orange), var(--vubiquity-orange-hover)); transition: width .2s ease; }
         .progress-text { font-variant-numeric: tabular-nums; opacity:.8; }
 
-        /* Result pill */
+        /* Result pill - Vubiquity themed */
         .result-cell .result-pill { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; font-variant-numeric: tabular-nums; }
-        .result-pill.advanced { background:#1e3a8a1a; color:#60a5fa; }
-        .result-pill.delayed  { background:#7f1d1d1a; color:#f87171; }
-        .result-pill.good     { border:1px solid #22c55e44; }
-        .result-pill.warning  { border:1px solid #f59e0b44; }
-        .result-pill.critical { border:1px solid #ef444444; }
+        .result-pill.advanced { background: rgba(51, 133, 255, 0.1); color: var(--vubiquity-blue); }
+        .result-pill.delayed  { background: rgba(255, 107, 66, 0.1); color: var(--vubiquity-orange); }
+        .result-pill.good     { border:1px solid rgba(16, 185, 129, 0.3); }
+        .result-pill.warning  { border:1px solid rgba(251, 191, 36, 0.3); }
+        .result-pill.critical { border:1px solid rgba(239, 68, 68, 0.3); }
 
-        /* Status badges */
-        .status-badge.completed  { background:#16a34a1a; color:#86efac; }
-        .status-badge.processing { background:#1d4ed81a; color:#93c5fd; }
-        .status-badge.failed     { background:#7f1d1d1a; color:#fca5a5; }
+        /* Status badges - Vubiquity themed */
+        .status-badge.completed  { background: rgba(16, 185, 129, 0.1); color: #86efac; }
+        .status-badge.processing { background: rgba(255, 107, 66, 0.1); color: var(--vubiquity-orange); }
+        .status-badge.failed     { background: rgba(239, 68, 68, 0.1); color: #fca5a5; }
+        .status-badge.queued     { background: rgba(107, 114, 128, 0.1); color: var(--text-secondary); }
 
-        /* Fullscreen details */
-        .batch-details.fullscreen { position: fixed; left:0; top:0; right:0; bottom:0; width:100vw; height:100vh; z-index: 9999; background: rgba(11,18,32,0.98); padding: 16px 24px; overflow: auto; }
+        /* Fullscreen details - Vubiquity themed */
+        .batch-details.fullscreen { position: fixed; left:0; top:0; right:0; bottom:0; width:100vw; height:100vh; z-index: 9999; background: rgba(11, 15, 24, 0.98); padding: 16px 24px; overflow: auto; }
         .batch-details.fullscreen .details-content { max-width: 1400px; margin: 0 auto; }
         .details-layout { display: block; }
         .batch-details.fullscreen .details-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
@@ -46,6 +63,102 @@
         .details-actions #toggle-fullscreen-btn .fa-expand { display: inline-block; }
         .details-actions #toggle-fullscreen-btn.fs-active .fa-expand { display: none; }
         .details-actions #toggle-fullscreen-btn.fs-active::before { content: '\f066'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 6px; }
+
+        /* Vubiquity Header Enhancements */
+        .header {
+            background: linear-gradient(135deg, var(--bg-surface), var(--bg-primary)) !important;
+            border-bottom: 2px solid var(--vubiquity-orange) !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 107, 66, 0.1) !important;
+        }
+        .header h1 i { color: var(--vubiquity-orange) !important; }
+        .status-dot { 
+            background: var(--vubiquity-orange) !important; 
+            box-shadow: 0 0 8px rgba(255, 107, 66, 0.5) !important;
+        }
+
+        /* Vubiquity Button Enhancements */
+        .analyze-btn:not(:disabled) {
+            background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-orange-hover)) !important;
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.3) !important;
+        }
+        .analyze-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, var(--vubiquity-orange-hover), var(--vubiquity-orange)) !important;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(255, 107, 66, 0.4) !important;
+        }
+
+        /* Batch control buttons - Vubiquity style */
+        .batch-controls button {
+            transition: all 0.2s ease;
+        }
+        .batch-controls button:hover:not(:disabled) {
+            background: var(--vubiquity-orange) !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.3);
+        }
+
+        /* Active nav/toggle states */
+        .method-item.active,
+        .toggle-item.active {
+            border-color: var(--vubiquity-orange) !important;
+            box-shadow: 0 0 0 1px rgba(255, 107, 66, 0.3) !important;
+        }
+
+        /* Toggle switch - Vubiquity orange */
+        .toggle-switch input[type="checkbox"]:checked + .toggle-slider {
+            background-color: var(--vubiquity-orange) !important;
+            border-color: var(--vubiquity-orange-hover) !important;
+            box-shadow: 0 0 8px rgba(255, 107, 66, 0.3) !important;
+        }
+
+        /* Focus rings - Vubiquity orange */
+        *:focus-visible {
+            outline: 2px solid var(--vubiquity-orange) !important;
+            outline-offset: 2px !important;
+        }
+
+        /* File browser folder icons */
+        .file-item.folder i { color: var(--vubiquity-orange) !important; }
+        .file-item.selected { background: var(--vubiquity-orange) !important; }
+
+        /* Detail action buttons */
+        .detail-action-btn:hover {
+            background: var(--vubiquity-orange) !important;
+            color: white !important;
+        }
+
+        /* Quadrant headers */
+        .quadrant-header h2 i { color: var(--vubiquity-orange) !important; }
+        
+        /* Config section headers */
+        .config-header h3 i { color: var(--vubiquity-orange) !important; }
+
+        /* View tabs */
+        .view-tab.active {
+            background: var(--vubiquity-orange) !important;
+            color: white !important;
+        }
+
+        /* Expand button when active */
+        .expand-btn.expanded {
+            background: var(--vubiquity-orange) !important;
+            border-color: var(--vubiquity-orange) !important;
+            box-shadow: 0 0 12px rgba(255, 107, 66, 0.4) !important;
+        }
+        .expand-btn:hover:not(:disabled) {
+            background: var(--vubiquity-orange) !important;
+            border-color: var(--vubiquity-orange) !important;
+        }
+
+        /* Batch details border */
+        .batch-details {
+            border: 2px solid var(--vubiquity-orange) !important;
+            box-shadow: 0 4px 12px rgba(255, 107, 66, 0.1) !important;
+        }
+
+        /* Links */
+        a { color: var(--vubiquity-blue); }
+        a:hover { color: var(--vubiquity-blue-hover); }
     </style>
 </head>
 <body>
