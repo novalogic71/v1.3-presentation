@@ -10,11 +10,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV MOUNT_PATH=/mnt/data
 ENV PORT_API=8000
 ENV PORT_UI=3002
+ENV PYTHONPATH=/app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    ffprobe \
     libsndfile1 \
     libasound2-dev \
     portaudio19-dev \
@@ -67,4 +67,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run startup script
 CMD ["/bin/bash", "/app/start.sh"]
-

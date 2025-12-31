@@ -15,7 +15,12 @@ from flask_cors import CORS
 import logging
 import mimetypes
 import json as _json
+from typing import Any
 from sync_analyzer.analysis import analyze
+try:
+    import numpy as np
+except Exception:  # pragma: no cover - optional dependency for JSON coercion
+    np = None
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +46,11 @@ ALLOWED_EXTENSIONS = {
     ".mp4",
     ".avi",
     ".mkv",
+    ".mxf",
+    ".ec3",
+    ".eac3",
+    ".adm",
+    ".iab",
 }
 
 
@@ -57,12 +67,28 @@ def is_safe_path(path):
 def get_file_type(filepath):
     """Determine file type based on extension"""
     ext = Path(filepath).suffix.lower()
-    if ext in {".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg"}:
+    if ext in {".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".ec3", ".eac3", ".adm", ".iab"}:
         return "audio"
-    elif ext in {".mov", ".mp4", ".avi", ".mkv", ".wmv"}:
+    elif ext in {".mov", ".mp4", ".avi", ".mkv", ".wmv", ".mxf"}:
         return "video"
     else:
         return "file"
+
+
+def _json_safe(value: Any) -> Any:
+    """Coerce numpy/scalar types into JSON-serializable values."""
+    if np is not None:
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, Path):
+        return str(value)
+    return value
 
 
 def _hash_for_proxy(path: str) -> str:
@@ -83,6 +109,41 @@ def _ensure_wav_proxy(src_path: str, role: str) -> str:
     out_path = os.path.join(PROXY_CACHE_DIR, base)
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
+    
+    # Atmos-aware extraction (matches atmos-support branch behavior)
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+        if is_atmos_file(src_path):
+            logger.info(f"Detected Atmos file, using specialized extraction: {Path(src_path).name}")
+            temp_atmos_path = out_path + ".atmos_temp.wav"
+            extract_atmos_bed_stereo(src_path, temp_atmos_path, sample_rate=48000)
+            if os.path.exists(temp_atmos_path) and os.path.getsize(temp_atmos_path) > 0:
+                norm_cmd = [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    temp_atmos_path,
+                    "-acodec",
+                    "pcm_s16le",
+                    out_path,
+                ]
+                logger.info(f"Transcoding Atmos proxy (role={role}): {' '.join(norm_cmd)}")
+                norm_result = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=300)
+                try:
+                    os.remove(temp_atmos_path)
+                except Exception:
+                    pass
+                if norm_result.returncode == 0 and os.path.exists(out_path):
+                    logger.info(f"Atmos proxy created: {out_path}")
+                    return out_path
+                logger.error(f"Atmos transcode failed: {norm_result.stderr}")
+    except ImportError as e:
+        logger.warning(f"Atmos detection unavailable: {e}, falling back to ffmpeg")
+    except Exception as e:
+        logger.warning(f"Atmos extraction failed: {e}, falling back to ffmpeg")
     # Transcode to WAV 48k stereo for Chrome/WebAudio compatibility
     cmd = [
         "ffmpeg",
@@ -193,9 +254,13 @@ def api_v1_files_proxy_audio():
 
     Defaults to WAV (PCM) for maximum compatibility. Supports format query:
     - format=wav | mp4 | aac | webm | opus
+    - max_duration=600 (optional, limit output to N seconds for preview, default 600 = 10 min)
     """
     path = request.args.get("path", type=str)
     fmt = (request.args.get("format", "wav") or "wav").lower()
+    max_duration = request.args.get("max_duration", type=int, default=600)
+    if max_duration is None or max_duration <= 0:
+        max_duration = 600
     if not path:
         return jsonify({"success": False, "error": "Missing path"}), 400
     if not is_safe_path(path):
@@ -204,6 +269,21 @@ def api_v1_files_proxy_audio():
         return jsonify({"success": False, "error": "File not found"}), 404
     if fmt not in {"wav", "mp4", "webm", "opus", "aac"}:
         return jsonify({"success": False, "error": "Unsupported target format"}), 400
+
+    temp_wav_path = None
+    source_path = path
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+        import tempfile as _tempfile
+        if is_atmos_file(path):
+            logger.info(f"[PROXY-AUDIO] Detected Atmos file for streaming: {os.path.basename(path)}")
+            temp_wav_path = _tempfile.mktemp(suffix=".wav", prefix="proxy_atmos_stream_")
+            extract_atmos_bed_stereo(path, temp_wav_path, sample_rate=48000)
+            if os.path.exists(temp_wav_path):
+                source_path = temp_wav_path
+                logger.info(f"[PROXY-AUDIO] Atmos proxy WAV created for streaming: {temp_wav_path}")
+    except Exception as e:
+        logger.warning(f"[PROXY-AUDIO] Atmos detection/extraction failed: {e}, falling back to direct ffmpeg")
 
     try:
         import subprocess
@@ -214,7 +294,9 @@ def api_v1_files_proxy_audio():
             "-loglevel",
             "error",
             "-i",
-            path,
+            source_path,
+            "-t",
+            str(max_duration),
             "-vn",
             "-ac",
             "2",
@@ -247,6 +329,14 @@ def api_v1_files_proxy_audio():
 
         proc = subprocess.Popen(args, stdout=subprocess.PIPE)
 
+        def cleanup_temp():
+            if temp_wav_path and os.path.exists(temp_wav_path):
+                try:
+                    os.remove(temp_wav_path)
+                    logger.info(f"[PROXY-AUDIO] Cleaned up temp Atmos WAV: {temp_wav_path}")
+                except Exception as e:
+                    logger.warning(f"[PROXY-AUDIO] Failed to clean up temp WAV: {e}")
+
         def generate():
             try:
                 while True:
@@ -263,6 +353,7 @@ def api_v1_files_proxy_audio():
                     proc.terminate()
                 except Exception:
                     pass
+                cleanup_temp()
 
         return app.response_class(generate(), mimetype=media_type)
     except FileNotFoundError:
@@ -390,7 +481,7 @@ def analyze_sync():
         enable_gpu = data.get("enableGpu")
         use_gpu = (enable_gpu is True) or (enable_gpu is None and ai_enabled)
 
-        consensus, _, _ = analyze(
+        consensus, sync_results, ai_result = analyze(
             Path(master_path),
             Path(dub_path),
             methods=regular_methods,
@@ -403,12 +494,36 @@ def analyze_sync():
         if ai_enabled:
             method_list.append("ai")
 
+        # Build method_results array with all individual method results
+        method_results = []
+        for method_name, method_result in sync_results.items():
+            method_results.append({
+                "method": method_name,
+                "offset_seconds": getattr(method_result, 'offset_seconds', 0),
+                "confidence": getattr(method_result, 'confidence', 0),
+                "quality_score": getattr(method_result, 'quality_score', 0),
+            })
+
+        # Add AI result if available
+        if ai_result:
+            method_results.append({
+                "method": "ai",
+                "offset_seconds": getattr(ai_result, 'offset_seconds', 0),
+                "confidence": getattr(ai_result, 'confidence', 0),
+                "quality_score": getattr(ai_result, 'quality_score', 0),
+            })
+
         result_data = {
             "offset_seconds": consensus.offset_seconds,
             "confidence": consensus.confidence,
             "quality_score": consensus.quality_score,
             "method_used": consensus.method_used,
             "analysis_methods": method_list,
+            "method_results": method_results,
+            "consensus_offset": {
+                "offset_seconds": consensus.offset_seconds,
+                "confidence": consensus.confidence,
+            },
             "per_channel_results": {},
             "recommendations": [],
             "technical_details": {
@@ -422,7 +537,7 @@ def analyze_sync():
             f"Analysis results: {result_data['method_used']} | Methods: {result_data['analysis_methods']} | Offset: {result_data['offset_seconds']:.3f}s"
         )
 
-        return jsonify({"success": True, "result": result_data})
+        return jsonify({"success": True, "result": _json_safe(result_data)})
 
     except Exception as e:
         logger.error(f"Analysis error: {e}")

@@ -481,3 +481,26 @@
         max-height: 200px;
     }
 }
+/* Raw Analysis Data JSON Display */
+.json-display {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 16px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.json-container {
+    margin-top: 12px;
+}
+
+.analysis-json-data {
+    padding: 8px 0;
+}

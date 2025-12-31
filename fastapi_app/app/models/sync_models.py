@@ -145,6 +145,11 @@ class SyncAnalysisRequest(BaseModel):
         le=1.0,
         description="Confidence threshold for reliable detection"
     )
+    frame_rate: Optional[float] = Field(
+        default=None,
+        ge=1.0,
+        description="Optional frame rate override for timecode conversions"
+    )
     generate_plots: bool = Field(default=True, description="Generate visualization plots")
     output_format: str = Field(default="json", description="Output format (json, text, both)")
     # Multi-channel handling
@@ -208,6 +213,7 @@ class SyncAnalysisRequest(BaseModel):
                 "sample_rate": 22050,
                 "window_size": 30.0,
                 "confidence_threshold": 0.8,
+                "frame_rate": 23.976,
                 "generate_plots": True,
                 "output_format": "json",
                 "channel_strategy": "mono_downmix"

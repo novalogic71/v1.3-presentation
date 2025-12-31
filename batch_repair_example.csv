@@ -1,0 +1,5 @@
+master_file,dub_file,episode_name,auto_repair,keep_duration,notes
+/mnt/data/path/to/master1.mov,/mnt/data/path/to/dub1.mov,Episode 1,true,true,Auto-repair enabled
+/mnt/data/path/to/master2.mov,/mnt/data/path/to/dub2.mov,Episode 2,true,false,Auto-repair with duration change allowed
+/mnt/data/path/to/master3.mov,/mnt/data/path/to/dub3.mov,Episode 3,false,true,Manual repair - review first
+/mnt/data/path/to/master4.mov,/mnt/data/path/to/dub4.mov,Episode 4,false,true,Manual repair

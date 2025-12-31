@@ -52,3 +52,58 @@
 - BACKEND: Detects offset in seconds (universal unit)
 - FRONTEND: Converts seconds to frames using detected video frame rate
 - BRANCH: All fixes committed to v1.2 branch (commit a9026fa)
+
+# Critical Fixes (December 2025) - v1.3
+
+## Raw Analysis Data Display Fix
+- FIXED: Raw Analysis Data section in batch details was empty in Docker container
+- ISSUE: Flask server endpoint only returned simplified analysis results without method_results
+- ROOT CAUSE: server.py discarded sync_results and ai_result from analyze() function
+- SOLUTION: Modified server.py to capture and include all method results in API response
+
+### Files Modified:
+- **web_ui/server.py:393** - Changed `consensus, _, _ = analyze(...)` to capture all results
+  - Now captures: `consensus, sync_results, ai_result = analyze(...)`
+  - Builds `method_results` array with individual method results (MFCC, onset, spectral, correlation, AI)
+  - Adds `consensus_offset` object to response
+
+- **web_ui/operator-console.css** - Added JSON display styling
+  - Dark theme styling for `.json-display` pre element
+  - Monospace font, scrolling, proper padding
+
+- **web_ui/styles/redesign.css** - Added force-display CSS rules
+  - Ensures expanded sections display content with `!important` overrides
+  - Added min-height to prevent content collapse
+
+### Data Structure Returned:
+```javascript
+{
+  "method_results": [
+    {"method": "mfcc", "offset_seconds": -15.023, "confidence": 1.0, "quality_score": 0.54},
+    {"method": "onset", "offset_seconds": -15.023, "confidence": 1.0, "quality_score": 1.0},
+    {"method": "spectral", "offset_seconds": -15.023, "confidence": 1.0, "quality_score": 1.0},
+    {"method": "correlation", "offset_seconds": -15.024, "confidence": 1.0, "quality_score": 1.0},
+    {"method": "ai", "offset_seconds": -8.0, "confidence": 0.999, "quality_score": 0.0}
+  ],
+  "consensus_offset": {
+    "offset_seconds": -15.023,
+    "confidence": 1.0
+  }
+}
+```
+
+## Docker Image Creation
+- CREATED: Production Docker image with GPU support
+- IMAGE: v13-presentation-sync-analyzer:latest (ID: a17a5bb2c0ac)
+- FEATURES:
+  - Multi-GPU support (NVIDIA) with automatic workload distribution
+  - FastAPI backend (port 8000) + Flask web UI (port 3002)
+  - Persistent volumes for uploads, models, logs, reports, sync data
+  - Health checks for both services
+  - Auto-restart unless stopped
+
+### Docker Compose Configuration:
+- GPU Support: All NVIDIA GPUs enabled with full capabilities
+- Volumes: 10 persistent volume mounts including raw analysis data
+- Network: Bridge network for service communication
+- Environment: GPU enabled, 48GB+ models cached

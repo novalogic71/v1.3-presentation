@@ -264,7 +264,10 @@ class SyncAnalyzerUI {
             aiConfig: document.getElementById('ai-config'),
             // Batch processing elements
             addToBatch: document.getElementById('add-to-batch'),
+            uploadCsvBatch: document.getElementById('upload-csv-batch'),
+            csvFileInput: document.getElementById('csv-file-input'),
             processBatch: document.getElementById('process-batch'),
+            repairAllBatch: document.getElementById('repair-all-batch'),
             clearBatch: document.getElementById('clear-batch'),
             queueCount: document.getElementById('queue-count'),
             completedCount: document.getElementById('completed-count'),
@@ -328,7 +331,10 @@ class SyncAnalyzerUI {
         
         // Batch processing events
         this.elements.addToBatch.addEventListener('click', () => this.addToBatchQueue());
+        this.elements.uploadCsvBatch.addEventListener('click', () => this.elements.csvFileInput.click());
+        this.elements.csvFileInput.addEventListener('change', (e) => this.handleCsvUpload(e));
         this.elements.processBatch.addEventListener('click', () => this.processBatchQueue());
+        this.elements.repairAllBatch.addEventListener('click', () => this.repairAllCompleted());
         this.elements.clearBatch.addEventListener('click', () => this.clearBatchQueue());
         this.elements.closeDetails.addEventListener('click', () => this.closeBatchDetails());
         
@@ -1075,6 +1081,15 @@ class SyncAnalyzerUI {
             newItem.frameRate = this.detectedFrameRate; // Store detected frame rate with the item
             this.updateBatchTableRow(newItem);
             await this.persistBatchQueue().catch(() => {});
+
+            // Auto-repair if enabled from CSV upload
+            if (newItem.autoRepair) {
+                this.addLog('info', `Auto-repair enabled for: ${newItem.dub.name}`);
+                // Delay slightly to ensure UI updates are visible
+                setTimeout(() => {
+                    this.repairBatchItem(newItem.id.toString(), 'auto');
+                }, 500);
+            }
 
             // Prepare browser-compatible audio proxies for playback (with timeout + fallback)
             try {
@@ -2135,7 +2150,165 @@ class SyncAnalyzerUI {
         
         return batchItem;
     }
-    
+
+    // Handle CSV file upload for batch processing
+    async handleCsvUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Reset the file input so the same file can be selected again
+        event.target.value = '';
+
+        this.addLog('info', `Reading CSV file: ${file.name}`);
+
+        try {
+            const text = await file.text();
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+
+            if (lines.length === 0) {
+                this.addLog('error', 'CSV file is empty');
+                return;
+            }
+
+            // Parse header
+            const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+            const masterIdx = header.indexOf('master_file');
+            const dubIdx = header.indexOf('dub_file');
+            const episodeIdx = header.indexOf('episode_name');
+            const autoRepairIdx = header.indexOf('auto_repair');
+            const keepDurationIdx = header.indexOf('keep_duration');
+
+            if (masterIdx === -1 || dubIdx === -1) {
+                this.addLog('error', 'CSV must contain "master_file" and "dub_file" columns');
+                this.addLog('info', 'Expected format: master_file,dub_file,episode_name,auto_repair,keep_duration,notes');
+                return;
+            }
+
+            // Parse data rows
+            const items = [];
+            const errors = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i];
+                if (!line) continue;
+
+                const values = this.parseCsvLine(line);
+                const masterPath = values[masterIdx]?.trim();
+                const dubPath = values[dubIdx]?.trim();
+                const episodeName = episodeIdx >= 0 ? values[episodeIdx]?.trim() : '';
+
+                // Parse repair settings (default to false for auto_repair, true for keep_duration)
+                const autoRepairStr = autoRepairIdx >= 0 ? values[autoRepairIdx]?.trim().toLowerCase() : '';
+                const keepDurationStr = keepDurationIdx >= 0 ? values[keepDurationIdx]?.trim().toLowerCase() : '';
+
+                const autoRepair = autoRepairStr === 'true' || autoRepairStr === '1' || autoRepairStr === 'yes';
+                const keepDuration = keepDurationStr === 'false' || keepDurationStr === '0' || keepDurationStr === 'no' ? false : true;
+
+                if (!masterPath || !dubPath) {
+                    errors.push(`Line ${i + 1}: Missing master or dub file path`);
+                    continue;
+                }
+
+                // Extract file names from paths
+                const masterName = masterPath.split('/').pop();
+                const dubName = dubPath.split('/').pop();
+
+                items.push({
+                    master: { name: masterName, path: masterPath },
+                    dub: { name: dubName, path: dubPath },
+                    episodeName: episodeName || `${masterName} + ${dubName}`,
+                    autoRepair: autoRepair,
+                    keepDuration: keepDuration
+                });
+            }
+
+            if (errors.length > 0) {
+                this.addLog('warning', `CSV parsing errors (${errors.length}):`);
+                errors.slice(0, 5).forEach(err => this.addLog('warning', err));
+                if (errors.length > 5) {
+                    this.addLog('warning', `... and ${errors.length - 5} more errors`);
+                }
+            }
+
+            if (items.length === 0) {
+                this.addLog('error', 'No valid items found in CSV');
+                return;
+            }
+
+            // Add items to batch queue
+            let addedCount = 0;
+            let skippedCount = 0;
+
+            for (const item of items) {
+                // Check for duplicates
+                const duplicate = this.batchQueue.find(qi =>
+                    qi.master.path === item.master.path &&
+                    qi.dub.path === item.dub.path
+                );
+
+                if (duplicate) {
+                    skippedCount++;
+                    continue;
+                }
+
+                const batchItem = {
+                    id: Date.now() + addedCount, // Ensure unique IDs
+                    master: item.master,
+                    dub: item.dub,
+                    status: 'queued',
+                    progress: 0,
+                    result: null,
+                    error: null,
+                    timestamp: new Date().toISOString(),
+                    autoRepair: item.autoRepair || false,
+                    keepDuration: item.keepDuration !== undefined ? item.keepDuration : true
+                };
+
+                this.batchQueue.push(batchItem);
+                addedCount++;
+
+                // Small delay to ensure unique timestamps
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+
+            this.updateBatchTable();
+            this.updateBatchSummary();
+            await this.persistBatchQueue();
+
+            this.addLog('success', `CSV loaded: ${addedCount} items added to batch queue`);
+            if (skippedCount > 0) {
+                this.addLog('info', `Skipped ${skippedCount} duplicate items`);
+            }
+
+        } catch (error) {
+            this.addLog('error', `Failed to parse CSV: ${error.message}`);
+            console.error('CSV upload error:', error);
+        }
+    }
+
+    // Parse a CSV line handling quoted values
+    parseCsvLine(line) {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                values.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+
+        values.push(current); // Push the last value
+        return values;
+    }
+
     // Debug method to add a test entry with results
     addTestBatchEntry() {
         const testItem = {
@@ -2496,7 +2669,7 @@ class SyncAnalyzerUI {
         }
     }
     
-    toggleBatchDetails(item) {
+    async toggleBatchDetails(item) {
         if (!item.result) {
             this.addLog('warning', 'No analysis results available to display');
             return;
@@ -2529,8 +2702,26 @@ class SyncAnalyzerUI {
         // Update subtitle
         this.elements.detailsSubtitle.textContent = `${item.master.name} vs ${item.dub.name}`;
 
-        // Generate detailed analysis view
-        const result = item.result;
+        // Fetch full analysis data to ensure we have complete raw data
+        let result = item.result;
+        if (item.analysisId && (!result.method_results || !result.consensus_offset)) {
+            try {
+                this.addLog('info', 'Fetching complete analysis data...');
+                const response = await fetch(`${this.FASTAPI_BASE}/analysis/${item.analysisId}`);
+                if (response.ok) {
+                    const fullData = await response.json();
+                    if (fullData.success && fullData.result) {
+                        result = fullData.result;
+                        item.result = result; // Cache the full result
+                        console.log('Fetched complete analysis data with method_results:', result);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to fetch complete analysis data:', error);
+                this.addLog('warning', 'Could not load complete analysis data, showing cached results');
+            }
+        }
+
         console.log('Expanding item result:', result);
         console.log('Full item:', item);
 
@@ -2645,6 +2836,11 @@ class SyncAnalyzerUI {
      * Generate enhanced details view with new design
      */
     generateEnhancedDetailsView(item, result, offsetSeconds, confidence, methodDisplayName, qualityScore, offsetFrames, itemFps) {
+        // Debug logging
+        console.log('[generateEnhancedDetailsView] result object:', result);
+        console.log('[generateEnhancedDetailsView] result has method_results?', !!result?.method_results);
+        console.log('[generateEnhancedDetailsView] result has consensus_offset?', !!result?.consensus_offset);
+
         // Determine confidence badge
         const confidenceBadge = confidence > 0.8 ? 'high-confidence' : confidence > 0.5 ? 'medium-confidence' : 'low-confidence';
         const confidenceText = confidence > 0.8 ? 'High Confidence' : confidence > 0.5 ? 'Medium Confidence' : 'Low Confidence';
@@ -2761,7 +2957,7 @@ class SyncAnalyzerUI {
                     <div class="section-content">
                         <div class="analysis-json-data">
                             <div class="json-container">
-                                <pre class="json-display">${JSON.stringify(result, null, 2)}</pre>
+                                <pre class="json-display">${result ? JSON.stringify(result, null, 2) : 'No raw analysis data available'}</pre>
                             </div>
                         </div>
                     </div>
@@ -3120,9 +3316,9 @@ class SyncAnalyzerUI {
         
         try {
             this.addLog('info', `Starting ${mode} repair for: ${item.dub.name}`);
-            // Decide keep duration from UI toggle if present
+            // Decide keep duration from UI toggle if present, otherwise use item setting from CSV
             const keepToggle = document.getElementById(`keep-duration-${item.id}`);
-            const keepDuration = keepToggle ? !!keepToggle.checked : true;
+            const keepDuration = keepToggle ? !!keepToggle.checked : (item.keepDuration !== undefined ? item.keepDuration : true);
 
             // Prefer per-channel offsets from analysis; otherwise synthesize uniform mapping
             const res = item.result || {};
@@ -3163,7 +3359,82 @@ class SyncAnalyzerUI {
             this.addLog('error', `Repair error: ${error.message}`);
         }
     }
-    
+
+    // Repair all completed batch items
+    async repairAllCompleted() {
+        const completedItems = this.batchQueue.filter(item =>
+            item.status === 'completed' &&
+            item.result &&
+            !item.repaired
+        );
+
+        if (completedItems.length === 0) {
+            this.addLog('warning', 'No completed analyses available to repair');
+            return;
+        }
+
+        this.addLog('info', `Starting batch repair for ${completedItems.length} completed items...`);
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const item of completedItems) {
+            try {
+                this.addLog('info', `Repairing: ${item.dub.name}`);
+
+                // Use keepDuration from item if set, otherwise default to true
+                const keepDuration = item.keepDuration !== undefined ? item.keepDuration : true;
+
+                // Prepare per-channel offsets
+                const res = item.result || {};
+                const per = res.per_channel_results && typeof res.per_channel_results === 'object' && Object.keys(res.per_channel_results).length
+                    ? res.per_channel_results
+                    : (() => {
+                        const off = Number(item.result.offset_seconds || 0) || 0;
+                        const roles = ['FL','FR','FC','LFE','SL','SR','S0','S1','S2','S3','S4','S5'];
+                        const m = {};
+                        roles.forEach(r => m[r] = { offset_seconds: off });
+                        return m;
+                    })();
+
+                // Call repair API
+                const response = await fetch(`${this.FASTAPI_BASE}/repair/repair/per-channel`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_path: item.dub.path,
+                        per_channel_results: per,
+                        keep_duration: keepDuration
+                    })
+                });
+
+                const result = await response.json().catch(() => ({}));
+
+                if (response.ok && result && result.success) {
+                    this.addLog('success', `Repaired: ${result.output_file}`);
+                    item.repaired = true;
+                    item.repairedFile = result.output_file;
+                    this.updateBatchTableRow(item);
+                    successCount++;
+                } else {
+                    const err = result && result.error ? result.error : `${response.status}`;
+                    this.addLog('error', `Repair failed for ${item.dub.name}: ${err}`);
+                    failCount++;
+                }
+
+                // Small delay between repairs to avoid overwhelming the server
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+            } catch (error) {
+                this.addLog('error', `Repair error for ${item.dub.name}: ${error.message}`);
+                failCount++;
+            }
+        }
+
+        this.addLog('success', `Batch repair complete: ${successCount} succeeded, ${failCount} failed`);
+        await this.persistBatchQueue().catch(() => {});
+    }
+
     // Configuration methods
     initializeConfiguration() {
         this.updateConfidenceValue();

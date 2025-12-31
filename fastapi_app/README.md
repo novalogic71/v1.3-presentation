@@ -174,7 +174,8 @@ PORT=8000
 # Security
 SECRET_KEY=your-super-secret-key-change-in-production
 ALLOWED_HOSTS=["*"]
-ALLOWED_ORIGINS=["http://localhost:3000", "http://localhost:8000"]
+ALLOWED_ORIGINS=["http://localhost:3000", "http://localhost:3002", "http://localhost:8000"]
+# The API also auto-allows same-host UI origins on ports 3000/3002.
 
 # File system
 MOUNT_PATH=/mnt/data

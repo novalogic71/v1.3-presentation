@@ -230,6 +230,7 @@ class SyncAnalyzerService:
                     status=AnalysisStatus.COMPLETED,
                     consensus_offset=SyncOffset(
                         offset_seconds=db_result["consensus_offset_seconds"],
+                        offset_milliseconds=db_result["consensus_offset_seconds"] * 1000.0,
                         offset_samples=offset_samples,
                         confidence=db_result["confidence_score"]
                     ),
@@ -367,6 +368,7 @@ class SyncAnalyzerService:
                 processing_time=result["processing_time"],
                 created_at=analysis_record["created_at"],
                 completed_at=datetime.utcnow(),
+                frame_rate=request.frame_rate,
                 overall_confidence=result["overall_confidence"],
                 method_agreement=result["method_agreement"],
                 sync_status=result["sync_status"],
@@ -510,6 +512,7 @@ class SyncAnalyzerService:
                 offset_frames = {str(fps): offset_seconds * fps for fps in frame_rates}
                 offset = SyncOffset(
                     offset_seconds=offset_seconds,
+                    offset_milliseconds=offset_seconds * 1000.0,
                     offset_samples=int(offset_seconds * request.sample_rate),
                     offset_frames=offset_frames,
                     confidence=confidence,
@@ -658,9 +661,10 @@ class SyncAnalyzerService:
             # Calculate frame offsets for common frame rates
             frame_rates = [23.976, 24.0, 25.0, 29.97, 30.0]
             offset_frames = {str(fps): offset_seconds * fps for fps in frame_rates}
-            
+
             offset = SyncOffset(
                 offset_seconds=offset_seconds,
+                offset_milliseconds=offset_seconds * 1000.0,
                 offset_samples=int(offset_seconds * request.sample_rate),
                 offset_frames=offset_frames,
                 confidence=confidence
@@ -676,7 +680,8 @@ class SyncAnalyzerService:
                 metadata={
                     "method": sync_method,
                     "sample_rate": request.sample_rate,
-                    "window_size": request.window_size
+                    "window_size": request.window_size,
+                    "confidence_threshold": request.confidence_threshold
                 }
             )
             
@@ -752,8 +757,10 @@ class SyncAnalyzerService:
             ai_result = requested_ai.detect_sync(
                 master_audio,
                 dub_audio,
-                # Use embedding sample rate for window/sample conversions
-                sr=16000,
+                # IMPORTANT: Use the ACTUAL audio sample rate, not the embedding rate
+                # The AI detector will resample internally, but offset calculations
+                # must be based on the audio sample rate we loaded
+                sr=request.sample_rate,
                 progress_callback=ai_progress_callback
             )
             
@@ -786,9 +793,10 @@ class SyncAnalyzerService:
         # Calculate frame offsets for common frame rates
         frame_rates = [23.976, 24.0, 25.0, 29.97, 30.0]
         offset_frames = {str(fps): offset_seconds * fps for fps in frame_rates}
-        
+
         offset = SyncOffset(
             offset_seconds=offset_seconds,
+            offset_milliseconds=offset_seconds * 1000.0,
             offset_samples=offset_samples,
             offset_frames=offset_frames,
             confidence=ai_result.model_confidence
@@ -808,38 +816,47 @@ class SyncAnalyzerService:
         )
     
     def _calculate_consensus_offset(self, method_results: List[MethodResult]) -> SyncOffset:
-        """Calculate consensus offset across all methods."""
+        """Calculate consensus offset across all methods.
+
+        IMPORTANT: Prioritizes CORRELATION method for sample-accurate results.
+        AI has ±500ms precision (hop_size), so it's excluded from consensus.
+        """
         if not method_results:
             raise AnalysisError("No method results available for consensus calculation")
-        
-        # Weighted average based on confidence scores
-        total_weight = 0.0
-        weighted_offset = 0.0
-        weighted_confidence = 0.0
-        
-        for result in method_results:
-            weight = result.quality_score
-            total_weight += weight
-            weighted_offset += result.offset.offset_seconds * weight
-            weighted_confidence += result.offset.confidence * weight
-        
-        if total_weight == 0:
-            # Fallback to simple average
-            avg_offset = sum(r.offset.offset_seconds for r in method_results) / len(method_results)
-            avg_confidence = sum(r.offset.confidence for r in method_results) / len(method_results)
+
+        # Exclude AI from consensus unless it's the only available result
+        non_ai_results = [r for r in method_results if r.method != AnalysisMethod.AI]
+        if not non_ai_results:
+            logger.warning("Only AI results available - using AI despite low precision")
+            non_ai_results = method_results
+
+        # Mirror ProfessionalSyncDetector consensus: prefer correlation, otherwise best confidence
+        threshold = None
+        for result in non_ai_results:
+            threshold = result.metadata.get("confidence_threshold")
+            if threshold is not None:
+                break
+        if threshold is None:
+            threshold = 0.3
+
+        high_confidence = [r for r in non_ai_results if r.offset.confidence >= threshold]
+        if high_confidence:
+            correlation = next((r for r in high_confidence if r.method == AnalysisMethod.CORRELATION), None)
+            best_result = correlation or max(high_confidence, key=lambda r: r.offset.confidence)
         else:
-            avg_offset = weighted_offset / total_weight
-            avg_confidence = weighted_confidence / total_weight
-        
-        # Use the first result's metadata for frame calculations
-        first_result = method_results[0]
-        sample_rate = first_result.metadata.get("sample_rate", 22050)
-        
+            best_result = max(non_ai_results, key=lambda r: r.offset.confidence)
+
+        logger.info(
+            f"Consensus using {best_result.method.value} "
+            f"({best_result.offset.confidence:.3f}): {best_result.offset.offset_seconds:.4f}s"
+        )
+
         return SyncOffset(
-            offset_seconds=avg_offset,
-            offset_samples=int(avg_offset * sample_rate),
-            offset_frames=first_result.offset.offset_frames,
-            confidence=avg_confidence
+            offset_seconds=best_result.offset.offset_seconds,
+            offset_milliseconds=best_result.offset.offset_seconds * 1000.0,
+            offset_samples=best_result.offset.offset_samples,
+            offset_frames=best_result.offset.offset_frames,
+            confidence=best_result.offset.confidence
         )
     
     def _calculate_overall_confidence(self, method_results: List[MethodResult]) -> float:
@@ -922,6 +939,7 @@ class SyncAnalyzerService:
             status=AnalysisStatus.CANCELLED,
             consensus_offset=SyncOffset(
                 offset_seconds=0.0,
+                offset_milliseconds=0.0,
                 offset_samples=0,
                 offset_frames={},
                 confidence=0.0
@@ -949,6 +967,7 @@ class SyncAnalyzerService:
             status=AnalysisStatus.FAILED,
             consensus_offset=SyncOffset(
                 offset_seconds=0.0,
+                offset_milliseconds=0.0,
                 offset_samples=0,
                 offset_frames={},
                 confidence=0.0

@@ -339,7 +339,9 @@ async def probe_file(path: str = Query(..., description="Absolute path under mou
 @router.get("/proxy-audio")
 async def proxy_audio(
     path: str = Query(..., description="Absolute path under mount to transcode/stream as browser-friendly audio"),
-    format: str = Query("wav", description="Output format: wav|mp4|webm|opus|aac")
+    format: str = Query("wav", description="Output format: wav|mp4|webm|opus|aac"),
+    max_duration: int = Query(600, description="Max duration in seconds for preview (default 600 = 10 min)"),
+    role: str = Query("master", description="Role: master or dub")
 ):
     """Transcode source file's audio track to a browser-friendly audio stream.
 
@@ -355,10 +357,31 @@ async def proxy_audio(
     fmt = format.lower()
     if fmt not in {"wav", "mp4", "webm", "opus", "aac"}:
         raise HTTPException(status_code=400, detail="Unsupported target format")
+    if max_duration <= 0:
+        max_duration = 600
+
+    temp_wav_path = None
+    source_path = path
+    try:
+        from sync_analyzer.core.audio_channels import is_atmos_file, extract_atmos_bed_stereo
+        import tempfile
+
+        if is_atmos_file(path):
+            logger.info(f"Detected Atmos file for proxy streaming: {os.path.basename(path)}")
+            temp_wav_path = tempfile.mktemp(suffix=".wav", prefix="proxy_atmos_")
+            extract_atmos_bed_stereo(path, temp_wav_path, sample_rate=48000)
+            if os.path.exists(temp_wav_path):
+                source_path = temp_wav_path
+                logger.info(f"Atmos proxy WAV created for streaming: {temp_wav_path}")
+            else:
+                logger.warning("Atmos extraction failed, falling back to direct ffmpeg")
+    except Exception as e:
+        logger.warning(f"Atmos detection/extraction failed: {e}, falling back to direct ffmpeg")
     try:
         import subprocess, shutil
         ffmpeg_bin = shutil.which("ffmpeg") or "/home/linuxbrew/.linuxbrew/bin/ffmpeg"
-        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", path, "-vn", "-ac", "2", "-ar", "48000"]
+        logger.info(f"Proxy audio: extracting max {max_duration}s from {os.path.basename(path)} (role={role})")
+        args = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source_path, "-t", str(max_duration), "-vn", "-ac", "2", "-ar", "48000"]
         media_type = "audio/wav"
         if fmt == "wav":
             args += ["-f", "wav", "-acodec", "pcm_s16le", "pipe:1"]
@@ -391,6 +414,11 @@ async def proxy_audio(
                     proc.terminate()
                 except Exception:
                     pass
+                if temp_wav_path and os.path.exists(temp_wav_path):
+                    try:
+                        os.remove(temp_wav_path)
+                    except Exception:
+                        pass
 
         return StreamingResponse(_iter(), media_type=media_type)
     except FileNotFoundError:

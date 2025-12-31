@@ -14,6 +14,7 @@ Version: 2.0.0
 import os
 import sys
 import logging
+import socket
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 from pathlib import Path
@@ -37,6 +38,32 @@ from app.core.middleware import RequestLoggingMiddleware, RateLimitMiddleware
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+def _local_ipv4_addresses() -> list[str]:
+    """Best-effort discovery of local IPv4s for same-host UI CORS."""
+    ips: set[str] = set()
+    try:
+        ips.update(socket.gethostbyname_ex(socket.gethostname())[2])
+    except Exception:
+        pass
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ips.add(sock.getsockname()[0])
+        sock.close()
+    except Exception:
+        pass
+    return [ip for ip in ips if ip and ":" not in ip]
+
+def _extend_allowed_origins(origins: list[str]) -> list[str]:
+    """Add same-host UI origins (ports 3000/3002) to the allow list."""
+    allowed = list(origins or [])
+    for ip in _local_ipv4_addresses():
+        for port in (3000, 3002):
+            origin = f"http://{ip}:{port}"
+            if origin not in allowed:
+                allowed.append(origin)
+    return allowed
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -152,9 +179,10 @@ def create_application() -> FastAPI:
             allow_headers=["*"],
         )
     else:
+        cors_origins = _extend_allowed_origins(settings.ALLOWED_ORIGINS)
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=settings.ALLOWED_ORIGINS,
+            allow_origins=cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
             "http://localhost:3002",
             "http://127.0.0.1:3002",
             "http://localhost:8000",
+            "http://10.124.201.10:3002",
         ],
         env="ALLOWED_ORIGINS"
     )
@@ -40,7 +41,23 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = Field(default="./uploads", env="UPLOAD_DIR")
     MAX_FILE_SIZE: int = Field(default=1024 * 1024 * 1024, env="MAX_FILE_SIZE")  # 1GB
     ALLOWED_EXTENSIONS: List[str] = Field(
-        default=[".wav", ".mp3", ".flac", ".m4a", ".aiff", ".ogg", ".mov", ".mp4", ".avi", ".mkv"],
+        default=[
+            ".wav",
+            ".mp3",
+            ".flac",
+            ".m4a",
+            ".aiff",
+            ".ogg",
+            ".mov",
+            ".mp4",
+            ".avi",
+            ".mkv",
+            ".mxf",
+            ".ec3",
+            ".eac3",
+            ".adm",
+            ".iab",
+        ],
         env="ALLOWED_EXTENSIONS"
     )
     

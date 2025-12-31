@@ -1737,3 +1737,24 @@
 .waveform-canvas-container:hover .keyboard-hint {
     opacity: 1;
 }
+
+/* Force Raw Analysis Data section to be visible when expanded */
+.details-section.expanded .section-content {
+    display: block !important;
+    min-height: 50px;
+}
+
+.details-section.expanded .analysis-json-data {
+    display: block !important;
+    min-height: 50px;
+}
+
+.details-section.expanded .json-container {
+    display: block !important;
+    min-height: 50px;
+}
+
+.details-section.expanded .json-display {
+    display: block !important;
+    min-height: 100px;
+}

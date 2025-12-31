@@ -97,6 +97,17 @@ class OptimizedLargeFileDetector:
             # Generate output filename
             base_name = os.path.splitext(os.path.basename(video_path))[0]
             audio_file = os.path.join(self.temp_dir, f"{base_name}.wav")
+
+            # Atmos-aware extraction: use the dedicated pipeline when applicable
+            try:
+                from .audio_channels import is_atmos_file, extract_atmos_bed_mono
+                if is_atmos_file(video_path):
+                    self.logger.info("Atmos content detected; extracting bed audio for chunked analysis")
+                    extract_atmos_bed_mono(video_path, audio_file, self.sample_rate)
+                    if os.path.exists(audio_file) and os.path.getsize(audio_file) > 0:
+                        return audio_file
+            except Exception as exc:
+                self.logger.warning(f"Atmos extraction failed, falling back to ffmpeg: {exc}")
             
             # Extract audio with optimized settings
             cmd = [
