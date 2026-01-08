@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Support both /files and /files/ (with and without trailing slash)
+@router.get("", response_model=FileListResponse)
 @router.get("/", response_model=FileListResponse)
 async def list_files(
     path: str = Query(settings.MOUNT_PATH, description="Directory path to list")
