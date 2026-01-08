@@ -357,14 +357,43 @@ async def list_active_jobs():
     """
     try:
         from sync_analyzer.db.job_db import list_jobs as db_list_jobs
+        from ....services.job_manager import job_manager, JobStatus
         
-        # Get pending and processing jobs
-        pending = db_list_jobs(status='pending', limit=100)
-        processing = db_list_jobs(status='processing', limit=100)
+        jobs = []
         
-        # Combine and convert
-        all_active = pending + processing
-        jobs = [_db_row_to_response(row) for row in all_active]
+        # First check in-memory job store for active background jobs
+        in_memory_jobs = job_manager.list_jobs()
+        for job in in_memory_jobs:
+            if job.status in [JobStatus.PENDING, JobStatus.PROCESSING]:
+                jobs.append(JobResponse(
+                    job_id=job.job_id,
+                    job_type=job.job_type,
+                    status=job.status.value,
+                    progress=float(job.progress),
+                    status_message=job.status_message,
+                    request_params=job.params,
+                    result_data=job.result,
+                    error_message=job.error,
+                    created_at=str(job.created_at) if job.created_at else "",
+                    started_at=None,
+                    completed_at=str(job.completed_at) if job.completed_at else None,
+                    updated_at=str(job.created_at) if job.created_at else "",
+                    server_pid=None
+                ))
+        
+        # Then check database for any other active jobs
+        try:
+            pending = db_list_jobs(status='pending', limit=100)
+            processing = db_list_jobs(status='processing', limit=100)
+            all_db_active = pending + processing
+            
+            # Add database jobs (avoiding duplicates by job_id)
+            existing_ids = {j.job_id for j in jobs}
+            for row in all_db_active:
+                if row['job_id'] not in existing_ids:
+                    jobs.append(_db_row_to_response(row))
+        except Exception as db_err:
+            logger.warning(f"Database query failed, using in-memory only: {db_err}")
         
         return JobListResponse(
             success=True,
