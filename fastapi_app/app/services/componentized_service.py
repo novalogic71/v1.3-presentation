@@ -722,8 +722,18 @@ def _run_channel_aware_analysis(
     frame_rate: float,
     job_id: str = None
 ) -> Dict[str, Any]:
-    """Run channel-aware analysis with optimal method selection per channel."""
+    """
+    Run channel-aware analysis with CONSISTENT method across all channels.
+    
+    For multi-channel audio files (MXF stems), all channels come from the same
+    source and should have the SAME offset. We use MFCC+spectral+onset on ALL
+    channels to ensure consistency, then vote for consensus.
+    """
     job_manager.update_progress(job_id, 5, "Starting channel-aware analysis...")
+    
+    # Use consistent methods across ALL components for reliable voting
+    # Using multiple methods ensures better consensus
+    consistent_methods = ['mfcc', 'spectral', 'onset']
     
     component_results = []
     total_comps = len(components)
@@ -736,12 +746,12 @@ def _run_channel_aware_analysis(
         )
         
         channel_type = detect_channel_type(comp["name"])
-        optimal_methods = get_optimal_method(channel_type)
         
         try:
+            # Use SAME methods for all components to ensure consistent offsets
             consensus, sync_results, _ = analyze(
                 Path(master_path), Path(comp["path"]),
-                methods=optimal_methods,
+                methods=consistent_methods,
             )
             
             method_results = []
@@ -757,7 +767,7 @@ def _run_channel_aware_analysis(
                 "component": comp["label"],
                 "componentName": comp["name"],
                 "channel_type": channel_type,
-                "optimal_methods": optimal_methods,
+                "optimal_methods": consistent_methods,
                 "offset_seconds": consensus.offset_seconds,
                 "confidence": consensus.confidence,
                 "quality_score": getattr(consensus, 'quality_score', 0.0),
@@ -771,7 +781,7 @@ def _run_channel_aware_analysis(
                 "component": comp["label"],
                 "componentName": comp["name"],
                 "channel_type": channel_type,
-                "optimal_methods": optimal_methods,
+                "optimal_methods": consistent_methods,
                 "offset_seconds": 0.0,
                 "confidence": 0.0,
                 "error": str(comp_err),
@@ -785,14 +795,22 @@ def _run_channel_aware_analysis(
     
     logger.info(f"Channel-aware voting: offset={voted_offset}s with {vote_count}/{total_count} agreement ({vote_agreement:.0%})")
     
+    # Apply voted offset to all components for display consistency
+    overall_offset = voted_offset
+    overall_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results) if component_results else 0.0
+    
     return {
         "offset_mode": "channel_aware",
         "voted_offset_seconds": voted_offset,
         "vote_agreement": vote_agreement,
         "vote_count": vote_count,
         "total_components": total_count,
-        "analysis_methods": ["channel_aware"],
+        "analysis_methods": consistent_methods,
         "method_used": "channel_aware (voted)",
         "component_results": component_results,
+        "overall_offset": {
+            "offset_seconds": overall_offset,
+            "confidence": overall_confidence,
+        },
     }
 
