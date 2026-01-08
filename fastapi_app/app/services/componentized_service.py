@@ -549,25 +549,54 @@ def get_optimal_method(channel_type: str) -> List[str]:
     }.get(channel_type, ['spectral'])
 
 
-def vote_for_offset(results: List[Dict[str, Any]]) -> Tuple[float, int, int]:
-    """Find most common offset across all channel results using voting."""
+def vote_for_offset(results: List[Dict[str, Any]], tolerance: float = 1.0) -> Tuple[float, int, int]:
+    """
+    Find most common offset across all channel results using cluster voting.
+    
+    Args:
+        results: List of analysis result dicts with 'offset_seconds' key
+        tolerance: Offsets within this many seconds are grouped together
+    
+    Returns:
+        (voted_offset, vote_count, total_count)
+    """
     if not results:
         return (0.0, 0, 0)
     
     offsets = [
-        round(r.get('offset_seconds', 0), 1) 
+        r.get('offset_seconds', 0)
         for r in results 
         if r.get('offset_seconds') is not None
     ]
     if not offsets:
         return (0.0, 0, len(results))
     
-    counter = Counter(offsets)
-    most_common = counter.most_common(1)
-    if most_common:
-        voted_offset, vote_count = most_common[0]
-        return (voted_offset, vote_count, len(offsets))
-    return (0.0, 0, len(offsets))
+    # Use cluster-based voting: group offsets within tolerance
+    # This handles cases like [93.1, 93.5, 93.2, 456.0] -> cluster at ~93.3
+    clusters = []
+    for offset in sorted(offsets):
+        # Try to add to existing cluster
+        added = False
+        for cluster in clusters:
+            cluster_center = sum(cluster) / len(cluster)
+            if abs(offset - cluster_center) <= tolerance:
+                cluster.append(offset)
+                added = True
+                break
+        if not added:
+            clusters.append([offset])
+    
+    # Find largest cluster
+    if not clusters:
+        return (0.0, 0, len(offsets))
+    
+    largest_cluster = max(clusters, key=len)
+    voted_offset = sum(largest_cluster) / len(largest_cluster)
+    vote_count = len(largest_cluster)
+    
+    logger.info(f"Vote clustering: {len(clusters)} clusters, largest has {vote_count} offsets around {voted_offset:.2f}s")
+    
+    return (round(voted_offset, 2), vote_count, len(offsets))
 
 
 def run_componentized_analysis(
@@ -794,6 +823,26 @@ def _run_channel_aware_analysis(
     vote_agreement = vote_count / total_count if total_count > 0 else 0.0
     
     logger.info(f"Channel-aware voting: offset={voted_offset}s with {vote_count}/{total_count} agreement ({vote_agreement:.0%})")
+    
+    # CRITICAL: When we have majority agreement (>=50%), override outliers with voted offset
+    # This ensures all channels from the same source show consistent offsets
+    if vote_agreement >= 0.5:
+        tolerance = 1.0  # seconds - offsets within 1s of voted are considered "agreeing"
+        for comp_result in component_results:
+            comp_offset = comp_result.get('offset_seconds', 0)
+            if abs(comp_offset - voted_offset) > tolerance:
+                # This component is an outlier - override with voted offset
+                original_offset = comp_offset
+                comp_result['offset_seconds'] = voted_offset
+                comp_result['original_offset_seconds'] = original_offset
+                comp_result['offset_overridden'] = True
+                comp_result['override_reason'] = f"Outlier overridden by vote ({vote_count}/{total_count} agree on {voted_offset:.1f}s)"
+                logger.warning(
+                    f"Overriding outlier offset for {comp_result.get('componentName')}: "
+                    f"{original_offset:.1f}s -> {voted_offset:.1f}s (voted consensus)"
+                )
+            else:
+                comp_result['offset_overridden'] = False
     
     # Apply voted offset to all components for display consistency
     overall_offset = voted_offset
