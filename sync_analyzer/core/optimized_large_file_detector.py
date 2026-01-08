@@ -144,7 +144,100 @@ class OptimizedLargeFileDetector:
         except Exception as e:
             self.logger.error(f"Error getting duration: {e}")
         return 0.0
-    
+
+    def detect_bars_tone(self, audio_path: str, max_search_seconds: float = 120.0) -> float:
+        """
+        Detect bars and tone (1kHz reference tone) at the head of the audio file.
+
+        Args:
+            audio_path: Path to audio file
+            max_search_seconds: Maximum duration to search for tone
+
+        Returns:
+            Timestamp in seconds where program content starts (0.0 if no tone detected)
+        """
+        try:
+            # Load first portion of audio for analysis
+            search_duration = min(max_search_seconds, self.get_audio_duration(audio_path))
+            audio, sr = sf.read(audio_path, stop=int(search_duration * self.sample_rate))
+
+            # Convert to mono if stereo
+            if len(audio.shape) > 1:
+                audio = np.mean(audio, axis=1)
+
+            # Parameters for tone detection
+            tone_freq = 1000  # 1kHz reference tone
+            freq_tolerance = 50  # ±50Hz
+            window_size = int(0.5 * sr)  # 500ms windows
+            hop_size = int(0.1 * sr)  # 100ms hop
+            min_tone_duration = 5.0  # Minimum 5 seconds
+
+            tone_detected = []
+
+            for start in range(0, len(audio) - window_size, hop_size):
+                window = audio[start:start + window_size]
+
+                # Compute FFT
+                fft = np.fft.rfft(window)
+                freqs = np.fft.rfftfreq(len(window), 1.0 / sr)
+                magnitude = np.abs(fft)
+
+                # Find peak frequency
+                peak_idx = np.argmax(magnitude[1:]) + 1
+                peak_freq = freqs[peak_idx]
+                peak_mag = magnitude[peak_idx]
+
+                # Calculate energy distribution
+                total_energy = np.sum(magnitude ** 2)
+                freq_min_idx = np.searchsorted(freqs, tone_freq - freq_tolerance)
+                freq_max_idx = np.searchsorted(freqs, tone_freq + freq_tolerance)
+                tone_band_energy = np.sum(magnitude[freq_min_idx:freq_max_idx] ** 2)
+
+                # Detect 1kHz tone
+                is_tone = (
+                    abs(peak_freq - tone_freq) < freq_tolerance and
+                    tone_band_energy > 0.3 * total_energy and
+                    peak_mag > 0.1 * np.max(magnitude)
+                )
+
+                time_seconds = start / sr
+                tone_detected.append((time_seconds, is_tone))
+
+            if not tone_detected:
+                return 0.0
+
+            # Find continuous tone region at start
+            tone_start = None
+            tone_end = None
+            consecutive_tone = 0
+            consecutive_threshold = int(min_tone_duration / 0.1)
+
+            for time_sec, is_tone in tone_detected:
+                if is_tone:
+                    if tone_start is None:
+                        tone_start = time_sec
+                    consecutive_tone += 1
+                else:
+                    if consecutive_tone >= consecutive_threshold and tone_start is not None:
+                        tone_end = time_sec
+                        break
+                    if consecutive_tone < consecutive_threshold:
+                        tone_start = None
+                    consecutive_tone = 0
+
+            if tone_start is not None and tone_start < 1.0 and tone_end is not None:
+                program_start = tone_end + 0.5
+                self.logger.info(f"Detected bars/tone from {tone_start:.1f}s to {tone_end:.1f}s, "
+                               f"program starts at {program_start:.1f}s")
+                return program_start
+
+            self.logger.info("No bars/tone detected at head of file")
+            return 0.0
+
+        except Exception as e:
+            self.logger.warning(f"Error detecting bars/tone: {e}")
+            return 0.0
+
     def create_audio_chunks(self, audio_path: str, duration: float) -> List[Tuple[float, float]]:
         """Create continuous overlapping audio chunks for drift detection"""
         chunks = []
@@ -662,7 +755,7 @@ class OptimizedLargeFileDetector:
             self.logger.error(f"Error in cross-correlation: {e}")
             return {'offset_seconds': 0.0, 'confidence': 0.0}
     
-    def analyze_sync_chunked(self, master_path: str, dub_path: str) -> Dict[str, Any]:
+    def analyze_sync_chunked(self, master_path: str, dub_path: str, skip_bars_tone: bool = True) -> Dict[str, Any]:
         """Enhanced multi-pass chunked sync analysis method"""
         self.logger.info(f"Starting intelligent multi-pass sync analysis:")
         self.logger.info(f"  Master: {os.path.basename(master_path)}")
@@ -677,28 +770,51 @@ class OptimizedLargeFileDetector:
             if not master_audio or not dub_audio:
                 return {'error': 'Failed to extract audio from video files'}
 
+            # Detect bars/tone in master file
+            master_program_start = 0.0
+            if skip_bars_tone:
+                master_program_start = self.detect_bars_tone(master_audio)
+                if master_program_start > 0:
+                    self.logger.info(f"Master has bars/tone, program starts at {master_program_start:.2f}s")
+
             # Get durations
             master_duration = self.get_audio_duration(master_audio)
             dub_duration = self.get_audio_duration(dub_audio)
 
-            self.logger.info(f"Durations - Master: {master_duration:.1f}s, Dub: {dub_duration:.1f}s")
+            # Adjust master duration to exclude bars/tone for chunk calculation
+            effective_master_duration = master_duration - master_program_start
+
+            self.logger.info(f"Durations - Master: {master_duration:.1f}s (program: {effective_master_duration:.1f}s), Dub: {dub_duration:.1f}s")
 
             # PASS 1: Coarse analysis with standard chunking
             self.logger.info("🔍 PASS 1: Coarse drift detection")
-            pass1_results = self._analyze_pass1_coarse(master_audio, dub_audio, master_duration, dub_duration)
+            pass1_results = self._analyze_pass1_coarse(
+                master_audio, dub_audio, master_duration, dub_duration,
+                master_offset=master_program_start
+            )
 
             # Determine if Pass 2 refinement is needed
             final_result = pass1_results
             if self.enable_multi_pass and self._should_perform_pass2(pass1_results):
                 self.logger.info("🎯 PASS 2: Targeted refinement triggered")
                 pass2_results = self._analyze_pass2_targeted(
-                    master_audio, dub_audio, master_duration, dub_duration, pass1_results
+                    master_audio, dub_audio, master_duration, dub_duration, pass1_results,
+                    master_offset=master_program_start
                 )
                 # Combine results from both passes
                 final_result = self._combine_multipass_results(pass1_results, pass2_results)
                 final_result['multi_pass_analysis'] = True
             else:
                 final_result['multi_pass_analysis'] = False
+
+            # Add bars/tone metadata to result
+            if master_program_start > 0:
+                final_result['bars_tone_detected'] = True
+                final_result['bars_tone_duration'] = master_program_start
+                # Adjust overall offset to be relative to file start
+                if 'offset_seconds' in final_result:
+                    final_result['offset_before_adjustment'] = final_result['offset_seconds'] - master_program_start
+                self.logger.info(f"Final offset includes bars/tone adjustment: +{master_program_start:.2f}s")
 
             # Clean up temp files
             self._cleanup_temp_files([master_audio, dub_audio])
@@ -709,13 +825,20 @@ class OptimizedLargeFileDetector:
             self.logger.error(f"Error in multi-pass analysis: {e}")
             return {'error': str(e)}
 
-    def _analyze_pass1_coarse(self, master_audio: str, dub_audio: str, master_duration: float, dub_duration: float) -> Dict[str, Any]:
+    def _analyze_pass1_coarse(self, master_audio: str, dub_audio: str, master_duration: float, dub_duration: float, master_offset: float = 0.0) -> Dict[str, Any]:
         """
         Pass 1: Coarse analysis using standard chunking with content classification
+
+        Args:
+            master_offset: Offset into master where program content starts (after bars/tone)
         """
+        # Calculate effective duration for chunking (exclude bars/tone from master)
+        effective_master_duration = master_duration - master_offset
+        chunk_duration = min(effective_master_duration, dub_duration)
+
         # Create standard chunks for initial analysis
-        chunks = self.create_audio_chunks(master_audio, min(master_duration, dub_duration))
-        self.logger.info(f"Pass 1: Analyzing {len(chunks)} coarse chunks")
+        chunks = self.create_audio_chunks(master_audio, chunk_duration)
+        self.logger.info(f"Pass 1: Analyzing {len(chunks)} coarse chunks (master_offset={master_offset:.1f}s)")
 
         chunk_results = []
         try:
@@ -725,8 +848,12 @@ class OptimizedLargeFileDetector:
             iterator = enumerate(chunks)
 
         for i, (start, end) in iterator:
-            # Extract features from both files
-            master_features = self.extract_chunk_features(master_audio, start, end)
+            # Adjust master chunk times to account for bars/tone offset
+            master_start = start + master_offset
+            master_end = end + master_offset
+
+            # Extract features - master uses offset times, dub uses original times
+            master_features = self.extract_chunk_features(master_audio, master_start, master_end)
             dub_features = self.extract_chunk_features(dub_audio, start, end)
 
             # Classify content type for adaptive processing
@@ -754,14 +881,21 @@ class OptimizedLargeFileDetector:
                 master_features, dub_features, master_content, dub_content
             )
 
-            # Detect offset for this chunk
+            # Detect offset for this chunk (use adjusted master start time)
             offset_result = self.detect_offset_cross_correlation(
-                master_audio, dub_audio, start, end - start)
+                master_audio, dub_audio, master_start, master_end - master_start)
+
+            # Adjust offset to include bars/tone duration (relative to file start)
+            if master_offset > 0 and 'offset_seconds' in offset_result:
+                offset_result['offset_seconds'] += master_offset
+                offset_result['bars_tone_adjustment'] = master_offset
 
             chunk_result = {
                 'chunk_index': i,
-                'start_time': start,
+                'start_time': start,  # Dub time (for display)
                 'end_time': end,
+                'master_start_time': master_start,  # Actual master time used
+                'master_end_time': master_end,
                 'duration': end - start,
                 'master_content': master_content,
                 'dub_content': dub_content,
@@ -824,9 +958,13 @@ class OptimizedLargeFileDetector:
             return False
 
     def _analyze_pass2_targeted(self, master_audio: str, dub_audio: str, master_duration: float,
-                               dub_duration: float, pass1_results: Dict[str, Any]) -> Dict[str, Any]:
+                               dub_duration: float, pass1_results: Dict[str, Any],
+                               master_offset: float = 0.0) -> Dict[str, Any]:
         """
         Pass 2: Targeted refinement in problematic regions identified in Pass 1
+
+        Args:
+            master_offset: Offset into master where program content starts (after bars/tone)
         """
         # Identify regions needing refinement
         target_regions = self._identify_refinement_regions(pass1_results)
@@ -835,7 +973,7 @@ class OptimizedLargeFileDetector:
             self.logger.info("No regions identified for Pass 2 refinement")
             return pass1_results
 
-        self.logger.info(f"Pass 2: Refining {len(target_regions)} targeted regions")
+        self.logger.info(f"Pass 2: Refining {len(target_regions)} targeted regions (master_offset={master_offset:.1f}s)")
 
         pass2_chunks = []
         for region in target_regions:
@@ -855,8 +993,12 @@ class OptimizedLargeFileDetector:
             iterator = enumerate(pass2_chunks)
 
         for i, (start, end) in iterator:
-            # Extract features from both files
-            master_features = self.extract_chunk_features(master_audio, start, end)
+            # Adjust master chunk times to account for bars/tone offset
+            master_start = start + master_offset
+            master_end = end + master_offset
+
+            # Extract features - master uses offset times, dub uses original times
+            master_features = self.extract_chunk_features(master_audio, master_start, master_end)
             dub_features = self.extract_chunk_features(dub_audio, start, end)
 
             # Classify content type
@@ -868,14 +1010,21 @@ class OptimizedLargeFileDetector:
                 master_features, dub_features, master_content, dub_content
             )
 
-            # Detect offset for this chunk
+            # Detect offset for this chunk (use adjusted master start time)
             offset_result = self.detect_offset_cross_correlation(
-                master_audio, dub_audio, start, end - start)
+                master_audio, dub_audio, master_start, master_end - master_start)
+
+            # Adjust offset to include bars/tone duration (relative to file start)
+            if master_offset > 0 and 'offset_seconds' in offset_result:
+                offset_result['offset_seconds'] += master_offset
+                offset_result['bars_tone_adjustment'] = master_offset
 
             chunk_result = {
                 'chunk_index': i,
-                'start_time': start,
+                'start_time': start,  # Dub time (for display)
                 'end_time': end,
+                'master_start_time': master_start,  # Actual master time used
+                'master_end_time': master_end,
                 'duration': end - start,
                 'master_content': master_content,
                 'dub_content': dub_content,

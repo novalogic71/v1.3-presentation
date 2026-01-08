@@ -225,7 +225,110 @@ class ProfessionalSyncDetector:
         except Exception as e:
             logger.error(f"Error loading {audio_path}: {e}")
             raise
-    
+
+    def detect_bars_tone(self, audio: np.ndarray, max_search_seconds: float = 120.0) -> float:
+        """
+        Detect bars and tone (1kHz reference tone) at the head of the audio file.
+
+        Bars and tone is a standard test signal at the start of professional video/audio
+        consisting of a sustained 1kHz sine wave at reference level. This function finds
+        where the tone ends and program content begins.
+
+        Args:
+            audio: Audio samples (at self.sample_rate)
+            max_search_seconds: Maximum duration to search for tone (default 120s)
+
+        Returns:
+            Timestamp in seconds where program content starts (0.0 if no tone detected)
+        """
+        try:
+            # Limit search to first N seconds
+            max_samples = int(min(max_search_seconds, len(audio) / self.sample_rate) * self.sample_rate)
+            search_audio = audio[:max_samples]
+
+            # Parameters for tone detection
+            tone_freq = 1000  # 1kHz reference tone
+            freq_tolerance = 50  # ±50Hz tolerance
+            window_size = int(0.5 * self.sample_rate)  # 500ms analysis windows
+            hop_size = int(0.1 * self.sample_rate)  # 100ms hop
+            min_tone_duration = 5.0  # Minimum 5 seconds of continuous tone to be considered bars/tone
+
+            tone_detected = []
+
+            # Analyze windows for 1kHz tone presence
+            for start in range(0, len(search_audio) - window_size, hop_size):
+                window = search_audio[start:start + window_size]
+
+                # Compute FFT
+                fft = np.fft.rfft(window)
+                freqs = np.fft.rfftfreq(len(window), 1.0 / self.sample_rate)
+                magnitude = np.abs(fft)
+
+                # Find peak frequency
+                peak_idx = np.argmax(magnitude[1:]) + 1  # Skip DC component
+                peak_freq = freqs[peak_idx]
+                peak_mag = magnitude[peak_idx]
+
+                # Calculate total energy and 1kHz band energy
+                total_energy = np.sum(magnitude ** 2)
+
+                # Find 1kHz band indices
+                freq_min_idx = np.searchsorted(freqs, tone_freq - freq_tolerance)
+                freq_max_idx = np.searchsorted(freqs, tone_freq + freq_tolerance)
+                tone_band_energy = np.sum(magnitude[freq_min_idx:freq_max_idx] ** 2)
+
+                # Tone is present if:
+                # 1. Peak frequency is near 1kHz
+                # 2. 1kHz band contains significant energy (>30% of total)
+                is_tone = (
+                    abs(peak_freq - tone_freq) < freq_tolerance and
+                    tone_band_energy > 0.3 * total_energy and
+                    peak_mag > 0.1 * np.max(magnitude)  # Peak is prominent
+                )
+
+                time_seconds = start / self.sample_rate
+                tone_detected.append((time_seconds, is_tone))
+
+            if not tone_detected:
+                return 0.0
+
+            # Find continuous tone region at the start
+            tone_start = None
+            tone_end = None
+            consecutive_tone = 0
+            consecutive_threshold = int(min_tone_duration / 0.1)  # Number of consecutive windows needed
+
+            for i, (time_sec, is_tone) in enumerate(tone_detected):
+                if is_tone:
+                    if tone_start is None:
+                        tone_start = time_sec
+                    consecutive_tone += 1
+                else:
+                    # Check if we had enough consecutive tone windows
+                    if consecutive_tone >= consecutive_threshold and tone_start is not None:
+                        tone_end = time_sec
+                        break
+                    # Reset if not enough consecutive tone
+                    if consecutive_tone < consecutive_threshold:
+                        tone_start = None
+                    consecutive_tone = 0
+
+            # If tone was detected at the start and we found where it ends
+            if tone_start is not None and tone_start < 1.0 and tone_end is not None:
+                # Add small buffer after tone ends (0.5s for any silence/2-pop)
+                program_start = tone_end + 0.5
+                logger.info(f"Detected bars/tone from {tone_start:.1f}s to {tone_end:.1f}s, "
+                           f"program starts at {program_start:.1f}s")
+                return program_start
+
+            # No significant tone detected at head
+            logger.info("No bars/tone detected at head of file")
+            return 0.0
+
+        except Exception as e:
+            logger.warning(f"Error detecting bars/tone: {e}, assuming no tone present")
+            return 0.0
+
     def extract_audio_features(self, audio: np.ndarray) -> AudioFeatures:
         """
         Extract comprehensive audio features for sync analysis.
@@ -834,19 +937,21 @@ class ProfessionalSyncDetector:
 
         return refined_offset_samples, phase_coherence, metadata
 
-    def analyze_sync(self, 
-                    master_path: Path, 
+    def analyze_sync(self,
+                    master_path: Path,
                     dub_path: Path,
-                    methods: Optional[List[str]] = None) -> Dict[str, SyncResult]:
+                    methods: Optional[List[str]] = None,
+                    skip_bars_tone: bool = True) -> Dict[str, SyncResult]:
         """
         Perform comprehensive sync analysis between master and dub audio.
-        
+
         Args:
             master_path: Path to master audio file
             dub_path: Path to dub audio file
             methods: List of methods to use ['mfcc', 'onset', 'spectral', 'ai']
                     If None, uses all available methods
-                    
+            skip_bars_tone: If True, auto-detect and skip bars/tone at head of master
+
         Returns:
             Dictionary mapping method names to SyncResult objects
         """
@@ -862,9 +967,25 @@ class ProfessionalSyncDetector:
         master_audio, _ = self.load_and_preprocess_audio(master_path)
         dub_audio, _ = self.load_and_preprocess_audio(dub_path)
 
-        # Extract features
+        # Detect bars/tone in master file
+        master_program_start = 0.0
+        if skip_bars_tone:
+            master_program_start = self.detect_bars_tone(master_audio)
+            if master_program_start > 0:
+                logger.info(f"Master has bars/tone, program starts at {master_program_start:.2f}s")
+
+        # Trim master audio if bars/tone detected (for correlation analysis only)
+        if master_program_start > 0:
+            start_sample = int(master_program_start * self.sample_rate)
+            master_audio_for_analysis = master_audio[start_sample:]
+            logger.info(f"Using master audio from {master_program_start:.2f}s for correlation "
+                       f"({len(master_audio_for_analysis)/self.sample_rate:.2f}s)")
+        else:
+            master_audio_for_analysis = master_audio
+
+        # Extract features (use trimmed master for analysis)
         logger.info("Extracting audio features...")
-        master_features = self.extract_audio_features(master_audio)
+        master_features = self.extract_audio_features(master_audio_for_analysis)
         dub_features = self.extract_audio_features(dub_audio)
 
         # Perform analysis with selected methods
@@ -886,16 +1007,43 @@ class ProfessionalSyncDetector:
         # This matches the batch analysis precision and avoids hop_length quantization
         if 'correlation' in methods or 'raw_audio' in methods:
             logger.info("Performing sample-accurate raw audio cross-correlation...")
-            result = self.raw_audio_cross_correlation(master_audio, dub_audio)
+            result = self.raw_audio_cross_correlation(master_audio_for_analysis, dub_audio)
             # Store under both 'correlation' and 'raw_audio' for compatibility
             results['correlation'] = result
             results['raw_audio'] = result
         elif all(result.confidence < 0.2 for result in results.values()):
             # Fallback if not explicitly requested but all other methods failed
             logger.info("All methods low confidence, adding raw audio cross-correlation...")
-            result = self.raw_audio_cross_correlation(master_audio, dub_audio)
+            result = self.raw_audio_cross_correlation(master_audio_for_analysis, dub_audio)
             results['raw_audio'] = result
             results['correlation'] = result
+
+        # Adjust offsets to account for bars/tone in master (report from file start)
+        if master_program_start > 0:
+            logger.info(f"Adjusting offsets by +{master_program_start:.2f}s for bars/tone in master")
+            adjusted_results = {}
+            for method, result in results.items():
+                # Add bars/tone duration to offset so it's relative to file start
+                adjusted_offset_seconds = result.offset_seconds + master_program_start
+                adjusted_offset_samples = int(adjusted_offset_seconds * self.sample_rate)
+
+                # Update metadata to note bars/tone was detected
+                metadata = dict(result.analysis_metadata)
+                metadata['bars_tone_detected'] = True
+                metadata['bars_tone_duration'] = master_program_start
+                metadata['offset_before_adjustment'] = result.offset_seconds
+
+                adjusted_results[method] = SyncResult(
+                    offset_samples=adjusted_offset_samples,
+                    offset_seconds=adjusted_offset_seconds,
+                    confidence=result.confidence,
+                    method_used=result.method_used,
+                    correlation_peak=result.correlation_peak,
+                    quality_score=result.quality_score,
+                    frame_rate=result.frame_rate,
+                    analysis_metadata=metadata
+                )
+            results = adjusted_results
 
         logger.info(f"Sync analysis complete. Results: {list(results.keys())}")
         return results
