@@ -8,21 +8,20 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 
 # Professional Audio Sync Analyzer - All-in-One Server Startup Script
-# Starts FastAPI backend with integrated Web UI
+# Starts Redis, Celery Worker, and FastAPI backend with integrated Web UI
 
-# Resolve repo root based on this script's location so it works
-# no matter where it's invoked from.
+# Resolve repo root based on this script's location
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
 
-echo "🎵 Professional Audio Sync Analyzer - Starting Server"
-echo "======================================================"
-echo "   FastAPI + Web UI (Unified Server on Port 8000)"
+echo "🎵 Professional Audio Sync Analyzer - Starting All Services"
+echo "============================================================"
+echo "   Redis + Celery Worker + FastAPI (Port 8000)"
 echo ""
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
-# Function to check if port is in use (tries lsof, ss, then Python socket)
+# Function to check if port is in use
 check_port() {
     local port="$1"
     if has_cmd lsof; then
@@ -48,7 +47,7 @@ PY
     fi
 }
 
-# Function to kill process on port (tries lsof, then fuser)
+# Function to kill process on port
 kill_port() {
     local port="$1"
     if has_cmd lsof; then
@@ -63,32 +62,22 @@ kill_port() {
         echo "🔄 Attempting to stop processes on port $port via fuser"
         fuser -k "${port}/tcp" 2>/dev/null || true
         sleep 2
-    else
-        echo "⚠️  Unable to auto-kill processes on port ${port} (no lsof/fuser). Please free the port manually." >&2
     fi
 }
 
-# Check for required files using absolute paths
+# Check for required files
 if [ ! -f "$ROOT_DIR/fastapi_app/main.py" ]; then
     echo "❌ Error: Required files not found under $ROOT_DIR"
     exit 1
 fi
 
-# Stop any existing services
-echo "🔍 Checking for existing services..."
-check_port 8000 && kill_port 8000
-# Also clean up legacy Flask port if still running
-check_port 3002 && kill_port 3002
-
-# Start FastAPI backend (now includes Web UI)
-echo ""
-echo "🚀 Starting FastAPI Server (Port 8000)..."
+# Setup Python environment
 API_DIR="$ROOT_DIR/fastapi_app"
 VENV_DIR="$API_DIR/fastapi_venv"
 PY="$VENV_DIR/bin/python"
 PIP="$VENV_DIR/bin/pip"
 
-# Fallback to project-level venvs if fastapi_venv is missing
+# Fallback to project-level venvs
 if [ ! -d "$VENV_DIR" ]; then
     for alt in "$ROOT_DIR/venv" "$ROOT_DIR/.venv"; do
         if [ -d "$alt" ]; then
@@ -102,54 +91,101 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 if [ ! -x "$PY" ]; then
-    echo "❌ Python not found in virtual environment. Looked in:"
-    echo "   - $API_DIR/fastapi_venv/bin/python"
-    echo "   - $ROOT_DIR/venv/bin/python"
-    echo "   - $ROOT_DIR/.venv/bin/python"
+    echo "❌ Python not found in virtual environment."
     echo "   Create a venv and install deps:"
     echo "     python -m venv venv && source venv/bin/activate && pip install -r fastapi_app/requirements.txt"
     exit 1
 fi
 
-# Print environment info and ensure FastAPI dependencies are installed
 echo "🐍 Python binary: $PY"
-echo "📦 Pip binary:    $PIP"
-"$PY" -V || true
-"$PY" - <<'PY'
-import sys
-print('sys.executable =', sys.executable)
-try:
-    import fastapi, uvicorn, transformers, torch  # noqa: F401
-    print('FASTAPI_DEPS_OK')
-except Exception as e:
-    print('FASTAPI_DEPS_MISSING:', e)
-    raise SystemExit(1)
-PY
-if [ $? -ne 0 ]; then
-    echo "📦 Installing FastAPI dependencies (fastapi_app/requirements.txt)..."
-    "$PIP" install -r "$API_DIR/requirements.txt" || {
-        echo "❌ Failed to install FastAPI dependencies";
-        exit 1;
-    }
+
+# Check if Redis is available
+REDIS_AVAILABLE=false
+REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+
+echo ""
+echo "🔍 Checking Redis availability..."
+if has_cmd redis-cli; then
+    if redis-cli ping 2>/dev/null | grep -q "PONG"; then
+        echo "✅ Redis is running and responding"
+        REDIS_AVAILABLE=true
+    else
+        echo "⚠️  Redis is installed but not running"
+        echo "   Start Redis with: redis-server --daemonize yes"
+        echo "   Or: sudo systemctl start redis"
+    fi
+else
+    echo "⚠️  redis-cli not found"
+    echo "   Install Redis: sudo apt install redis-server"
 fi
 
-# Prefer using the configured model cache for HF transformers
-export HF_HOME="${AI_MODEL_CACHE_DIR:-$API_DIR/ai_models}"
-echo "🧠 HF_HOME set to: $HF_HOME"
+if [ "$REDIS_AVAILABLE" = false ]; then
+    echo ""
+    echo "⚠️  Redis not available - jobs will use in-memory fallback"
+    echo "   (Jobs will NOT persist across server restarts)"
+    echo ""
+    read -p "Continue without Redis? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Exiting. Please start Redis first."
+        exit 1
+    fi
+fi
 
-# Enable DEBUG mode for development (CORS open, relative API server)
+# Stop any existing services
+echo ""
+echo "🔍 Checking for existing services..."
+check_port 8000 && kill_port 8000
+check_port 3002 && kill_port 3002
+
+# Kill existing Celery workers
+pkill -f "celery.*sync_analyzer" 2>/dev/null || true
+sleep 1
+
+# Environment setup
+export HF_HOME="${AI_MODEL_CACHE_DIR:-$API_DIR/ai_models}"
 export DEBUG=true
+export REDIS_URL="$REDIS_URL"
+export PYTHONPATH="$ROOT_DIR:$API_DIR:${PYTHONPATH:-}"
 
 # Create required directories
 mkdir -p "$ROOT_DIR/web_ui/proxy_cache"
 mkdir -p "$ROOT_DIR/web_ui/ui_sync_reports"
 mkdir -p "$ROOT_DIR/sync_reports"
+mkdir -p "$ROOT_DIR/logs"
 
-# Start API using the venv's Python explicitly (avoid relying on shell activation)
-"$PY" "$API_DIR/main.py" &
+# Start Celery worker if Redis is available
+CELERY_PID=""
+if [ "$REDIS_AVAILABLE" = true ]; then
+    echo ""
+    echo "🚀 Starting Celery Worker..."
+    cd "$API_DIR"
+    "$PY" -m celery -A app.core.celery_app worker \
+        --loglevel=info \
+        --concurrency=4 \
+        --hostname="sync-worker@%h" \
+        > "$ROOT_DIR/logs/celery_worker.log" 2>&1 &
+    CELERY_PID=$!
+    cd "$ROOT_DIR"
+    
+    # Wait for Celery to start
+    sleep 3
+    if kill -0 $CELERY_PID 2>/dev/null; then
+        echo "✅ Celery Worker running (PID: $CELERY_PID)"
+    else
+        echo "⚠️  Celery Worker failed to start (check logs/celery_worker.log)"
+        echo "   Continuing with in-memory fallback..."
+        CELERY_PID=""
+    fi
+fi
+
+# Start FastAPI
+echo ""
+echo "🚀 Starting FastAPI Server (Port 8000)..."
+"$PY" "$API_DIR/main.py" > "$ROOT_DIR/logs/fastapi.log" 2>&1 &
 FASTAPI_PID=$!
 
-# Wait for FastAPI to start and check multiple times
+# Wait for FastAPI to start
 echo "⏳ Waiting for FastAPI to start..."
 for i in {1..15}; do
     sleep 2
@@ -158,16 +194,17 @@ for i in {1..15}; do
         break
     fi
     if [ $i -eq 15 ]; then
-        echo "❌ FastAPI failed to start on port 8000 after 30 seconds"
-        kill $FASTAPI_PID 2>/dev/null || true
+        echo "❌ FastAPI failed to start (check logs/fastapi.log)"
+        [ -n "$CELERY_PID" ] && kill $CELERY_PID 2>/dev/null || true
         exit 1
     fi
     echo "   Attempt $i/15 - still waiting..."
 done
 
+# Print summary
 echo ""
-echo "🎉 Server started successfully!"
-echo "================================"
+echo "🎉 All services started successfully!"
+echo "======================================="
 echo ""
 echo "🌐 Web UI & API: http://localhost:8000"
 echo "   🎛️  Main App: http://localhost:8000/app"
@@ -178,26 +215,35 @@ echo "   📖  Swagger:  http://localhost:8000/docs"
 echo "   📘  ReDoc:    http://localhost:8000/redoc"
 echo "   🩺  Health:   http://localhost:8000/health"
 echo ""
-echo "🔧 API Endpoints (v1):"
-echo "   📁  Files:    /api/v1/files"
-echo "   🔍  Analysis: /api/v1/analysis/sync"
-echo "   📦  Jobs:     /api/v1/jobs"
-echo "   🔄  Proxy:    /api/v1/proxy"
+if [ "$REDIS_AVAILABLE" = true ]; then
+    echo "🔄 Background Jobs: Celery + Redis (persistent)"
+    echo "   Jobs survive browser refresh AND server restart"
+else
+    echo "🔄 Background Jobs: In-memory fallback"
+    echo "   ⚠️  Jobs survive browser refresh but NOT server restart"
+fi
 echo ""
-echo "📋 Server PID: $FASTAPI_PID"
+echo "📋 Service PIDs:"
+echo "   FastAPI: $FASTAPI_PID"
+[ -n "$CELERY_PID" ] && echo "   Celery:  $CELERY_PID"
 echo ""
-echo "🛑 Press Ctrl+C to stop the server"
+echo "📝 Logs:"
+echo "   FastAPI: $ROOT_DIR/logs/fastapi.log"
+[ -n "$CELERY_PID" ] && echo "   Celery:  $ROOT_DIR/logs/celery_worker.log"
+echo ""
+echo "🛑 Press Ctrl+C to stop all services"
 
-# Function to cleanup on exit
+# Cleanup function
 cleanup() {
     echo ""
-    echo "🛑 Stopping server..."
+    echo "🛑 Stopping all services..."
     kill $FASTAPI_PID 2>/dev/null || true
-    echo "✅ Server stopped"
+    [ -n "$CELERY_PID" ] && kill $CELERY_PID 2>/dev/null || true
+    pkill -f "celery.*sync_analyzer" 2>/dev/null || true
+    echo "✅ All services stopped"
     exit 0
 }
 
-# Set trap to cleanup on script termination
 trap cleanup SIGINT SIGTERM
 
 # Wait for background processes

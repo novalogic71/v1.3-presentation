@@ -176,15 +176,54 @@ async def analyze_componentized_sync(request: ComponentizedAnalysisRequest):
 @router.post("/async", response_model=AsyncJobResponse)
 async def analyze_componentized_async(request: ComponentizedAnalysisRequest):
     """
-    Start asynchronous componentized analysis.
+    Start asynchronous componentized analysis using Celery.
     
-    Returns immediately with a job_id. Poll /api/v1/jobs/{job_id} for status and results.
+    Returns immediately with a task_id. Poll /api/v1/jobs/{task_id} for status and results.
+    
+    Jobs are persisted in Redis and survive:
+    - Browser refresh
+    - Server restart
+    - Network disconnections
     """
     try:
         components = _normalize_components(request.components)
         _validate_paths(request.master, components)
         
+        # Import Celery task
+        from ....tasks.analysis_tasks import run_componentized_analysis_task
+        
+        # Dispatch task to Celery
+        task = run_componentized_analysis_task.delay(
+            master_path=request.master,
+            components=components,
+            offset_mode=request.offset_mode.lower(),
+            hop_seconds=request.hop_seconds,
+            anchor_window_seconds=request.anchor_window_seconds,
+            refine_window_seconds=request.refine_window_seconds,
+            refine_pad_seconds=request.refine_pad_seconds,
+            frame_rate=request.frameRate,
+        )
+        
+        task_id = task.id
+        logger.info(f"Dispatched componentized analysis task: {task_id}")
+        
+        return AsyncJobResponse(
+            success=True,
+            job_id=task_id,
+            status="queued",
+            message="Analysis queued in Celery. Poll /api/v1/jobs/<task_id> for status.",
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to dispatch Celery task: {e}")
+        
+        # Fallback to in-memory job manager if Celery is not available
+        logger.warning("Falling back to in-memory job processing")
+        
         job_id = request.job_id or str(uuid.uuid4())
+        components = _normalize_components(request.components)
         
         # Create job entry
         params = {
@@ -198,7 +237,7 @@ async def analyze_componentized_async(request: ComponentizedAnalysisRequest):
             "frame_rate": request.frameRate,
         }
         job_manager.create_job(job_id, "componentized", params)
-        job_manager.update_progress(job_id, 0, "Job queued, waiting to start...")
+        job_manager.update_progress(job_id, 0, "Job queued (fallback mode)...")
         
         # Define background worker
         def run_analysis():

@@ -360,40 +360,70 @@ async def list_active_jobs():
         from ....services.job_manager import job_manager, JobStatus
         
         jobs = []
+        existing_ids = set()
         
-        # First check in-memory job store for active background jobs
+        # 1. First check Celery for active tasks
+        try:
+            from ....core.celery_app import get_active_tasks, get_task_progress
+            
+            celery_tasks = get_active_tasks()
+            for task in celery_tasks:
+                task_id = task.get("task_id")
+                if task_id and task_id not in existing_ids:
+                    progress = get_task_progress(task_id)
+                    jobs.append(JobResponse(
+                        job_id=task_id,
+                        job_type=task.get("name", "celery_task"),
+                        status=task.get("status", "processing"),
+                        progress=float(progress.get("progress", 0)),
+                        status_message=progress.get("message", "Running..."),
+                        request_params={"args": task.get("args"), "kwargs": task.get("kwargs")},
+                        result_data=None,
+                        error_message=None,
+                        created_at=str(task.get("started", "")),
+                        started_at=str(task.get("started", "")),
+                        completed_at=None,
+                        updated_at=str(task.get("started", "")),
+                        server_pid=None
+                    ))
+                    existing_ids.add(task_id)
+        except Exception as celery_err:
+            logger.debug(f"Celery inspection failed: {celery_err}")
+        
+        # 2. Check in-memory job store for fallback background jobs
         in_memory_jobs = job_manager.list_jobs()
         for job in in_memory_jobs:
             if job.status in [JobStatus.PENDING, JobStatus.PROCESSING]:
-                jobs.append(JobResponse(
-                    job_id=job.job_id,
-                    job_type=job.job_type,
-                    status=job.status.value,
-                    progress=float(job.progress),
-                    status_message=job.status_message,
-                    request_params=job.params,
-                    result_data=job.result,
-                    error_message=job.error,
-                    created_at=str(job.created_at) if job.created_at else "",
-                    started_at=None,
-                    completed_at=str(job.completed_at) if job.completed_at else None,
-                    updated_at=str(job.created_at) if job.created_at else "",
-                    server_pid=None
-                ))
+                if job.job_id not in existing_ids:
+                    jobs.append(JobResponse(
+                        job_id=job.job_id,
+                        job_type=job.job_type,
+                        status=job.status.value,
+                        progress=float(job.progress),
+                        status_message=job.status_message,
+                        request_params=job.params,
+                        result_data=job.result,
+                        error_message=job.error,
+                        created_at=str(job.created_at) if job.created_at else "",
+                        started_at=None,
+                        completed_at=str(job.completed_at) if job.completed_at else None,
+                        updated_at=str(job.created_at) if job.created_at else "",
+                        server_pid=None
+                    ))
+                    existing_ids.add(job.job_id)
         
-        # Then check database for any other active jobs
+        # 3. Check database for any other active jobs
         try:
             pending = db_list_jobs(status='pending', limit=100)
             processing = db_list_jobs(status='processing', limit=100)
             all_db_active = pending + processing
             
-            # Add database jobs (avoiding duplicates by job_id)
-            existing_ids = {j.job_id for j in jobs}
             for row in all_db_active:
                 if row['job_id'] not in existing_ids:
                     jobs.append(_db_row_to_response(row))
+                    existing_ids.add(row['job_id'])
         except Exception as db_err:
-            logger.warning(f"Database query failed, using in-memory only: {db_err}")
+            logger.warning(f"Database query failed: {db_err}")
         
         return JobListResponse(
             success=True,
@@ -427,55 +457,87 @@ async def get_job(
     job_id: str = FastAPIPath(..., description="Job identifier")
 ):
     """
-    Get job status - checks in-memory store first, then database.
+    Get job status - checks Celery first, then in-memory, then database.
     
     This is the primary endpoint for polling job status from the frontend.
-    It first checks the in-memory job store (for active background jobs),
-    then falls back to the database (for historical jobs).
+    It checks multiple sources in order:
+    1. Celery/Redis (for persistent background jobs)
+    2. In-memory job store (for fallback jobs)
+    3. SQLite database (for historical jobs)
     
-    ## Example Response (In-Memory Job)
+    ## Example Response (Running Celery Task)
     
     ```json
     {
       "success": true,
-      "job_id": "job_1234567890_abc123",
+      "job_id": "abc123-def456-...",
       "status": "processing",
       "progress": 45,
       "status_message": "Analyzing component 2/4...",
       "result": null,
-      "error": null,
-      "created_at": 1704456652.123,
-      "completed_at": null
+      "error": null
     }
     ```
     
-    ## Example Response (Completed Job)
+    ## Example Response (Completed Task)
     
     ```json
     {
       "success": true,
-      "job_id": "job_1234567890_abc123",
+      "job_id": "abc123-def456-...",
       "status": "completed",
       "progress": 100,
       "status_message": "Analysis complete!",
       "result": {
         "offset_mode": "channel_aware",
         "voted_offset_seconds": 60.4,
-        "vote_agreement": 1.0,
         "component_results": [...]
-      },
-      "created_at": 1704456652.123,
-      "completed_at": 1704456789.456
+      }
     }
     ```
-    
-    ## Curl Example
-    
-    ```bash
-    curl -X GET "http://localhost:8000/api/v1/jobs/job_1234567890_abc123"
-    ```
     """
-    # First check in-memory job store (for active background jobs)
+    # 1. First check Celery for task status
+    try:
+        from ....core.celery_app import celery_app, get_task_progress
+        
+        task_result = celery_app.AsyncResult(job_id)
+        
+        if task_result.state != "PENDING" or task_result.result is not None:
+            # Task exists in Celery
+            progress_data = get_task_progress(job_id)
+            
+            status_map = {
+                "PENDING": "queued",
+                "STARTED": "processing",
+                "PROGRESS": "processing",
+                "SUCCESS": "completed",
+                "FAILURE": "failed",
+                "REVOKED": "cancelled",
+            }
+            
+            status = status_map.get(task_result.state, task_result.state.lower())
+            
+            # Get result if completed
+            result = None
+            error = None
+            if task_result.state == "SUCCESS":
+                result = task_result.result
+            elif task_result.state == "FAILURE":
+                error = str(task_result.result) if task_result.result else "Task failed"
+            
+            return InMemoryJobResponse(
+                success=True,
+                job_id=job_id,
+                status=status,
+                progress=progress_data.get("progress", 0) if status != "completed" else 100,
+                status_message=progress_data.get("message", "") if status != "completed" else "Analysis complete!",
+                result=result,
+                error=error,
+            )
+    except Exception as celery_err:
+        logger.debug(f"Celery check failed for {job_id}: {celery_err}")
+    
+    # 2. Check in-memory job store (fallback)
     job = job_manager.get_job(job_id)
     if job:
         return InMemoryJobResponse(
@@ -490,15 +552,14 @@ async def get_job(
             completed_at=job.completed_at,
         )
     
-    # Fall back to database
+    # 3. Fall back to database
     try:
         from sync_analyzer.db.job_db import get_job as db_get_job
         
         row = db_get_job(job_id)
         
         if not row:
-            # Return a "not found" response instead of raising exception
-            # This allows frontend to handle gracefully
+            # Return a "not found" response
             return InMemoryJobResponse(
                 success=False,
                 job_id=job_id,
