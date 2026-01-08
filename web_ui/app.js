@@ -1711,7 +1711,7 @@ class SyncAnalyzerUI {
                     const prepResp = await fetch('/api/v1/proxy/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: newItem.master.path, role: 'master' }),
+                        body: JSON.stringify({ master: newItem.master.path, dub: newItem.dub.path }),
                         signal: ctrl.signal
                     });
                     clearTimeout(tId);
