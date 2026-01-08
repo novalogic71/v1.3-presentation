@@ -5000,42 +5000,79 @@ class SyncAnalyzerUI {
             const offsets = componentOptions.map(c => c.offset);
             const minOffset = Math.min(...offsets, 0);
             const maxOffset = Math.max(...offsets, 0);
-            const timeRange = Math.max(maxOffset - minOffset + 6, 8); // Min 8 seconds range
-            const startTime = minOffset - 3;
+            
+            // Calculate time range to show all offsets clearly
+            const padding = 2; // seconds of padding
+            const timeRange = Math.max(Math.abs(maxOffset - minOffset) + padding * 2, 6);
+            const zeroPosition = Math.abs(minOffset - padding) / timeRange; // Where 0 (master start) is
+            
+            const rowHeight = 28;
+            const totalHeight = (componentOptions.length + 1) * (rowHeight + 8) + 40;
 
-            const waveformHeight = 40; // Compact height for dialog
-            const totalHeight = (componentOptions.length + 1) * (waveformHeight + 12);
+            // Generate time markers
+            const timeMarkers = [];
+            const step = timeRange > 30 ? 10 : timeRange > 10 ? 5 : 1;
+            for (let t = Math.floor(minOffset - padding); t <= Math.ceil(maxOffset + padding); t += step) {
+                const pos = ((t - (minOffset - padding)) / timeRange) * 100;
+                if (pos >= 0 && pos <= 100) {
+                    timeMarkers.push({ time: t, pos });
+                }
+            }
 
             container.innerHTML = `
-                <div style="position: relative; height: ${totalHeight}px; overflow-x: auto;">
-                    <!-- Master -->
-                    <div style="position: relative; margin-bottom: 12px; display: flex; align-items: center;">
-                        <div style="width: 60px; font-size: 10px; font-weight: 700; color: #ff6b42; text-align: center; flex-shrink: 0;">MASTER</div>
-                        <div style="flex: 1; position: relative; height: ${waveformHeight}px;">
-                            <div style="position: absolute; left: 0; right: 0; height: 100%; background: linear-gradient(90deg, rgba(255, 107, 66, 0.2), rgba(220, 20, 60, 0.2)); border: 1px solid rgba(255, 107, 66, 0.4); border-radius: 4px;">
-                                <div style="width: 95%; height: 60%; margin: 20% auto; background: linear-gradient(to right, transparent 0%, rgba(255,107,66,0.3) 20%, rgba(255,107,66,0.5) 50%, rgba(255,107,66,0.3) 80%, transparent 100%); clip-path: polygon(0 50%, 5% 30%, 10% 60%, 15% 25%, 20% 70%, 25% 40%, 30% 55%, 35% 35%, 40% 65%, 45% 30%, 50% 70%, 55% 45%, 60% 50%, 65% 35%, 70% 60%, 75% 40%, 80% 65%, 85% 35%, 90% 60%, 95% 45%, 100% 50%);"></div>
+                <div style="position: relative; height: ${totalHeight}px;">
+                    <!-- Time axis -->
+                    <div style="position: relative; height: 20px; margin-bottom: 8px; border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
+                        ${timeMarkers.map(m => `
+                            <div style="position: absolute; left: ${m.pos}%; transform: translateX(-50%); font-size: 9px; color: #64748b;">
+                                ${m.time >= 0 ? '+' : ''}${m.time}s
                             </div>
-                            <!-- Zero line -->
-                            <div style="position: absolute; left: ${((0 - startTime) / timeRange) * 100}%; top: 0; bottom: 0; width: 1px; background: rgba(255, 107, 66, 0.6); z-index: 5;"></div>
+                        `).join('')}
+                        <!-- Zero marker -->
+                        <div style="position: absolute; left: ${zeroPosition * 100}%; bottom: 0; width: 2px; height: 100%; background: #22c55e; z-index: 5;"></div>
+                    </div>
+
+                    <!-- Master reference bar -->
+                    <div style="display: flex; align-items: center; margin-bottom: 8px; height: ${rowHeight}px;">
+                        <div style="width: 70px; font-size: 11px; font-weight: 700; color: #22c55e; flex-shrink: 0;">MASTER</div>
+                        <div style="flex: 1; position: relative; height: 100%; background: rgba(15, 23, 42, 0.5); border-radius: 4px; overflow: hidden;">
+                            <!-- Master bar starts at 0 -->
+                            <div style="position: absolute; left: ${zeroPosition * 100}%; right: 5%; height: 100%; background: linear-gradient(90deg, rgba(34, 197, 94, 0.4), rgba(34, 197, 94, 0.1)); border-left: 3px solid #22c55e; border-radius: 0 4px 4px 0;"></div>
+                            <div style="position: absolute; left: ${zeroPosition * 100}%; top: 50%; transform: translate(-50%, -50%); background: #22c55e; color: #0f172a; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; white-space: nowrap; z-index: 10;">0:00:00</div>
                         </div>
                     </div>
 
-                    <!-- Components -->
+                    <!-- Component bars -->
                     ${componentOptions.map((comp, index) => {
-                        const offsetPx = ((comp.offset - startTime) / timeRange) * 100;
+                        // Component offset relative to timeline
+                        const compStartPos = ((comp.offset - (minOffset - padding)) / timeRange) * 100;
+                        const isAligned = Math.abs(comp.offset) < 0.1;
+                        const barColor = isAligned ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+                        const borderColor = isAligned ? '#22c55e' : '#ef4444';
+                        
                         return `
-                            <div style="position: relative; margin-bottom: 12px; display: flex; align-items: center;">
-                                <div style="width: 60px; font-size: 10px; font-weight: 700; background: linear-gradient(135deg, #ff6b42, #dc143c); color: white; padding: 3px 6px; border-radius: 3px; text-align: center; flex-shrink: 0;">${comp.label}</div>
-                                <div style="flex: 1; position: relative; height: ${waveformHeight}px;">
-                                    <div style="position: absolute; left: ${offsetPx}%; width: 35%; height: 100%; background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 4px;">
-                                        <div style="width: 95%; height: 60%; margin: 20% auto; background: linear-gradient(to right, transparent 0%, rgba(148,163,184,0.3) 20%, rgba(148,163,184,0.4) 50%, rgba(148,163,184,0.3) 80%, transparent 100%); clip-path: polygon(0 50%, 5% 35%, 10% 55%, 15% 30%, 20% 65%, 25% 45%, 30% 50%, 35% 40%, 40% 60%, 45% 35%, 50% 65%, 55% 50%, 60% 45%, 65% 40%, 70% 60%, 75% 45%, 80% 55%, 85% 40%, 90% 60%, 95% 50%, 100% 50%);"></div>
-                                    </div>
-                                    <div style="position: absolute; left: ${offsetPx}%; top: -2px; font-size: 9px; background: #ff6b42; color: white; padding: 1px 4px; border-radius: 2px; white-space: nowrap; font-weight: 700; z-index: 10;">${comp.timecode}</div>
-                                    <div style="position: absolute; left: ${offsetPx}%; top: 12px; bottom: 0; width: 1px; background: rgba(255, 107, 66, 0.4); z-index: 3;"></div>
+                            <div style="display: flex; align-items: center; margin-bottom: 8px; height: ${rowHeight}px;">
+                                <div style="width: 70px; font-size: 10px; font-weight: 700; background: linear-gradient(135deg, #ff6b42, #dc143c); color: white; padding: 4px 8px; border-radius: 4px; text-align: center; flex-shrink: 0;">${comp.label}</div>
+                                <div style="flex: 1; position: relative; height: 100%; background: rgba(15, 23, 42, 0.5); border-radius: 4px; overflow: hidden;">
+                                    <!-- Component bar starts at its offset position -->
+                                    <div style="position: absolute; left: ${compStartPos}%; right: 5%; height: 100%; background: linear-gradient(90deg, ${barColor}, rgba(100, 116, 139, 0.1)); border-left: 3px solid ${borderColor}; border-radius: 0 4px 4px 0;"></div>
+                                    <!-- Offset label -->
+                                    <div style="position: absolute; left: ${compStartPos}%; top: 50%; transform: translate(-50%, -50%); background: ${borderColor}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; white-space: nowrap; z-index: 10;">${comp.timecode}</div>
+                                    <!-- Connection line to master -->
+                                    ${Math.abs(comp.offset) > 0.1 ? `
+                                        <div style="position: absolute; left: ${Math.min(zeroPosition * 100, compStartPos)}%; width: ${Math.abs(compStartPos - zeroPosition * 100)}%; top: 50%; height: 2px; background: repeating-linear-gradient(90deg, #fbbf24, #fbbf24 4px, transparent 4px, transparent 8px); z-index: 5;"></div>
+                                    ` : ''}
                                 </div>
                             </div>
                         `;
                     }).join('')}
+                    
+                    <!-- Legend -->
+                    <div style="display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 10px; color: #94a3b8;">
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #22c55e; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Aligned</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #ef4444; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Needs Correction</span>
+                        <span><span style="display: inline-block; width: 12px; height: 2px; background: repeating-linear-gradient(90deg, #fbbf24, #fbbf24 4px, transparent 4px, transparent 8px); vertical-align: middle; margin-right: 4px;"></span>Offset Gap</span>
+                    </div>
                 </div>
             `;
         } catch (error) {
@@ -5043,7 +5080,7 @@ class SyncAnalyzerUI {
             container.innerHTML = `
                 <div style="text-align: center; padding: 20px; color: #64748b;">
                     <i class="fas fa-times-circle"></i>
-                    <span style="margin-left: 8px;">Unable to render waveforms</span>
+                    <span style="margin-left: 8px;">Unable to render offset visualization</span>
                 </div>
             `;
         }
