@@ -93,3 +93,11 @@ htmlcov/
 .coverage.*
 coverage.xml
 ai_models/
+
+# Supervisor runtime files
+supervisord.runtime.conf
+/tmp/sync-analyzer-*
+
+# Node modules
+node_modules/
+client-app/node_modules/

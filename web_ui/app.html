@@ -274,18 +274,26 @@
                                 </div>
                                 <span class="method-desc">Frequency correlation</span>
                             </div>
-                            <!-- AI method hidden for future implementation
-                            <div class="method-item">
+                            <div class="method-item gpu-method">
                                 <div class="method-header">
-                                    <span class="method-name">AI Neural</span>
+                                    <span class="method-name">🚀 GPU Fast</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-ai" value="ai">
-                                        <label for="method-ai" class="toggle-slider"></label>
+                                        <input type="checkbox" id="method-gpu" value="gpu">
+                                        <label for="method-gpu" class="toggle-slider gpu-toggle"></label>
                                     </div>
                                 </div>
-                                <span class="method-desc">Neural features</span>
+                                <span class="method-desc">Wav2Vec2 GPU (fastest)</span>
                             </div>
-                            -->
+                            <div class="method-item fingerprint-method">
+                                <div class="method-header">
+                                    <span class="method-name">🔊 Fingerprint</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="method-fingerprint" value="fingerprint">
+                                        <label for="method-fingerprint" class="toggle-slider fingerprint-toggle"></label>
+                                    </div>
+                                </div>
+                                <span class="method-desc">Chromaprint (robust)</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -500,6 +508,29 @@
                     <button id="repair-all-batch" title="Repair all completed analyses">
                         <i class="fas fa-wrench"></i> Repair All
                     </button>
+                    <div class="export-dropdown">
+                        <button id="export-dropdown-btn" class="dropdown-trigger" title="Export batch results">
+                            <i class="fas fa-download"></i> Export <i class="fas fa-caret-down"></i>
+                        </button>
+                        <div class="dropdown-menu" id="export-dropdown-menu">
+                            <button id="export-batch" class="dropdown-item">
+                                <i class="fas fa-file-csv"></i> Export as CSV
+                            </button>
+                            <button id="export-html-report" class="dropdown-item">
+                                <i class="fas fa-file-code"></i> Export as HTML Report
+                            </button>
+                            <button id="export-json" class="dropdown-item">
+                                <i class="fas fa-file-alt"></i> Export as JSON
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button id="export-table-view" class="dropdown-item">
+                                <i class="fas fa-table"></i> Export as Table View
+                            </button>
+                            <button id="export-waveform-view" class="dropdown-item">
+                                <i class="fas fa-wave-square"></i> Export as Waveform View
+                            </button>
+                        </div>
+                    </div>
                     <button id="clear-batch" title="Clear batch queue">
                         <i class="fas fa-trash"></i> Clear
                     </button>

@@ -603,6 +603,7 @@ def run_componentized_analysis(
     master_path: str,
     components: List[Dict[str, Any]],
     offset_mode: str = "mixdown",
+    methods: List[str] = None,
     hop_seconds: float = 0.2,
     anchor_window_seconds: float = 10.0,
     refine_window_seconds: float = 8.0,
@@ -617,6 +618,7 @@ def run_componentized_analysis(
         master_path: Path to master audio/video file
         components: List of component dicts with 'path', 'label', 'name'
         offset_mode: 'mixdown', 'anchor', or 'channel_aware'
+        methods: Detection methods to use (mfcc, onset, spectral, gpu)
         job_id: Optional job ID for progress tracking
     
     Returns:
@@ -624,6 +626,18 @@ def run_componentized_analysis(
     """
     if job_id:
         job_manager.update_progress(job_id, 5, "Starting componentized analysis...")
+    
+    logger.info(f"📋 Componentized analysis request: mode={offset_mode}, methods={methods}")
+    
+    # Check if GPU fast mode is requested
+    if methods and 'gpu' in methods:
+        logger.info("🚀 GPU method detected - routing to GPU analysis")
+        return _run_gpu_analysis(master_path, components, job_id)
+    
+    # Check if fingerprint mode is requested
+    if methods and 'fingerprint' in methods:
+        logger.info("🔊 Fingerprint method detected - routing to fingerprint analysis")
+        return _run_fingerprint_analysis(master_path, components, job_id)
     
     if offset_mode == "mixdown":
         return _run_mixdown_analysis(
@@ -637,7 +651,7 @@ def run_componentized_analysis(
         )
     elif offset_mode == "channel_aware":
         return _run_channel_aware_analysis(
-            master_path, components, frame_rate, job_id
+            master_path, components, frame_rate, job_id, methods
         )
     else:
         raise ValueError(f"Unsupported offset_mode: {offset_mode}")
@@ -690,6 +704,233 @@ def _run_mixdown_analysis(
         "method_used": "mixdown",
         "component_results": component_results,
         "overall_offset": {"offset_seconds": offset_seconds, "confidence": confidence}
+    }
+
+
+def _run_gpu_analysis(
+    master_path: str,
+    components: List[Dict[str, Any]],
+    job_id: str = None
+) -> Dict[str, Any]:
+    """
+    Run GPU-accelerated analysis using Wav2Vec2 embeddings.
+    
+    This is the fastest single-method detection mode, using GPU acceleration
+    for embedding extraction and correlation.
+    """
+    logger.info("="*60)
+    logger.info("🚀 GPU FAST MODE ACTIVATED - Wav2Vec2 Analysis")
+    logger.info("="*60)
+    job_manager.update_progress(job_id, 5, "Starting GPU-accelerated analysis (Wav2Vec2)...")
+    
+    # Import the GPU detector
+    try:
+        from sync_analyzer.core.simple_gpu_sync import SimpleGPUSyncDetector
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"🖥️  GPU Device: {device}")
+        if device == "cuda":
+            logger.info(f"🎮 CUDA GPU: {torch.cuda.get_device_name(0)}")
+            logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        else:
+            logger.warning("⚠️  CUDA not available, GPU analysis will run on CPU (slower)")
+    except ImportError as e:
+        logger.error(f"GPU analysis requires torch and transformers: {e}")
+        raise RuntimeError("GPU analysis unavailable: missing dependencies (torch, transformers)")
+    
+    job_manager.update_progress(job_id, 10, "Loading Wav2Vec2 model...")
+    detector = SimpleGPUSyncDetector(device=device)
+    
+    component_results = []
+    total_comps = len(components)
+    
+    for comp_idx, comp in enumerate(components):
+        base_progress = 15 + int((comp_idx / total_comps) * 80)
+        job_manager.update_progress(
+            job_id, base_progress,
+            f"GPU analyzing component {comp_idx + 1}/{total_comps}: {comp['name']}"
+        )
+        
+        channel_type = detect_channel_type(comp["name"])
+        
+        try:
+            # Run GPU analysis
+            result = detector.detect_sync(master_path, comp["path"])
+            
+            component_results.append({
+                "component": comp["label"],
+                "componentName": comp["name"],
+                "channel_type": channel_type,
+                "optimal_methods": ["gpu"],
+                "offset_seconds": result.offset_seconds,
+                "confidence": result.confidence,
+                "quality_score": result.confidence,
+                "method_used": "gpu (wav2vec2)",
+                "method_results": [{
+                    "method": "gpu",
+                    "offset_seconds": result.offset_seconds,
+                    "confidence": result.confidence,
+                    "time_taken": result.time_taken if hasattr(result, 'time_taken') else 0,
+                    "device": result.device if hasattr(result, 'device') else device,
+                }],
+                "status": "completed",
+            })
+            logger.info(f"GPU analysis for {comp['name']}: offset={result.offset_seconds:.3f}s, conf={result.confidence:.2%}")
+        except Exception as comp_err:
+            logger.error(f"GPU analysis error for {comp['name']}: {comp_err}")
+            component_results.append({
+                "component": comp["label"],
+                "componentName": comp["name"],
+                "channel_type": channel_type,
+                "optimal_methods": ["gpu"],
+                "offset_seconds": 0.0,
+                "confidence": 0.0,
+                "error": str(comp_err),
+                "status": "failed",
+            })
+    
+    # Vote for consensus offset
+    job_manager.update_progress(job_id, 95, "Computing GPU consensus...")
+    voted_offset, vote_count, total_count = vote_for_offset(component_results)
+    vote_agreement = vote_count / total_count if total_count > 0 else 0.0
+    
+    # Override outliers with voted offset if we have agreement
+    if vote_agreement >= 0.5:
+        tolerance = 0.5  # Tighter tolerance for GPU mode (0.5s)
+        for comp_result in component_results:
+            comp_offset = comp_result.get('offset_seconds', 0)
+            if abs(comp_offset - voted_offset) > tolerance:
+                original_offset = comp_offset
+                comp_result['offset_seconds'] = voted_offset
+                comp_result['original_offset_seconds'] = original_offset
+                comp_result['offset_overridden'] = True
+    
+    overall_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results) if component_results else 0.0
+    
+    return {
+        "offset_mode": "gpu",
+        "voted_offset_seconds": voted_offset,
+        "vote_agreement": vote_agreement,
+        "vote_count": vote_count,
+        "total_components": total_count,
+        "analysis_methods": ["gpu"],
+        "method_used": "gpu (wav2vec2)",
+        "component_results": component_results,
+        "overall_offset": {
+            "offset_seconds": voted_offset,
+            "confidence": overall_confidence,
+        },
+    }
+
+
+def _run_fingerprint_analysis(
+    master_path: str,
+    components: List[Dict[str, Any]],
+    job_id: str = None
+) -> Dict[str, Any]:
+    """
+    Run fingerprint-based analysis using Chromaprint.
+    
+    This method is robust to codec differences and compression artifacts,
+    making it ideal for dubbed content where the underlying audio pattern
+    is preserved but the encoding may differ.
+    """
+    logger.info("="*60)
+    logger.info("🔊 FINGERPRINT MODE ACTIVATED - Chromaprint Analysis")
+    logger.info("="*60)
+    job_manager.update_progress(job_id, 5, "Starting fingerprint-based analysis...")
+    
+    # Import the fingerprint detector
+    try:
+        from sync_analyzer.core.fingerprint_sync import FingerprintSyncDetector
+    except ImportError as e:
+        logger.error(f"Fingerprint analysis requires chromaprint: {e}")
+        raise RuntimeError("Fingerprint analysis unavailable: missing dependencies (pyacoustid, fpcalc)")
+    
+    job_manager.update_progress(job_id, 10, "Initializing Chromaprint...")
+    detector = FingerprintSyncDetector()
+    
+    component_results = []
+    total_comps = len(components)
+    
+    for comp_idx, comp in enumerate(components):
+        base_progress = 15 + int((comp_idx / total_comps) * 80)
+        job_manager.update_progress(
+            job_id, base_progress,
+            f"Fingerprinting component {comp_idx + 1}/{total_comps}: {comp['name']}"
+        )
+        
+        channel_type = detect_channel_type(comp["name"])
+        
+        try:
+            # Run fingerprint analysis
+            result = detector.detect_sync(master_path, comp["path"])
+            
+            component_results.append({
+                "component": comp["label"],
+                "componentName": comp["name"],
+                "channel_type": channel_type,
+                "optimal_methods": ["fingerprint"],
+                "offset_seconds": result.offset_seconds,
+                "confidence": result.confidence,
+                "quality_score": result.confidence,
+                "method_used": "fingerprint (chromaprint)",
+                "method_results": [{
+                    "method": "fingerprint",
+                    "offset_seconds": result.offset_seconds,
+                    "confidence": result.confidence,
+                    "master_duration": result.master_duration,
+                    "dub_duration": result.dub_duration,
+                    "fingerprint_frames": result.fingerprint_frames_dub,
+                    "correlation_peak": result.correlation_peak,
+                }],
+                "status": "completed",
+            })
+            logger.info(f"Fingerprint analysis for {comp['name']}: offset={result.offset_seconds:.3f}s, conf={result.confidence:.2%}")
+        except Exception as comp_err:
+            logger.error(f"Fingerprint analysis error for {comp['name']}: {comp_err}")
+            component_results.append({
+                "component": comp["label"],
+                "componentName": comp["name"],
+                "channel_type": channel_type,
+                "optimal_methods": ["fingerprint"],
+                "offset_seconds": 0.0,
+                "confidence": 0.0,
+                "error": str(comp_err),
+                "status": "failed",
+            })
+    
+    # Vote for consensus offset
+    job_manager.update_progress(job_id, 95, "Computing fingerprint consensus...")
+    voted_offset, vote_count, total_count = vote_for_offset(component_results)
+    vote_agreement = vote_count / total_count if total_count > 0 else 0.0
+    
+    # Override outliers with voted offset if we have agreement
+    if vote_agreement >= 0.5:
+        tolerance = 0.5  # 0.5s tolerance for fingerprint mode
+        for comp_result in component_results:
+            comp_offset = comp_result.get('offset_seconds', 0)
+            if abs(comp_offset - voted_offset) > tolerance:
+                original_offset = comp_offset
+                comp_result['offset_seconds'] = voted_offset
+                comp_result['original_offset_seconds'] = original_offset
+                comp_result['offset_overridden'] = True
+    
+    overall_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results) if component_results else 0.0
+    
+    return {
+        "offset_mode": "fingerprint",
+        "voted_offset_seconds": voted_offset,
+        "vote_agreement": vote_agreement,
+        "vote_count": vote_count,
+        "total_components": total_count,
+        "analysis_methods": ["fingerprint"],
+        "method_used": "fingerprint (chromaprint)",
+        "component_results": component_results,
+        "overall_offset": {
+            "offset_seconds": voted_offset,
+            "confidence": overall_confidence,
+        },
     }
 
 
@@ -749,7 +990,8 @@ def _run_channel_aware_analysis(
     master_path: str,
     components: List[Dict[str, Any]],
     frame_rate: float,
-    job_id: str = None
+    job_id: str = None,
+    methods: List[str] = None
 ) -> Dict[str, Any]:
     """
     Run channel-aware analysis with CONSISTENT method across all channels.
@@ -760,9 +1002,12 @@ def _run_channel_aware_analysis(
     """
     job_manager.update_progress(job_id, 5, "Starting channel-aware analysis...")
     
-    # Use consistent methods across ALL components for reliable voting
-    # Using multiple methods ensures better consensus
-    consistent_methods = ['mfcc', 'spectral', 'onset']
+    # Use provided methods or default to consistent multi-method approach
+    # Filter out 'gpu' and 'fingerprint' since they're handled separately
+    if methods:
+        consistent_methods = [m for m in methods if m not in ('gpu', 'fingerprint')]
+    if not methods or not consistent_methods:
+        consistent_methods = ['mfcc', 'spectral', 'onset']
     
     component_results = []
     total_comps = len(components)

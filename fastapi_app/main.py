@@ -377,6 +377,7 @@ app = create_application()
 if __name__ == "__main__":
     debug_flag = os.environ.get("DEBUG", str(settings.DEBUG)).lower() in {"1", "true", "yes"}
     reload_kwargs: Dict[str, Any] = {}
+    
     if debug_flag:
         # Restrict reload watcher to code dirs and exclude volatile dirs
         app_dir = str(Path(__file__).parent)
@@ -389,8 +390,13 @@ if __name__ == "__main__":
                 "reports/*",
                 "ai_models/*",
                 "static/*",
+                "*.log",
             ],
         })
+        logger.info("🔧 DEBUG mode enabled - hot reload active")
+    else:
+        # Production mode - no reload, optimized settings
+        logger.info("🏭 Production mode - hot reload disabled")
 
     uvicorn.run(
         "main:app",
@@ -399,5 +405,6 @@ if __name__ == "__main__":
         reload=debug_flag,
         log_level=settings.LOG_LEVEL.lower(),
         access_log=True,
+        workers=1 if debug_flag else 4,  # Multiple workers in production
         **reload_kwargs,
     )

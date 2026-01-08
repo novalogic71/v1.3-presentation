@@ -53,3 +53,6 @@ scikit-learn>=1.1.0
 python-dotenv>=1.0.0
 tenacity>=8.2.0
 psutil>=5.9.0
+
+# Process supervision (for reliable production operation)
+supervisor>=4.2.0

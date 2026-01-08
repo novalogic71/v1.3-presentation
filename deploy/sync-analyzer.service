@@ -1,0 +1,48 @@
+[Unit]
+Description=Professional Audio Sync Analyzer - FastAPI Backend
+Documentation=https://github.com/your-org/sync-analyzer
+After=network.target redis.service
+Wants=redis.service sync-analyzer-celery.service
+
+[Service]
+Type=simple
+User=sync-analyzer
+Group=sync-analyzer
+WorkingDirectory=/opt/sync-analyzer/fastapi_app
+
+# Environment
+Environment="PYTHONPATH=/opt/sync-analyzer:/opt/sync-analyzer/fastapi_app"
+Environment="PYTHONUNBUFFERED=1"
+Environment="DEBUG=false"
+Environment="MOUNT_PATH=/mnt/data"
+Environment="REDIS_URL=redis://localhost:6379/0"
+EnvironmentFile=-/opt/sync-analyzer/.env
+
+# Exec
+ExecStart=/opt/sync-analyzer/venv/bin/python main.py
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy - always restart on failure
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sync-analyzer/logs /opt/sync-analyzer/uploads /opt/sync-analyzer/reports /opt/sync-analyzer/sync_reports /mnt/data
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=append:/opt/sync-analyzer/logs/fastapi.log
+StandardError=append:/opt/sync-analyzer/logs/fastapi_error.log
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,75 @@
+# Professional Audio Sync Analyzer - Production Dockerfile
+# Uses supervisord for reliable process management
+
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV MOUNT_PATH=/mnt/data
+ENV PORT_API=8000
+ENV PYTHONPATH=/app:/app/fastapi_app
+ENV DEBUG=false
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libsndfile1 \
+    libasound2-dev \
+    portaudio19-dev \
+    python3-dev \
+    gcc \
+    g++ \
+    curl \
+    redis-tools \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements files
+COPY requirements.txt .
+COPY fastapi_app/requirements.txt ./fastapi_app/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r fastapi_app/requirements.txt && \
+    pip install --no-cache-dir supervisor
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p \
+    uploads \
+    ai_models \
+    logs \
+    reports \
+    sync_reports \
+    optimized_sync_reports \
+    repaired_sync_files
+
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Make scripts executable
+RUN chmod +x /app/scripts/supervisor_eventlistener.py 2>/dev/null || true
+RUN chmod +x /app/scripts/healthcheck.sh 2>/dev/null || true
+
+# Create non-root user (but supervisor needs to run as root initially)
+RUN useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app
+
+# Expose ports
+EXPOSE 8000
+
+# Health check with proper timeout and retry logic
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run supervisord as the entrypoint
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+

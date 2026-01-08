@@ -261,6 +261,8 @@ class SyncAnalyzerUI {
             methodOnset: document.getElementById('method-onset'),
             methodSpectral: document.getElementById('method-spectral'),
             methodAi: document.getElementById('method-ai'),
+            methodGpu: document.getElementById('method-gpu'),
+            methodFingerprint: document.getElementById('method-fingerprint'),
             sampleRate: document.getElementById('sample-rate'),
             windowSize: document.getElementById('window-size'),
             confidenceThreshold: document.getElementById('confidence-threshold'),
@@ -282,6 +284,13 @@ class SyncAnalyzerUI {
             concurrentJobs: document.getElementById('concurrent-jobs'),
             processBatch: document.getElementById('process-batch'),
             repairAllBatch: document.getElementById('repair-all-batch'),
+            exportDropdownBtn: document.getElementById('export-dropdown-btn'),
+            exportDropdownMenu: document.getElementById('export-dropdown-menu'),
+            exportBatch: document.getElementById('export-batch'),
+            exportHtmlReport: document.getElementById('export-html-report'),
+            exportJson: document.getElementById('export-json'),
+            exportTableView: document.getElementById('export-table-view'),
+            exportWaveformView: document.getElementById('export-waveform-view'),
             clearBatch: document.getElementById('clear-batch'),
             toggleBatchFullscreen: document.getElementById('toggle-batch-fullscreen'),
             queueCount: document.getElementById('queue-count'),
@@ -420,7 +429,7 @@ class SyncAnalyzerUI {
         this.setupBatchSplitter();
         
         // Configuration method selection events
-        [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi].filter(cb => cb).forEach(checkbox => {
+        [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi, this.elements.methodGpu, this.elements.methodFingerprint].filter(cb => cb).forEach(checkbox => {
             checkbox.addEventListener('change', () => {
                 this.updateMethodSelection();
                 // Add visual feedback for toggle switches
@@ -443,6 +452,49 @@ class SyncAnalyzerUI {
         
         this.elements.processBatch.addEventListener('click', () => this.processBatchQueue());
         this.elements.repairAllBatch.addEventListener('click', () => this.repairAllCompleted());
+        // Export dropdown
+        if (this.elements.exportDropdownBtn) {
+            this.elements.exportDropdownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleExportDropdown();
+            });
+        }
+        if (this.elements.exportBatch) {
+            this.elements.exportBatch.addEventListener('click', () => {
+                this.closeExportDropdown();
+                this.exportBatchReport();
+            });
+        }
+        if (this.elements.exportHtmlReport) {
+            this.elements.exportHtmlReport.addEventListener('click', () => {
+                this.closeExportDropdown();
+                this.exportHtmlReport();
+            });
+        }
+        if (this.elements.exportJson) {
+            this.elements.exportJson.addEventListener('click', () => {
+                this.closeExportDropdown();
+                this.exportJsonReport();
+            });
+        }
+        if (this.elements.exportTableView) {
+            this.elements.exportTableView.addEventListener('click', () => {
+                this.closeExportDropdown();
+                this.exportTableViewReport();
+            });
+        }
+        if (this.elements.exportWaveformView) {
+            this.elements.exportWaveformView.addEventListener('click', () => {
+                this.closeExportDropdown();
+                this.exportWaveformViewReport();
+            });
+        }
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.export-dropdown')) {
+                this.closeExportDropdown();
+            }
+        });
         this.elements.clearBatch.addEventListener('click', () => this.clearBatchQueue());
         this.elements.closeDetails.addEventListener('click', () => this.closeBatchDetails());
         if (this.elements.toggleBatchFullscreen) {
@@ -3616,6 +3668,20 @@ class SyncAnalyzerUI {
 
                 try {
                     // Start the background job using async endpoint
+                    // Determine methods - exclusive modes (GPU, Fingerprint) take priority
+                    const gpuEnabled = this.elements.methodGpu && this.elements.methodGpu.checked;
+                    const fingerprintEnabled = this.elements.methodFingerprint && this.elements.methodFingerprint.checked;
+                    let methodsToUse;
+                    if (gpuEnabled) {
+                        methodsToUse = ['gpu'];
+                    } else if (fingerprintEnabled) {
+                        methodsToUse = ['fingerprint'];
+                    } else {
+                        methodsToUse = this.currentMethods || ['mfcc', 'onset', 'spectral'];
+                    }
+                    
+                    console.log(`[processBatchQueue] GPU: ${gpuEnabled}, Fingerprint: ${fingerprintEnabled}, methods: ${methodsToUse}`);
+                    
                     const startResponse = await fetch('/api/v1/analysis/componentized/async', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3623,6 +3689,7 @@ class SyncAnalyzerUI {
                             master: item.master.path,
                             components: item.components,
                             offset_mode: offsetMode,
+                            methods: methodsToUse,
                             frame_rate: itemFrameRate
                         })
                     });
@@ -3875,6 +3942,1861 @@ class SyncAnalyzerUI {
         this.closeBatchDetails();
         this.addLog('info', 'Batch queue cleared');
         this.persistBatchQueue().catch(() => {});
+    }
+    
+    /**
+     * Toggle export dropdown visibility
+     */
+    toggleExportDropdown() {
+        const dropdown = this.elements.exportDropdownBtn?.closest('.export-dropdown');
+        if (dropdown) {
+            dropdown.classList.toggle('open');
+        }
+    }
+    
+    /**
+     * Close export dropdown
+     */
+    closeExportDropdown() {
+        const dropdown = this.elements.exportDropdownBtn?.closest('.export-dropdown');
+        if (dropdown) {
+            dropdown.classList.remove('open');
+        }
+    }
+    
+    /**
+     * Export batch queue results as CSV report
+     */
+    exportBatchReport() {
+        if (this.batchQueue.length === 0) {
+            this.addLog('warning', 'No items in batch queue to export');
+            return;
+        }
+        
+        // Build CSV header
+        const headers = [
+            'Master File',
+            'Master Path',
+            'Component',
+            'Component Path',
+            'Status',
+            'Offset (seconds)',
+            'Offset (timecode)',
+            'Confidence',
+            'Method Used',
+            'Repair Status',
+            'Error'
+        ];
+        
+        const rows = [headers.join(',')];
+        
+        // Build data rows
+        for (const item of this.batchQueue) {
+            const masterName = item.master?.name || 'N/A';
+            const masterPath = item.master?.path || 'N/A';
+            
+            if (item.components && item.components.length > 0) {
+                // Componentized mode - one row per component
+                for (let i = 0; i < item.components.length; i++) {
+                    const comp = item.components[i];
+                    const compResult = item.componentResults?.[i] || item.result?.component_results?.[i] || {};
+                    
+                    const offsetSec = compResult.offset_seconds ?? item.result?.voted_offset_seconds ?? '';
+                    const offsetTC = offsetSec !== '' ? this.formatTimecode(offsetSec, item.frameRate || 23.976) : '';
+                    const confidence = compResult.confidence ?? compResult.quality_score ?? '';
+                    const method = compResult.method_used || item.result?.method_used || '';
+                    const repairStatus = compResult.repairStatus || item.repairStatus || '';
+                    
+                    rows.push([
+                        this.escapeCSV(masterName),
+                        this.escapeCSV(masterPath),
+                        this.escapeCSV(comp.label || comp.name || `Component ${i + 1}`),
+                        this.escapeCSV(comp.path || ''),
+                        item.status || '',
+                        offsetSec !== '' ? offsetSec.toFixed(6) : '',
+                        offsetTC,
+                        confidence !== '' ? (confidence * 100).toFixed(1) + '%' : '',
+                        this.escapeCSV(method),
+                        repairStatus,
+                        this.escapeCSV(item.error || compResult.error || '')
+                    ].join(','));
+                }
+            } else {
+                // Standard mode - single row
+                const dubName = item.dub?.name || 'N/A';
+                const dubPath = item.dub?.path || 'N/A';
+                const offsetSec = item.result?.offset_seconds ?? '';
+                const offsetTC = offsetSec !== '' ? this.formatTimecode(offsetSec, item.frameRate || 23.976) : '';
+                const confidence = item.result?.confidence ?? '';
+                const method = item.result?.method_used || '';
+                
+                rows.push([
+                    this.escapeCSV(masterName),
+                    this.escapeCSV(masterPath),
+                    this.escapeCSV(dubName),
+                    this.escapeCSV(dubPath),
+                    item.status || '',
+                    offsetSec !== '' ? offsetSec.toFixed(6) : '',
+                    offsetTC,
+                    confidence !== '' ? (confidence * 100).toFixed(1) + '%' : '',
+                    this.escapeCSV(method),
+                    item.repairStatus || '',
+                    this.escapeCSV(item.error || '')
+                ].join(','));
+            }
+        }
+        
+        // Create and download CSV
+        const csvContent = rows.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        const filename = `sync_analysis_report_${timestamp}.csv`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported ${this.batchQueue.length} items to ${filename}`);
+    }
+    
+    /**
+     * Escape a value for CSV (handle commas, quotes, newlines)
+     */
+    escapeCSV(value) {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    }
+    
+    /**
+     * Export batch queue as clean HTML report with component cards
+     */
+    async exportHtmlReport() {
+        if (this.batchQueue.length === 0) {
+            this.addLog('warning', 'No items in batch queue to export');
+            return;
+        }
+        
+        this.addLog('info', 'Generating HTML report...');
+        
+        // Calculate summary stats
+        const total = this.batchQueue.length;
+        const completed = this.batchQueue.filter(i => i.status === 'completed').length;
+        const failed = this.batchQueue.filter(i => i.status === 'failed').length;
+        const queued = this.batchQueue.filter(i => i.status === 'queued').length;
+        const totalComponents = this.batchQueue.reduce((sum, item) => sum + (item.components?.length || 1), 0);
+        
+        const timestamp = new Date().toLocaleString();
+        const fileTimestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        
+        // Build clean HTML report
+        const htmlContent = this.generateCleanHtmlReport(timestamp, fileTimestamp, { total, completed, failed, queued, totalComponents });
+        
+        // Download
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const filename = `sync_report_${fileTimestamp}.html`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported HTML report with ${totalComponents} components to ${filename}`);
+    }
+    
+    /**
+     * Export batch queue as Waveform View (timeline style like Offset Visualization)
+     */
+    async exportWaveformViewReport() {
+        if (this.batchQueue.length === 0) {
+            this.addLog('warning', 'No items in batch queue to export');
+            return;
+        }
+        
+        this.addLog('info', 'Generating Waveform View report...');
+        
+        // Calculate summary stats
+        const total = this.batchQueue.length;
+        const completed = this.batchQueue.filter(i => i.status === 'completed').length;
+        const failed = this.batchQueue.filter(i => i.status === 'failed').length;
+        const queued = this.batchQueue.filter(i => i.status === 'queued').length;
+        const totalComponents = this.batchQueue.reduce((sum, item) => sum + (item.components?.length || 1), 0);
+        
+        const timestamp = new Date().toLocaleString();
+        const fileTimestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        
+        // Build timeline waveform HTML content
+        const htmlContent = this.generateTimelineWaveformReport(timestamp, fileTimestamp, { total, completed, failed, queued, totalComponents });
+        
+        // Download
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const filename = `sync_waveform_view_${fileTimestamp}.html`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported Waveform View with ${totalComponents} components to ${filename}`);
+    }
+    
+    /**
+     * Generate clean HTML report content with component cards
+     */
+    generateCleanHtmlReport(timestamp, fileTimestamp, stats) {
+        const itemCards = this.batchQueue.map((item, index) => this.generateCleanItemCard(item, index)).join('');
+        
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Analysis Report - ${fileTimestamp}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-page: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-surface: #f1f5f9;
+            --border: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 30px; }
+        
+        .header {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header h1::before { content: '🎬'; }
+        
+        .header-date { font-size: 13px; color: var(--text-muted); }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+        
+        .stat-box {
+            background: var(--bg-surface);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        
+        .stat-box .value {
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+        
+        .stat-box .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        
+        .stat-box.masters .value { color: var(--text-primary); }
+        .stat-box.components .value { color: var(--accent-blue); }
+        .stat-box.completed .value { color: var(--accent-green); }
+        .stat-box.failed .value { color: var(--accent-red); }
+        .stat-box.queued .value { color: var(--accent-orange); }
+        
+        .items-grid { display: flex; flex-direction: column; gap: 20px; }
+        
+        .item-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .item-header .title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .item-header .num {
+            background: var(--accent-blue);
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        
+        .status-pill {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-pill.completed { background: #dcfce7; color: #166534; }
+        .status-pill.failed { background: #fee2e2; color: #991b1b; }
+        .status-pill.queued { background: #fef3c7; color: #92400e; }
+        
+        .item-body { padding: 20px; }
+        
+        .quick-info {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .info-block { flex: 1; }
+        
+        .info-block .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .info-block .value {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .info-block .value.in-sync { color: var(--accent-green); }
+        .info-block .value.offset { color: var(--accent-blue); }
+        
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        
+        .component-card {
+            background: var(--bg-surface);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+        
+        .component-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .comp-badge {
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        
+        .comp-badge.a0 { background: #fef2f2; color: #dc2626; }
+        .comp-badge.a1 { background: #f0fdf4; color: #16a34a; }
+        .comp-badge.a2 { background: #eff6ff; color: #2563eb; }
+        .comp-badge.a3 { background: #fefce8; color: #ca8a04; }
+        
+        .comp-name {
+            font-size: 12px;
+            color: var(--text-secondary);
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .comp-offset {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+        
+        .waveform-container {
+            height: 50px;
+            background: linear-gradient(180deg, #fff 0%, var(--bg-surface) 100%);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        
+        .waveform-svg { width: 100%; height: 100%; }
+        
+        .sync-tag {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        
+        .sync-tag.in-sync { background: #dcfce7; color: #166534; }
+        .sync-tag.near { background: #d1fae5; color: #047857; }
+        .sync-tag.close { background: #fef9c3; color: #a16207; }
+        .sync-tag.moderate { background: #fed7aa; color: #c2410c; }
+        .sync-tag.far { background: #fee2e2; color: #dc2626; }
+        
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        @media print {
+            body { background: white; }
+            .item-card, .header { box-shadow: none; border: 1px solid #ddd; }
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .quick-info { flex-wrap: wrap; }
+            .components-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-top">
+                <h1>Sync Analysis Report</h1>
+                <span class="header-date">${timestamp}</span>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-box masters">
+                    <div class="value">${stats.total}</div>
+                    <div class="label">Masters</div>
+                </div>
+                <div class="stat-box components">
+                    <div class="value">${stats.totalComponents}</div>
+                    <div class="label">Components</div>
+                </div>
+                <div class="stat-box completed">
+                    <div class="value">${stats.completed}</div>
+                    <div class="label">Completed</div>
+                </div>
+                <div class="stat-box failed">
+                    <div class="value">${stats.failed}</div>
+                    <div class="label">Failed</div>
+                </div>
+                <div class="stat-box queued">
+                    <div class="value">${stats.queued}</div>
+                    <div class="label">Queued</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="items-grid">
+            ${itemCards}
+        </div>
+        
+        <footer class="footer">
+            Professional Audio Sync Analyzer • ${stats.total} masters • ${stats.totalComponents} components
+        </footer>
+    </div>
+</body>
+</html>`;
+    }
+    
+    /**
+     * Generate a clean item card for the HTML report
+     */
+    generateCleanItemCard(item, index) {
+        const masterName = item.master?.name || 'Unknown';
+        const status = item.status || 'queued';
+        const fps = item.frameRate || 23.976;
+        
+        let votedOffset = 0;
+        let votedTC = 'N/A';
+        let confidence = 0;
+        let method = 'N/A';
+        
+        if (item.result) {
+            votedOffset = item.result.voted_offset_seconds ?? item.result.offset_seconds ?? 0;
+            votedTC = this.formatTimecode(votedOffset, fps);
+            confidence = item.result.overall_offset?.confidence ?? item.result.confidence ?? 0;
+            method = item.result.method_used || 'N/A';
+        }
+        
+        const isInSync = Math.abs(votedOffset) < 0.02;
+        
+        // Generate component cards
+        let componentsHtml = '';
+        if (item.components && item.components.length > 0) {
+            componentsHtml = item.components.map((comp, i) => {
+                const compResult = item.componentResults?.[i] || item.result?.component_results?.[i] || {};
+                const compOffset = compResult.offset_seconds ?? votedOffset;
+                const compTC = this.formatTimecode(compOffset, fps);
+                const compConf = compResult.confidence ?? confidence;
+                const compLabel = comp.label || `A${i}`;
+                const labelClass = compLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const syncStatus = this.getSyncStatusLabel(compOffset);
+                
+                const waveformSvg = this.generateCompactWaveformSvg(comp.name || '', compOffset, labelClass);
+                
+                return `
+                    <div class="component-card">
+                        <div class="component-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="comp-badge ${labelClass}">${this.escapeHtml(compLabel)}</span>
+                                <span class="comp-name" title="${this.escapeHtml(comp.name || '')}">${this.escapeHtml(comp.name || 'Unknown')}</span>
+                            </div>
+                            <span class="comp-offset">${compTC}</span>
+                        </div>
+                        ${waveformSvg}
+                        <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 11px;">
+                            <span class="sync-tag ${syncStatus.type}">${syncStatus.label}</span>
+                            <span style="color: var(--text-muted);">${(compConf * 100).toFixed(0)}% confidence</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        return `
+            <article class="item-card">
+                <div class="item-header">
+                    <div class="title">
+                        <span class="num">${index + 1}</span>
+                        <span>${this.escapeHtml(masterName)}</span>
+                    </div>
+                    <span class="status-pill ${status}">${status}</span>
+                </div>
+                <div class="item-body">
+                    <div class="quick-info">
+                        <div class="info-block">
+                            <div class="label">Voted Offset</div>
+                            <div class="value ${isInSync ? 'in-sync' : 'offset'}">${votedTC}</div>
+                        </div>
+                        <div class="info-block">
+                            <div class="label">Seconds</div>
+                            <div class="value">${votedOffset.toFixed(4)}s</div>
+                        </div>
+                        <div class="info-block">
+                            <div class="label">Confidence</div>
+                            <div class="value">${(confidence * 100).toFixed(0)}%</div>
+                        </div>
+                        <div class="info-block">
+                            <div class="label">Method</div>
+                            <div class="value" style="font-family: Inter, sans-serif; font-size: 13px;">${this.escapeHtml(method)}</div>
+                        </div>
+                        <div class="info-block">
+                            <div class="label">Components</div>
+                            <div class="value">${item.components?.length || 1}</div>
+                        </div>
+                    </div>
+                    <div class="components-grid">
+                        ${componentsHtml || '<p style="color: var(--text-muted); font-size: 13px;">No component data</p>'}
+                    </div>
+                </div>
+            </article>
+        `;
+    }
+    
+    /**
+     * Generate compact waveform SVG for component cards
+     */
+    generateCompactWaveformSvg(filename, offset, labelClass) {
+        const seed = this.hashString(filename || 'default');
+        const width = 260;
+        const height = 40;
+        const barCount = 50;
+        
+        const colors = {
+            'a0': { fill: '#fecaca', stroke: '#ef4444' },
+            'a1': { fill: '#bbf7d0', stroke: '#22c55e' },
+            'a2': { fill: '#bfdbfe', stroke: '#3b82f6' },
+            'a3': { fill: '#fef08a', stroke: '#eab308' },
+        };
+        const color = colors[labelClass] || { fill: '#e9d5ff', stroke: '#a855f7' };
+        
+        let bars = '';
+        const centerY = height / 2;
+        
+        for (let i = 0; i < barCount; i++) {
+            const x = (i / barCount) * width + 4;
+            const t = i / barCount;
+            const noise1 = Math.sin(seed + i * 0.4) * 0.3;
+            const noise2 = Math.sin(seed * 1.7 + i * 0.8) * 0.2;
+            const envelope = Math.sin(t * Math.PI) * 0.6 + 0.4;
+            const amplitude = (0.3 + envelope * 0.7 + noise1 + noise2) * (height / 2 - 4);
+            const barHeight = Math.max(2, amplitude);
+            const y = centerY - barHeight / 2;
+            bars += `<rect x="${x}" y="${y}" width="3" height="${barHeight}" rx="1" fill="${color.fill}" stroke="${color.stroke}" stroke-width="0.5"/>`;
+        }
+        
+        const offsetPercent = 50 + (offset / 2) * 25;
+        const clampedOffset = Math.max(5, Math.min(95, offsetPercent));
+        const showMarker = Math.abs(offset) > 0.01;
+        
+        const offsetMarker = showMarker ? `
+            <line x1="${clampedOffset}%" y1="0" x2="${clampedOffset}%" y2="${height}" stroke="#ef4444" stroke-width="2"/>
+            <circle cx="${clampedOffset}%" cy="5" r="3" fill="#ef4444"/>
+        ` : '';
+        
+        const centerLine = `<line x1="50%" y1="0" x2="50%" y2="${height}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="2,2"/>`;
+        
+        return `
+            <div class="waveform-container">
+                <svg class="waveform-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    ${centerLine}
+                    ${bars}
+                    ${offsetMarker}
+                </svg>
+            </div>
+        `;
+    }
+    
+    /**
+     * Generate timeline waveform report (like Offset Visualization panel)
+     */
+    generateTimelineWaveformReport(timestamp, fileTimestamp, stats) {
+        // Generate item sections with timeline waveforms
+        const itemSections = this.batchQueue.map((item, index) => this.generateTimelineWaveformSection(item, index)).join('');
+        
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Waveform Report - ${fileTimestamp}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-page: #0d1117;
+            --bg-card: #161b22;
+            --bg-surface: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --waveform-blue: #2563eb;
+            --waveform-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+        
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .header-date {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .stats-row {
+            display: flex;
+            gap: 24px;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+        
+        .stat-item .value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .stat-item .label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .stat-item.masters .value { color: var(--text-primary); }
+        .stat-item.components .value { color: var(--waveform-blue); }
+        .stat-item.completed .value { color: var(--waveform-green); }
+        .stat-item.failed .value { color: var(--accent-red); }
+        
+        /* Item Sections */
+        .item-section {
+            background: var(--bg-card);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .item-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .item-num {
+            background: var(--waveform-blue);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        
+        .item-name {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .item-meta {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+        
+        .meta-item {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .status-badge.failed { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .status-badge.queued { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
+        
+        /* Waveform Visualization Container */
+        .waveform-viz {
+            padding: 16px 20px;
+        }
+        
+        .viz-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .zero-marker {
+            background: var(--accent-orange);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* Timeline Track */
+        .track {
+            position: relative;
+            margin-bottom: 8px;
+        }
+        
+        .track-label {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 50px;
+            z-index: 10;
+        }
+        
+        .track-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        
+        .track-badge.aref { background: var(--waveform-blue); color: white; }
+        .track-badge.a0 { background: #16a34a; color: white; }
+        .track-badge.a1 { background: #16a34a; color: white; }
+        .track-badge.a2 { background: #16a34a; color: white; }
+        .track-badge.a3 { background: #16a34a; color: white; }
+        
+        .track-waveform {
+            margin-left: 60px;
+            height: 60px;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .track-waveform.master {
+            background: var(--waveform-blue);
+        }
+        
+        .track-waveform.component {
+            background: var(--waveform-green);
+        }
+        
+        /* Waveform SVG */
+        .waveform-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        /* Offset Marker */
+        .offset-marker {
+            position: absolute;
+            top: 4px;
+            background: var(--accent-red);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+            z-index: 5;
+        }
+        
+        /* Timeline */
+        .timeline {
+            margin-left: 60px;
+            height: 20px;
+            position: relative;
+            border-top: 1px solid var(--border);
+            margin-top: 8px;
+        }
+        
+        .timeline-marker {
+            position: absolute;
+            top: 4px;
+            font-size: 9px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            transform: translateX(-50%);
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        
+        /* Print */
+        @media print {
+            body { background: white; color: black; }
+            .item-section { border: 1px solid #ccc; }
+            .track-waveform.master { background: #3b82f6; }
+            .track-waveform.component { background: #22c55e; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-row">
+                <h1>🎬 Offset Visualization Report</h1>
+                <span class="header-date">${timestamp}</span>
+            </div>
+            <div class="stats-row">
+                <div class="stat-item masters">
+                    <span class="value">${stats.total}</span>
+                    <span class="label">Masters</span>
+                </div>
+                <div class="stat-item components">
+                    <span class="value">${stats.totalComponents}</span>
+                    <span class="label">Components</span>
+                </div>
+                <div class="stat-item completed">
+                    <span class="value">${stats.completed}</span>
+                    <span class="label">Completed</span>
+                </div>
+                <div class="stat-item failed">
+                    <span class="value">${stats.failed}</span>
+                    <span class="label">Failed</span>
+                </div>
+            </div>
+        </header>
+        
+        ${itemSections}
+        
+        <footer class="footer">
+            Professional Audio Sync Analyzer • Offset Visualization Report
+        </footer>
+    </div>
+</body>
+</html>`;
+    }
+    
+    /**
+     * Generate timeline waveform section for an item (like Offset Visualization panel)
+     */
+    generateTimelineWaveformSection(item, index) {
+        const masterName = item.master?.name || 'Unknown';
+        const status = item.status || 'queued';
+        const fps = item.frameRate || 23.976;
+        
+        // Get overall offset info
+        let votedOffset = 0;
+        let votedTC = '00:00:00:00';
+        let confidence = 0;
+        let method = 'N/A';
+        
+        if (item.result) {
+            votedOffset = item.result.voted_offset_seconds ?? item.result.offset_seconds ?? 0;
+            votedTC = this.formatTimecode(votedOffset, fps);
+            confidence = item.result.overall_offset?.confidence ?? item.result.confidence ?? 0;
+            method = item.result.method_used || 'N/A';
+        }
+        
+        // Generate master waveform track (AREF - blue)
+        const masterWaveformSvg = this.generateTimelineWaveformSvg(masterName, 'master');
+        
+        // Generate component tracks (green)
+        let componentTracks = '';
+        if (item.components && item.components.length > 0) {
+            componentTracks = item.components.map((comp, i) => {
+                const compResult = item.componentResults?.[i] || item.result?.component_results?.[i] || {};
+                const compOffset = compResult.offset_seconds ?? votedOffset;
+                const compTC = this.formatTimecode(compOffset, fps);
+                const compLabel = comp.label || `A${i}`;
+                const labelClass = compLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                const compWaveformSvg = this.generateTimelineWaveformSvg(comp.name || '', 'component');
+                
+                return `
+                    <div class="track">
+                        <div class="track-label">
+                            <span class="track-badge ${labelClass}">${this.escapeHtml(compLabel)}</span>
+                        </div>
+                        <div class="track-waveform component">
+                            ${compWaveformSvg}
+                            <div class="offset-marker" style="left: 180px;">Offset: ${compTC}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Generate timeline markers
+        const timelineMarkers = this.generateTimelineMarkers();
+        
+        return `
+            <section class="item-section">
+                <div class="item-header">
+                    <div class="item-title">
+                        <span class="item-num">${index + 1}</span>
+                        <span class="item-name">${this.escapeHtml(masterName)}</span>
+                    </div>
+                    <div class="item-meta">
+                        <span class="meta-item">Offset: ${votedTC}</span>
+                        <span class="meta-item">${(confidence * 100).toFixed(0)}%</span>
+                        <span class="meta-item">${this.escapeHtml(method)}</span>
+                        <span class="status-badge ${status}">${status}</span>
+                    </div>
+                </div>
+                <div class="waveform-viz">
+                    <div class="viz-header">
+                        <span class="zero-marker">Zero: 00:00:00:00</span>
+                    </div>
+                    
+                    <!-- Master Track (AREF) -->
+                    <div class="track">
+                        <div class="track-label">
+                            <span class="track-badge aref">AREF</span>
+                        </div>
+                        <div class="track-waveform master">
+                            ${masterWaveformSvg}
+                        </div>
+                    </div>
+                    
+                    <!-- Component Tracks -->
+                    ${componentTracks}
+                    
+                    <!-- Timeline -->
+                    <div class="timeline">
+                        ${timelineMarkers}
+                    </div>
+                </div>
+            </section>
+        `;
+    }
+    
+    /**
+     * Generate SVG waveform for timeline visualization
+     */
+    generateTimelineWaveformSvg(filename, type) {
+        const seed = this.hashString(filename || 'default');
+        const width = 1400;
+        const height = 60;
+        const barCount = 300;
+        
+        const color = type === 'master' ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.6)';
+        
+        let bars = '';
+        const centerY = height / 2;
+        
+        for (let i = 0; i < barCount; i++) {
+            const x = (i / barCount) * width;
+            const t = i / barCount;
+            
+            // Create varied waveform pattern - simulate audio
+            const noise1 = Math.sin(seed + i * 0.15) * 0.4;
+            const noise2 = Math.sin(seed * 2.3 + i * 0.4) * 0.3;
+            const noise3 = Math.sin(seed * 0.7 + i * 0.08) * 0.2;
+            
+            // Add some "quiet" and "loud" sections
+            const section = Math.floor(t * 10);
+            const sectionNoise = Math.sin(seed + section * 1.5) * 0.3;
+            
+            const amplitude = Math.max(0.05, Math.min(1, 0.3 + noise1 + noise2 + noise3 + sectionNoise));
+            const barHeight = amplitude * (height - 8);
+            const y = centerY - barHeight / 2;
+            
+            bars += `<rect x="${x}" y="${y}" width="3" height="${barHeight}" fill="${color}" rx="1"/>`;
+        }
+        
+        return `<svg class="waveform-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+    }
+    
+    /**
+     * Generate timeline markers (00:00, 01:00, 02:00, etc.)
+     */
+    generateTimelineMarkers() {
+        const markers = [];
+        const totalMinutes = 10;
+        
+        for (let i = 0; i <= totalMinutes; i++) {
+            const percent = (i / totalMinutes) * 100;
+            const time = i === 0 ? '00' : `0${i}:00`.slice(-5);
+            markers.push(`<span class="timeline-marker" style="left: ${percent}%;">${time}</span>`);
+        }
+        
+        return markers.join('');
+    }
+    
+    
+    /**
+     * Simple string hash for consistent pseudo-random generation
+     */
+    hashString(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
+    }
+    
+    /**
+     * Escape HTML special characters
+     */
+    escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+    
+    /**
+     * Export batch queue as JSON
+     */
+    exportJsonReport() {
+        if (this.batchQueue.length === 0) {
+            this.addLog('warning', 'No items in batch queue to export');
+            return;
+        }
+        
+        // Build export data structure
+        const exportData = {
+            exportDate: new Date().toISOString(),
+            summary: {
+                total: this.batchQueue.length,
+                completed: this.batchQueue.filter(i => i.status === 'completed').length,
+                failed: this.batchQueue.filter(i => i.status === 'failed').length,
+                queued: this.batchQueue.filter(i => i.status === 'queued').length,
+            },
+            items: this.batchQueue.map(item => ({
+                id: item.id,
+                master: {
+                    name: item.master?.name,
+                    path: item.master?.path,
+                },
+                components: item.components?.map(c => ({
+                    label: c.label,
+                    name: c.name,
+                    path: c.path,
+                })),
+                dub: item.dub ? {
+                    name: item.dub?.name,
+                    path: item.dub?.path,
+                } : null,
+                status: item.status,
+                frameRate: item.frameRate,
+                result: item.result,
+                componentResults: item.componentResults,
+                error: item.error,
+            })),
+        };
+        
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        const filename = `sync_analysis_report_${timestamp}.json`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported ${this.batchQueue.length} items to ${filename}`);
+    }
+    
+    /**
+     * Export batch queue as Table View HTML (Frame Management style)
+     */
+    exportTableViewReport() {
+        if (this.batchQueue.length === 0) {
+            this.addLog('warning', 'No items in batch queue to export');
+            return;
+        }
+        
+        this.addLog('info', 'Generating Table View report...');
+        
+        const timestamp = new Date().toLocaleString();
+        const fileTimestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        
+        // Flatten all components into rows
+        const rows = [];
+        let rowNum = 1;
+        
+        this.batchQueue.forEach((item, itemIndex) => {
+            const masterName = item.master?.name || 'Unknown';
+            const fps = item.frameRate || 23.976;
+            const status = item.status || 'queued';
+            
+            if (item.components && item.components.length > 0) {
+                item.components.forEach((comp, compIndex) => {
+                    const compResult = item.componentResults?.[compIndex] || item.result?.component_results?.[compIndex] || {};
+                    const offset = compResult.offset_seconds ?? item.result?.voted_offset_seconds ?? 0;
+                    const confidence = compResult.confidence ?? item.result?.overall_offset?.confidence ?? 0;
+                    const method = compResult.method_used || item.result?.method_used || 'N/A';
+                    const compLabel = comp.label || `A${compIndex}`;
+                    
+                    rows.push({
+                        rowNum: rowNum++,
+                        masterName,
+                        componentLabel: compLabel,
+                        componentName: comp.name || 'Unknown',
+                        offset,
+                        offsetTC: this.formatTimecode(offset, fps),
+                        confidence,
+                        method,
+                        status,
+                        syncStatus: this.getSyncStatusLabel(offset),
+                    });
+                });
+            } else {
+                const offset = item.result?.offset_seconds ?? 0;
+                const confidence = item.result?.confidence ?? 0;
+                const method = item.result?.method_used || 'N/A';
+                
+                rows.push({
+                    rowNum: rowNum++,
+                    masterName,
+                    componentLabel: 'Main',
+                    componentName: item.dub?.name || 'N/A',
+                    offset,
+                    offsetTC: this.formatTimecode(offset, fps),
+                    confidence,
+                    method,
+                    status,
+                    syncStatus: this.getSyncStatusLabel(offset),
+                });
+            }
+        });
+        
+        const htmlContent = this.generateTableViewHtml(rows, timestamp);
+        
+        // Download
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const filename = `sync_table_view_${fileTimestamp}.html`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported Table View with ${rows.length} rows to ${filename}`);
+    }
+    
+    /**
+     * Get sync status label based on offset
+     */
+    getSyncStatusLabel(offset) {
+        const absOffset = Math.abs(offset);
+        if (absOffset < 0.02) return { label: 'In Sync', type: 'success' };
+        if (absOffset < 0.1) return { label: 'Near', type: 'near' };
+        if (absOffset < 0.5) return { label: 'Close', type: 'close' };
+        if (absOffset < 1.0) return { label: 'Moderate', type: 'moderate' };
+        return { label: 'Far', type: 'far' };
+    }
+    
+    /**
+     * Generate Table View HTML in Frame Management style
+     */
+    generateTableViewHtml(rows, timestamp) {
+        const tableRows = rows.map(row => {
+            const waveformSvg = this.generateMiniWaveformSvg(row.componentName, row.offset, row.componentLabel);
+            return `
+            <tr>
+                <td class="row-num">${row.rowNum}</td>
+                <td class="cell-text">${this.escapeHtml(row.masterName)}</td>
+                <td class="cell-component">
+                    <span class="comp-tag ${row.componentLabel.toLowerCase()}">${this.escapeHtml(row.componentLabel)}</span>
+                </td>
+                <td class="cell-text" title="${this.escapeHtml(row.componentName)}">${this.escapeHtml(row.componentName)}</td>
+                <td class="cell-waveform">${waveformSvg}</td>
+                <td class="cell-status">
+                    <span class="status-tag ${row.syncStatus.type}">${row.syncStatus.label}</span>
+                </td>
+                <td class="cell-mono">${row.offsetTC}</td>
+                <td class="cell-mono">${row.offset.toFixed(4)}s</td>
+                <td class="cell-confidence">
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: ${(row.confidence * 100).toFixed(0)}%"></div>
+                        <span class="confidence-text">${(row.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                </td>
+                <td class="cell-text">${this.escapeHtml(row.method)}</td>
+                <td class="cell-status">
+                    <span class="status-tag ${row.status}">${row.status}</span>
+                </td>
+            </tr>
+        `}).join('');
+        
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Analysis - Table View</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-hover: #f1f5f9;
+            --border-color: #e2e8f0;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 100%;
+            padding: 20px;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 0;
+        }
+        
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header h1::before {
+            content: '📊';
+        }
+        
+        .header-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            padding: 12px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+        
+        .toolbar-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        
+        .toolbar-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .toolbar-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        /* Table */
+        .table-container {
+            background: var(--bg-secondary);
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        th {
+            background: var(--bg-primary);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border-color);
+            white-space: nowrap;
+        }
+        
+        th .col-icon {
+            margin-right: 6px;
+            opacity: 0.7;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: middle;
+        }
+        
+        tr:hover td {
+            background: var(--bg-hover);
+        }
+        
+        .row-num {
+            width: 40px;
+            text-align: center;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        
+        .cell-text {
+            max-width: 250px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .cell-mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        
+        .cell-component {
+            width: 60px;
+        }
+        
+        .cell-status {
+            width: 100px;
+        }
+        
+        .cell-confidence {
+            width: 120px;
+        }
+        
+        .cell-waveform {
+            width: 180px;
+            padding: 6px 8px;
+        }
+        
+        .waveform-container {
+            position: relative;
+            height: 36px;
+            background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+        
+        .waveform-svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .waveform-center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #e2e8f0;
+        }
+        
+        .waveform-offset-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #ef4444;
+        }
+        
+        .waveform-offset-marker::after {
+            content: attr(data-offset);
+            position: absolute;
+            bottom: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 8px;
+            color: #ef4444;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+        
+        /* Component Tags */
+        .comp-tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .comp-tag.a0 { background: #fef2f2; color: #dc2626; }
+        .comp-tag.a1 { background: #f0fdf4; color: #16a34a; }
+        .comp-tag.a2 { background: #eff6ff; color: #2563eb; }
+        .comp-tag.a3 { background: #fefce8; color: #ca8a04; }
+        .comp-tag.main { background: #f3e8ff; color: #9333ea; }
+        
+        /* Status Tags */
+        .status-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .status-tag.success { background: #dcfce7; color: #166534; }
+        .status-tag.near { background: #d1fae5; color: #047857; }
+        .status-tag.close { background: #fef9c3; color: #a16207; }
+        .status-tag.moderate { background: #fed7aa; color: #c2410c; }
+        .status-tag.far { background: #fee2e2; color: #dc2626; }
+        .status-tag.completed { background: #dcfce7; color: #166534; }
+        .status-tag.failed { background: #fee2e2; color: #dc2626; }
+        .status-tag.queued { background: #fef3c7; color: #b45309; }
+        .status-tag.processing { background: #dbeafe; color: #1d4ed8; }
+        
+        /* Confidence Bar */
+        .confidence-bar {
+            position: relative;
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e, #16a34a);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        
+        .confidence-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        /* Summary Bar */
+        .summary-bar {
+            display: flex;
+            gap: 20px;
+            padding: 12px 20px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .summary-item strong {
+            color: var(--text-primary);
+        }
+        
+        /* Print styles */
+        @media print {
+            .toolbar { display: none; }
+            .header { position: static; }
+            th { background: #f5f5f5 !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Sync Analysis Management</h1>
+            <span class="header-meta">Generated: ${timestamp} • ${rows.length} components</span>
+        </header>
+        
+        <div class="toolbar">
+            <button class="toolbar-btn">🔍 Filter</button>
+            <button class="toolbar-btn">📊 Sort</button>
+            <button class="toolbar-btn">👁️ View Settings</button>
+            <button class="toolbar-btn">🎨 Conditional Coloring</button>
+        </div>
+        
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th><span class="col-icon">🔢</span>#</th>
+                        <th><span class="col-icon">🎬</span>Master File</th>
+                        <th><span class="col-icon">🔊</span>Track</th>
+                        <th><span class="col-icon">📁</span>Component</th>
+                        <th><span class="col-icon">🎵</span>Waveform</th>
+                        <th><span class="col-icon">📍</span>Sync Status</th>
+                        <th><span class="col-icon">⏱️</span>Offset TC</th>
+                        <th><span class="col-icon">⏱️</span>Seconds</th>
+                        <th><span class="col-icon">📊</span>Confidence</th>
+                        <th><span class="col-icon">🔬</span>Method</th>
+                        <th><span class="col-icon">✅</span>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="summary-bar">
+            <div class="summary-item">
+                <span>Total:</span>
+                <strong>${rows.length} components</strong>
+            </div>
+            <div class="summary-item">
+                <span>In Sync:</span>
+                <strong>${rows.filter(r => r.syncStatus.type === 'success').length}</strong>
+            </div>
+            <div class="summary-item">
+                <span>Near:</span>
+                <strong>${rows.filter(r => r.syncStatus.type === 'near' || r.syncStatus.type === 'close').length}</strong>
+            </div>
+            <div class="summary-item">
+                <span>Far:</span>
+                <strong>${rows.filter(r => r.syncStatus.type === 'far' || r.syncStatus.type === 'moderate').length}</strong>
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
+    }
+    
+    /**
+     * Generate mini waveform SVG for table view
+     */
+    generateMiniWaveformSvg(filename, offset, componentLabel) {
+        const seed = this.hashString(filename || 'default');
+        const width = 160;
+        const height = 32;
+        const barCount = 40;
+        const barWidth = 3;
+        const gap = 1;
+        
+        // Get color based on component label
+        const colors = {
+            'a0': { fill: '#fecaca', stroke: '#ef4444' },
+            'a1': { fill: '#bbf7d0', stroke: '#22c55e' },
+            'a2': { fill: '#bfdbfe', stroke: '#3b82f6' },
+            'a3': { fill: '#fef08a', stroke: '#eab308' },
+            'main': { fill: '#e9d5ff', stroke: '#a855f7' },
+        };
+        const labelKey = componentLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const color = colors[labelKey] || colors['main'];
+        
+        // Generate waveform bars
+        let bars = '';
+        const centerY = height / 2;
+        
+        for (let i = 0; i < barCount; i++) {
+            const x = i * (barWidth + gap) + 2;
+            const t = i / barCount;
+            
+            // Create varied waveform pattern
+            const noise1 = Math.sin(seed + i * 0.4) * 0.3;
+            const noise2 = Math.sin(seed * 1.7 + i * 0.8) * 0.2;
+            const envelope = Math.sin(t * Math.PI) * 0.6 + 0.4;
+            const amplitude = (0.3 + envelope * 0.7 + noise1 + noise2) * (height / 2 - 4);
+            
+            const barHeight = Math.max(2, amplitude);
+            const y = centerY - barHeight / 2;
+            
+            bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="1" fill="${color.fill}" stroke="${color.stroke}" stroke-width="0.5"/>`;
+        }
+        
+        // Calculate offset marker position (center = 50%, scale by 10 seconds = full width)
+        const offsetPercent = 50 + (offset / 2) * 25;
+        const clampedOffset = Math.max(5, Math.min(95, offsetPercent));
+        const showMarker = Math.abs(offset) > 0.01;
+        
+        const offsetMarker = showMarker ? `
+            <line x1="${clampedOffset}%" y1="0" x2="${clampedOffset}%" y2="${height}" stroke="#ef4444" stroke-width="2"/>
+            <circle cx="${clampedOffset}%" cy="4" r="3" fill="#ef4444"/>
+        ` : '';
+        
+        // Center reference line
+        const centerLine = `<line x1="50%" y1="0" x2="50%" y2="${height}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="2,2"/>`;
+        
+        return `
+            <div class="waveform-container">
+                <svg class="waveform-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    ${centerLine}
+                    ${bars}
+                    ${offsetMarker}
+                </svg>
+            </div>
+        `;
+    }
+    
+    /**
+     * Export single item results (for details panel)
+     */
+    exportResults() {
+        if (!this.selectedBatchItem) {
+            this.addLog('warning', 'No item selected to export');
+            return;
+        }
+        
+        // Export just the selected item as JSON
+        const item = this.selectedBatchItem;
+        const exportData = {
+            master: item.master,
+            components: item.components,
+            dub: item.dub,
+            status: item.status,
+            result: item.result,
+            componentResults: item.componentResults,
+            frameRate: item.frameRate,
+            timestamp: new Date().toISOString()
+        };
+        
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const masterName = item.master?.name?.replace(/\.[^.]+$/, '') || 'analysis';
+        const filename = `${masterName}_sync_result.json`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        this.addLog('info', `Exported results to ${filename}`);
+    }
+    
+    /**
+     * Compare results placeholder
+     */
+    compareResults() {
+        this.addLog('info', 'Compare feature coming soon');
     }
     
     updateBatchSummary() {
@@ -6321,10 +8243,45 @@ class SyncAnalyzerUI {
     
     updateMethodSelection() {
         const selectedMethods = [];
+        
+        // GPU mode is exclusive - fastest single-method detection
+        if (this.elements.methodGpu && this.elements.methodGpu.checked) {
+            selectedMethods.push('gpu');
+            // Uncheck other methods when GPU is selected (exclusive mode)
+            if (this.elements.methodMfcc) this.elements.methodMfcc.checked = false;
+            if (this.elements.methodOnset) this.elements.methodOnset.checked = false;
+            if (this.elements.methodSpectral) this.elements.methodSpectral.checked = false;
+            if (this.elements.methodAi) this.elements.methodAi.checked = false;
+            if (this.elements.methodFingerprint) this.elements.methodFingerprint.checked = false;
+            this.currentMethods = selectedMethods;
+            this.addLog('info', '🚀 GPU Fast mode enabled - Wav2Vec2 single-pass detection');
+            return;
+        }
+        
+        // Fingerprint mode is exclusive - robust audio fingerprinting
+        if (this.elements.methodFingerprint && this.elements.methodFingerprint.checked) {
+            selectedMethods.push('fingerprint');
+            // Uncheck other methods when Fingerprint is selected (exclusive mode)
+            if (this.elements.methodMfcc) this.elements.methodMfcc.checked = false;
+            if (this.elements.methodOnset) this.elements.methodOnset.checked = false;
+            if (this.elements.methodSpectral) this.elements.methodSpectral.checked = false;
+            if (this.elements.methodAi) this.elements.methodAi.checked = false;
+            if (this.elements.methodGpu) this.elements.methodGpu.checked = false;
+            this.currentMethods = selectedMethods;
+            this.addLog('info', '🔊 Fingerprint mode enabled - Chromaprint robust detection');
+            return;
+        }
+        
         if (this.elements.methodMfcc.checked) selectedMethods.push('mfcc');
         if (this.elements.methodOnset.checked) selectedMethods.push('onset');
         if (this.elements.methodSpectral.checked) selectedMethods.push('spectral');
         if (this.elements.methodAi && this.elements.methodAi.checked) selectedMethods.push('ai');
+        
+        // If traditional methods selected, uncheck exclusive modes (GPU, Fingerprint)
+        if (selectedMethods.length > 0) {
+            if (this.elements.methodGpu) this.elements.methodGpu.checked = false;
+            if (this.elements.methodFingerprint) this.elements.methodFingerprint.checked = false;
+        }
         
         if (selectedMethods.length === 0) {
             this.elements.methodMfcc.checked = true;
@@ -6369,7 +8326,7 @@ class SyncAnalyzerUI {
                 console.log('[updateDetectionMethodsState] Disabling methods (Componentized + Channel-Aware)');
                 methodContainer.style.opacity = '0.4';
                 methodContainer.style.pointerEvents = 'none';
-                // Disable and uncheck all checkboxes to show they're not used
+                // Disable and uncheck all checkboxes to show they're not used (except GPU which overrides)
                 [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi].forEach(cb => {
                     if (cb) {
                         cb.disabled = true;
@@ -6377,16 +8334,28 @@ class SyncAnalyzerUI {
                         this.updateToggleVisualFeedback(cb);
                     }
                 });
+                // GPU Fast mode should ALWAYS be available and override channel-aware
+                if (this.elements.methodGpu) {
+                    this.elements.methodGpu.disabled = false;
+                    // Re-enable the GPU row visually
+                    const gpuContainer = this.elements.methodGpu.closest('.method-item');
+                    if (gpuContainer) {
+                        gpuContainer.style.opacity = '1';
+                        gpuContainer.style.pointerEvents = 'auto';
+                    }
+                }
+                this.updateMethodSelection();
             } else {
                 console.log('[updateDetectionMethodsState] Enabling methods');
                 methodContainer.style.opacity = '1';
                 methodContainer.style.pointerEvents = 'auto';
                 // Re-enable checkboxes and restore default selection
-                [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi].forEach(cb => {
+                [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi, this.elements.methodGpu, this.elements.methodFingerprint].forEach(cb => {
                     if (cb) cb.disabled = false;
                 });
-                // Restore at least one method if none selected
-                if (!this.elements.methodMfcc.checked && !this.elements.methodOnset.checked &&
+                // Restore at least one method if none selected (and GPU isn't checked)
+                const gpuChecked = this.elements.methodGpu && this.elements.methodGpu.checked;
+                if (!gpuChecked && !this.elements.methodMfcc.checked && !this.elements.methodOnset.checked &&
                     !this.elements.methodSpectral.checked && (!this.elements.methodAi || !this.elements.methodAi.checked)) {
                     this.elements.methodOnset.checked = true;
                     this.elements.methodSpectral.checked = true;

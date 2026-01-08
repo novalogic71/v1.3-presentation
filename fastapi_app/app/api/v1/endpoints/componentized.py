@@ -40,6 +40,7 @@ class ComponentizedAnalysisRequest(BaseModel):
     master: str = Field(..., description="Path to master audio/video file")
     components: List[ComponentFile] = Field(..., description="List of component files")
     offset_mode: str = Field(default="mixdown", description="Analysis mode: mixdown, anchor, or channel_aware")
+    methods: Optional[List[str]] = Field(default=None, description="Detection methods: mfcc, onset, spectral, or gpu")
     hop_seconds: float = Field(default=0.2)
     anchor_window_seconds: float = Field(default=10.0)
     refine_window_seconds: float = Field(default=8.0)
@@ -149,6 +150,7 @@ async def analyze_componentized_sync(request: ComponentizedAnalysisRequest):
             master_path=request.master,
             components=components,
             offset_mode=request.offset_mode.lower(),
+            methods=request.methods,
             hop_seconds=request.hop_seconds,
             anchor_window_seconds=request.anchor_window_seconds,
             refine_window_seconds=request.refine_window_seconds,
@@ -193,10 +195,12 @@ async def analyze_componentized_async(request: ComponentizedAnalysisRequest):
         from ....tasks.analysis_tasks import run_componentized_analysis_task
         
         # Dispatch task to Celery
+        logger.info(f"🚀 API: methods={request.methods}, offset_mode={request.offset_mode}")
         task = run_componentized_analysis_task.delay(
             master_path=request.master,
             components=components,
             offset_mode=request.offset_mode.lower(),
+            methods=request.methods,
             hop_seconds=request.hop_seconds,
             anchor_window_seconds=request.anchor_window_seconds,
             refine_window_seconds=request.refine_window_seconds,
