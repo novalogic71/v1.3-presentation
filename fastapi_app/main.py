@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -230,7 +230,59 @@ def create_application() -> FastAPI:
     if os.path.exists("static"):
         app.mount("/static", StaticFiles(directory="static"), name="static")
     
-    # Health check endpoint
+    # Web UI directory path (relative to fastapi_app/)
+    web_ui_dir = Path(__file__).parent.parent / "web_ui"
+    
+    # Mount web_ui static assets
+    if web_ui_dir.exists():
+        # Mount styles directory
+        styles_dir = web_ui_dir / "styles"
+        if styles_dir.exists():
+            app.mount("/styles", StaticFiles(directory=str(styles_dir)), name="styles")
+        
+        # Mount images directory  
+        images_dir = web_ui_dir / "images"
+        if images_dir.exists():
+            app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
+    
+    # Serve main UI pages
+    @app.get("/", response_class=HTMLResponse, tags=["ui"])
+    @app.get("/splash", response_class=HTMLResponse, tags=["ui"])
+    async def serve_splash():
+        """Serve the splash/landing page."""
+        splash_path = web_ui_dir / "splash.html"
+        if splash_path.exists():
+            return FileResponse(splash_path, media_type="text/html")
+        # Fallback: redirect to app
+        return HTMLResponse('<meta http-equiv="refresh" content="0; url=/app">')
+    
+    @app.get("/app", response_class=HTMLResponse, tags=["ui"])
+    async def serve_app():
+        """Serve the main application page."""
+        app_path = web_ui_dir / "app.html"
+        if app_path.exists():
+            return FileResponse(app_path, media_type="text/html")
+        raise HTTPException(status_code=404, detail="App UI not found")
+    
+    @app.get("/qc", response_class=HTMLResponse, tags=["ui"])
+    @app.get("/qc-interface.html", response_class=HTMLResponse, tags=["ui"])
+    async def serve_qc():
+        """Serve the QC interface page."""
+        qc_path = web_ui_dir / "qc-interface.html"
+        if qc_path.exists():
+            return FileResponse(qc_path, media_type="text/html")
+        raise HTTPException(status_code=404, detail="QC interface not found")
+    
+    @app.get("/repair", response_class=HTMLResponse, tags=["ui"])
+    @app.get("/repair-preview-interface.html", response_class=HTMLResponse, tags=["ui"])
+    async def serve_repair():
+        """Serve the repair preview interface page."""
+        repair_path = web_ui_dir / "repair-preview-interface.html"
+        if repair_path.exists():
+            return FileResponse(repair_path, media_type="text/html")
+        raise HTTPException(status_code=404, detail="Repair interface not found")
+    
+    # Health check endpoint (MUST be before wildcard route)
     @app.get("/health", tags=["health"])
     async def health_check():
         """Health check endpoint for monitoring."""
@@ -241,7 +293,7 @@ def create_application() -> FastAPI:
             "timestamp": "2025-08-27T19:00:00"
         }
     
-    # API help endpoint
+    # API help endpoint (MUST be before wildcard route)
     @app.get("/api/help", tags=["health"])
     async def api_help():
         """Get API usage information and examples."""
@@ -253,52 +305,69 @@ def create_application() -> FastAPI:
                     "description": "Core sync analysis operations",
                     "endpoints": [
                         "POST /api/v1/analysis/sync - Analyze sync between master and dub files",
-                        "POST /api/v1/analysis/batch - Batch sync analysis",
-                        "GET /api/v1/analysis/{analysis_id} - Get analysis results",
-                        "DELETE /api/v1/analysis/{analysis_id} - Delete analysis"
+                        "POST /api/v1/analysis/componentized - Componentized analysis",
+                        "POST /api/v1/analysis/componentized/async - Async componentized analysis"
                     ]
                 },
                 "files": {
                     "description": "File management operations",
                     "endpoints": [
                         "GET /api/v1/files - List files in directory",
-                        "POST /api/v1/files/upload - Upload audio/video files",
-                        "GET /api/v1/files/{file_id} - Get file information",
-                        "DELETE /api/v1/files/{file_id} - Delete file"
+                        "GET /api/v1/files/probe - Probe media file info"
                     ]
                 },
-                "reports": {
-                    "description": "Report generation and retrieval",
+                "jobs": {
+                    "description": "Background job management",
                     "endpoints": [
-                        "GET /api/v1/reports/{analysis_id} - Get analysis report",
-                        "POST /api/v1/reports/{analysis_id}/export - Export report",
-                        "GET /api/v1/reports - List all reports"
+                        "GET /api/v1/jobs - List all jobs",
+                        "GET /api/v1/jobs/{job_id} - Get job status"
                     ]
                 },
-                "ai": {
-                    "description": "AI-powered sync detection",
+                "proxy": {
+                    "description": "Audio proxy creation",
                     "endpoints": [
-                        "POST /api/v1/ai/embedding - Extract audio embeddings",
-                        "POST /api/v1/ai/sync - AI-based sync detection",
-                        "GET /api/v1/ai/models - List available AI models"
+                        "POST /api/v1/proxy/prepare - Prepare audio proxy",
+                        "GET /api/v1/proxy/{filename} - Serve proxy file"
                     ]
                 }
-            },
-            "curl_examples": {
-                "basic_sync_analysis": "curl -X POST 'http://localhost:8000/api/v1/analysis/sync' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"master_file\": \"/path/to/master.wav\", \"dub_file\": \"/path/to/dub.wav\"}'",
-                "file_upload": "curl -X POST 'http://localhost:8000/api/v1/files/upload' \\\n  -F 'file=@/path/to/audio.wav' \\\n  -F 'file_type=audio'",
-                "get_analysis": "curl -X GET 'http://localhost:8000/api/v1/analysis/{analysis_id}'"
             },
             "documentation": {
                 "swagger_ui": "/docs",
                 "redoc": "/redoc",
                 "openapi_spec": "/openapi.json"
-            },
-            "curl_examples_extra": {
-                "file_probe": "curl 'http://localhost:8000/api/v1/files/probe?path=/abs/media.mov' | jq",
-                "audio_proxy_wav": "curl -L 'http://localhost:8000/api/v1/files/proxy-audio?path=/abs/media.mov&format=wav' --output preview.wav"
             }
         }
+    
+    # Serve JS/CSS files from web_ui root (MUST be last - catch-all route)
+    @app.get("/{filename:path}", tags=["ui"])
+    async def serve_web_ui_files(filename: str):
+        """Serve static files from web_ui directory."""
+        # Security: only serve certain file types
+        allowed_extensions = {'.js', '.css', '.html', '.ico', '.png', '.jpg', '.svg', '.woff', '.woff2', '.ttf'}
+        ext = Path(filename).suffix.lower()
+        
+        if ext not in allowed_extensions:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        file_path = web_ui_dir / filename
+        if file_path.exists() and file_path.is_file():
+            # Determine content type
+            content_types = {
+                '.js': 'application/javascript',
+                '.css': 'text/css',
+                '.html': 'text/html',
+                '.ico': 'image/x-icon',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.svg': 'image/svg+xml',
+                '.woff': 'font/woff',
+                '.woff2': 'font/woff2',
+                '.ttf': 'font/ttf',
+            }
+            media_type = content_types.get(ext, 'application/octet-stream')
+            return FileResponse(file_path, media_type=media_type)
+        
+        raise HTTPException(status_code=404, detail="File not found")
     
     return app
 

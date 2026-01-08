@@ -3,20 +3,22 @@ set -Eeuo pipefail
 
 # Ensure we are running under bash even if invoked via `sh start_all.sh`
 if [ -z "${BASH_VERSION:-}" ]; then
-  echo "❌ This script requires bash. Run: bash Sync_dub_final/start_all.sh"
+  echo "❌ This script requires bash. Run: bash start_all.sh"
   exit 1
 fi
 
-# Professional Audio Sync Analyzer - All Services Startup Script
-# Starts FastAPI backend and Web UI frontend
+# Professional Audio Sync Analyzer - All-in-One Server Startup Script
+# Starts FastAPI backend with integrated Web UI
 
 # Resolve repo root based on this script's location so it works
 # no matter where it's invoked from.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
 
-echo "🎵 Professional Audio Sync Analyzer - Starting All Services"
-echo "==========================================================="
+echo "🎵 Professional Audio Sync Analyzer - Starting Server"
+echo "======================================================"
+echo "   FastAPI + Web UI (Unified Server on Port 8000)"
+echo ""
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -67,7 +69,7 @@ kill_port() {
 }
 
 # Check for required files using absolute paths
-if [ ! -f "$ROOT_DIR/fastapi_app/main.py" ] || [ ! -f "$ROOT_DIR/web_ui/server.py" ]; then
+if [ ! -f "$ROOT_DIR/fastapi_app/main.py" ]; then
     echo "❌ Error: Required files not found under $ROOT_DIR"
     exit 1
 fi
@@ -75,11 +77,12 @@ fi
 # Stop any existing services
 echo "🔍 Checking for existing services..."
 check_port 8000 && kill_port 8000
+# Also clean up legacy Flask port if still running
 check_port 3002 && kill_port 3002
 
-# Start FastAPI backend
+# Start FastAPI backend (now includes Web UI)
 echo ""
-echo "🚀 Starting FastAPI Backend (Port 8000)..."
+echo "🚀 Starting FastAPI Server (Port 8000)..."
 API_DIR="$ROOT_DIR/fastapi_app"
 VENV_DIR="$API_DIR/fastapi_venv"
 PY="$VENV_DIR/bin/python"
@@ -108,7 +111,7 @@ if [ ! -x "$PY" ]; then
     exit 1
 fi
 
-# Print environment info and ensure FastAPI dependencies are installed (including transformers/torch)
+# Print environment info and ensure FastAPI dependencies are installed
 echo "🐍 Python binary: $PY"
 echo "📦 Pip binary:    $PIP"
 "$PY" -V || true
@@ -134,92 +137,63 @@ fi
 export HF_HOME="${AI_MODEL_CACHE_DIR:-$API_DIR/ai_models}"
 echo "🧠 HF_HOME set to: $HF_HOME"
 
+# Enable DEBUG mode for development (CORS open, relative API server)
+export DEBUG=true
+
+# Create required directories
+mkdir -p "$ROOT_DIR/web_ui/proxy_cache"
+mkdir -p "$ROOT_DIR/web_ui/ui_sync_reports"
+mkdir -p "$ROOT_DIR/sync_reports"
+
 # Start API using the venv's Python explicitly (avoid relying on shell activation)
 "$PY" "$API_DIR/main.py" &
 FASTAPI_PID=$!
 
 # Wait for FastAPI to start and check multiple times
 echo "⏳ Waiting for FastAPI to start..."
-for i in {1..10}; do
+for i in {1..15}; do
     sleep 2
     if check_port 8000; then
-        echo "✅ FastAPI Backend running (PID: $FASTAPI_PID)"
+        echo "✅ FastAPI Server running (PID: $FASTAPI_PID)"
         break
     fi
-    if [ $i -eq 10 ]; then
-        echo "❌ FastAPI failed to start on port 8000 after 20 seconds"
+    if [ $i -eq 15 ]; then
+        echo "❌ FastAPI failed to start on port 8000 after 30 seconds"
         kill $FASTAPI_PID 2>/dev/null || true
         exit 1
     fi
-    echo "   Attempt $i/10 - still waiting..."
-done
-
-# Start Web UI frontend
-echo ""
-echo "🚀 Starting Web UI Frontend (Port 3002)..."
-UI_DIR="$ROOT_DIR/web_ui"
-
-# Check Python dependencies for UI (install into the same venv)
-"$PY" - <<'PY' 2>/dev/null || UI_DEPS_MISSING=1
-try:
-    import flask, flask_cors  # noqa: F401
-    print('UI_DEPS_OK')
-except Exception:
-    raise SystemExit(1)
-PY
-if [ "${UI_DEPS_MISSING:-0}" = "1" ]; then
-    echo "📦 Installing Web UI dependencies into venv..."
-    "$PIP" install flask flask-cors || {
-        echo "❌ Failed to install Web UI dependencies";
-        exit 1;
-    }
-fi
-
-# Create required directories
-mkdir -p "$UI_DIR/ui_sync_reports"
-
-# Start UI server in background (use same venv Python)
-"$PY" "$UI_DIR/server.py" &
-UI_PID=$!
-
-# Wait for Web UI to start and check multiple times
-echo "⏳ Waiting for Web UI to start..."
-for i in {1..10}; do
-    sleep 2
-    if check_port 3002; then
-        echo "✅ Web UI Frontend running (PID: $UI_PID)"
-        break
-    fi
-    if [ $i -eq 10 ]; then
-        echo "❌ Web UI failed to start on port 3002 after 20 seconds"
-        kill $FASTAPI_PID $UI_PID 2>/dev/null || true
-        exit 1
-    fi
-    echo "   Attempt $i/10 - still waiting..."
+    echo "   Attempt $i/15 - still waiting..."
 done
 
 echo ""
-echo "🎉 All services started successfully!"
-echo "=================================="
-echo "📡 FastAPI Backend: http://localhost:8000"
-echo "   📚 API Docs: http://localhost:8000/docs"
-echo "   🩺 Health: http://localhost:8000/health"
+echo "🎉 Server started successfully!"
+echo "================================"
 echo ""
-echo "🌐 Web UI Frontend: http://localhost:3002"
-echo "   🎛️ Main Interface: http://localhost:3002"
+echo "🌐 Web UI & API: http://localhost:8000"
+echo "   🎛️  Main App: http://localhost:8000/app"
+echo "   🏠  Splash:   http://localhost:8000/"
 echo ""
-echo "📋 Service PIDs:"
-echo "   FastAPI: $FASTAPI_PID"
-echo "   Web UI: $UI_PID"
+echo "📚 API Documentation:"
+echo "   📖  Swagger:  http://localhost:8000/docs"
+echo "   📘  ReDoc:    http://localhost:8000/redoc"
+echo "   🩺  Health:   http://localhost:8000/health"
 echo ""
-echo "🛑 Press Ctrl+C to stop all services"
+echo "🔧 API Endpoints (v1):"
+echo "   📁  Files:    /api/v1/files"
+echo "   🔍  Analysis: /api/v1/analysis/sync"
+echo "   📦  Jobs:     /api/v1/jobs"
+echo "   🔄  Proxy:    /api/v1/proxy"
+echo ""
+echo "📋 Server PID: $FASTAPI_PID"
+echo ""
+echo "🛑 Press Ctrl+C to stop the server"
 
 # Function to cleanup on exit
 cleanup() {
     echo ""
-    echo "🛑 Stopping all services..."
-    kill $FASTAPI_PID $UI_PID 2>/dev/null || true
-    echo "✅ All services stopped"
+    echo "🛑 Stopping server..."
+    kill $FASTAPI_PID 2>/dev/null || true
+    echo "✅ Server stopped"
     exit 0
 }
 

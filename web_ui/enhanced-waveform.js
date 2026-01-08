@@ -320,7 +320,7 @@ if (window.WaveformVisualizer) {
             const enc = encodeURIComponent;
             if ((!mUrl || !dUrl) && mPath && dPath) {
                 try {
-                    const prep = await fetch('/api/proxy/prepare', {
+                    const prep = await fetch('/api/v1/proxy/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ master: mPath, dub: dPath })
@@ -404,7 +404,7 @@ if (window.WaveformVisualizer) {
             try {
                 if ((!mUrl || !dUrl) && mPath && dPath) {
                     // Try to create proxies on-demand
-                    const prep = await fetch('/api/proxy/prepare', {
+                    const prep = await fetch('/api/v1/proxy/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ master: mPath, dub: dPath })
@@ -417,7 +417,7 @@ if (window.WaveformVisualizer) {
                 // If an item-level repaired file was provided on the dataset, ensure URL
                 if (!rUrlExisting && unified.dataset.repairedPath) {
                     try {
-                        const p = await fetch('/api/proxy/prepare', {
+                        const p = await fetch('/api/v1/proxy/prepare', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ master: mPath, dub: unified.dataset.repairedPath })
                         }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)));

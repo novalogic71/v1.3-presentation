@@ -4,6 +4,10 @@ Jobs endpoints for managing and monitoring analysis jobs.
 
 Provides REST API for job lifecycle management, enabling reconnection
 to in-progress jobs and retry of failed/orphaned jobs.
+
+Supports both:
+- In-memory job store (for background componentized analysis)
+- SQLite database (for persistent job history)
 """
 
 import json
@@ -13,7 +17,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Path as FastAPIPath, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 
-# Import will be done inside functions to avoid circular import issues
+# Import job manager for in-memory jobs
+from ....services.job_manager import job_manager
 
 logger = logging.getLogger(__name__)
 
@@ -375,47 +380,175 @@ async def list_active_jobs():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+class InMemoryJobResponse(BaseModel):
+    """Response for in-memory job status (used by frontend polling)."""
+    success: bool = True
+    job_id: str
+    status: str
+    progress: int
+    status_message: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    created_at: Optional[float] = None
+    completed_at: Optional[float] = None
+
+
+@router.get("/{job_id}", response_model=InMemoryJobResponse)
 async def get_job(
     job_id: str = FastAPIPath(..., description="Job identifier")
 ):
     """
-    Get detailed information about a specific job.
+    Get job status - checks in-memory store first, then database.
     
-    Returns complete job details including request parameters,
-    result data (if completed), and error message (if failed).
+    This is the primary endpoint for polling job status from the frontend.
+    It first checks the in-memory job store (for active background jobs),
+    then falls back to the database (for historical jobs).
     
-    ## Example Response
+    ## Example Response (In-Memory Job)
     
     ```json
     {
-      "job_id": "analysis_20250105_143052_abc123",
-      "job_type": "single",
+      "success": true,
+      "job_id": "job_1234567890_abc123",
+      "status": "processing",
+      "progress": 45,
+      "status_message": "Analyzing component 2/4...",
+      "result": null,
+      "error": null,
+      "created_at": 1704456652.123,
+      "completed_at": null
+    }
+    ```
+    
+    ## Example Response (Completed Job)
+    
+    ```json
+    {
+      "success": true,
+      "job_id": "job_1234567890_abc123",
       "status": "completed",
-      "progress": 100.0,
-      "status_message": "Analysis complete",
-      "request_params": {
-        "master_audio_path": "/path/to/master.wav",
-        "dub_audio_path": "/path/to/dub.wav"
+      "progress": 100,
+      "status_message": "Analysis complete!",
+      "result": {
+        "offset_mode": "channel_aware",
+        "voted_offset_seconds": 60.4,
+        "vote_agreement": 1.0,
+        "component_results": [...]
       },
-      "result_data": {
-        "consensus_offset": {
-          "offset_seconds": -2.456,
-          "confidence": 0.94
-        }
-      },
-      "created_at": "2025-01-05T14:30:52Z",
-      "started_at": "2025-01-05T14:30:53Z",
-      "completed_at": "2025-01-05T14:31:15Z",
-      "updated_at": "2025-01-05T14:31:15Z"
+      "created_at": 1704456652.123,
+      "completed_at": 1704456789.456
     }
     ```
     
     ## Curl Example
     
     ```bash
-    curl -X GET "http://localhost:8000/api/v1/jobs/analysis_20250105_143052_abc123"
+    curl -X GET "http://localhost:8000/api/v1/jobs/job_1234567890_abc123"
     ```
+    """
+    # First check in-memory job store (for active background jobs)
+    job = job_manager.get_job(job_id)
+    if job:
+        return InMemoryJobResponse(
+            success=True,
+            job_id=job.job_id,
+            status=job.status.value,
+            progress=job.progress,
+            status_message=job.status_message,
+            result=job.result,
+            error=job.error,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+        )
+    
+    # Fall back to database
+    try:
+        from sync_analyzer.db.job_db import get_job as db_get_job
+        
+        row = db_get_job(job_id)
+        
+        if not row:
+            # Return a "not found" response instead of raising exception
+            # This allows frontend to handle gracefully
+            return InMemoryJobResponse(
+                success=False,
+                job_id=job_id,
+                status="not_found",
+                progress=0,
+                status_message="Job not found",
+                error="Job not found",
+            )
+        
+        # Parse result_data from database
+        result_data = None
+        if row.get('result_data'):
+            try:
+                result_data = json.loads(row['result_data'])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        return InMemoryJobResponse(
+            success=True,
+            job_id=row['job_id'],
+            status=row['status'],
+            progress=int(row.get('progress', 0) or 0),
+            status_message=row.get('status_message', ''),
+            result=result_data,
+            error=row.get('error_message'),
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting job {job_id}: {e}")
+        return InMemoryJobResponse(
+            success=False,
+            job_id=job_id,
+            status="error",
+            progress=0,
+            status_message=f"Error: {e}",
+            error=str(e),
+        )
+
+
+@router.get("/{job_id}/progress")
+async def get_job_progress(
+    job_id: str = FastAPIPath(..., description="Job identifier")
+):
+    """
+    Get just the progress percentage for a job.
+    
+    Lightweight endpoint for frequent polling.
+    
+    ## Example Response
+    
+    ```json
+    {
+      "percentage": 45,
+      "message": "Analyzing component 2/4..."
+    }
+    ```
+    """
+    # Check in-memory first
+    job = job_manager.get_job(job_id)
+    if job:
+        return {
+            "percentage": job.progress,
+            "message": job.status_message,
+        }
+    
+    # Check progress store
+    progress = job_manager.get_progress(job_id)
+    return progress
+
+
+@router.get("/{job_id}/detail", response_model=JobResponse)
+async def get_job_detail(
+    job_id: str = FastAPIPath(..., description="Job identifier")
+):
+    """
+    Get detailed job information from database (legacy endpoint).
+    
+    Returns complete job details including request parameters,
+    result data (if completed), and error message (if failed).
     """
     try:
         from sync_analyzer.db.job_db import get_job as db_get_job

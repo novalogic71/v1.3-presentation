@@ -955,7 +955,7 @@ class SyncAnalyzerUI {
             console.log('Loading file tree for path:', path);
             // Add cache-busting to force fresh data
             const cacheBuster = `_=${Date.now()}`;
-            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&${cacheBuster}`, {
+            const response = await fetch(`/api/v1/files?path=${encodeURIComponent(path)}&${cacheBuster}`, {
                 cache: 'no-cache',
                 headers: {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1708,10 +1708,10 @@ class SyncAnalyzerUI {
                 const tId = setTimeout(() => ctrl.abort(), 20000); // 20s timeout
                 let usedFallback = false;
                 try {
-                    const prepResp = await fetch('/api/proxy/prepare', {
+                    const prepResp = await fetch('/api/v1/proxy/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ master: newItem.master.path, dub: newItem.dub.path }),
+                        body: JSON.stringify({ path: newItem.master.path, role: 'master' }),
                         signal: ctrl.signal
                     });
                     clearTimeout(tId);
@@ -2030,7 +2030,7 @@ class SyncAnalyzerUI {
             // Show repair progress
             this.showRepairProgress();
             
-            const response = await fetch('/api/repair', {
+            const response = await fetch('/api/v1/repair', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3488,18 +3488,18 @@ class SyncAnalyzerUI {
                     const cfg = this.getAnalysisConfig();
 
                     // Run analysis
-                    const response = await fetch('/api/analyze', {
+                    const response = await fetch('/api/v1/analysis/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            master: item.master.path,
-                            dub: item.dub.path,
+                            master_audio_path: item.master.path,
+                            dub_audio_path: item.dub.path,
                             methods: Array.isArray(cfg.methods) && cfg.methods.length ? cfg.methods : ['mfcc'],
-                            aiModel: cfg.aiModel || 'wav2vec2',
-                            enableGpu: !!cfg.enableGpu,
-                            channelStrategy: cfg.channelStrategy || 'mono_downmix',
-                            targetChannels: cfg.targetChannels || [],
-                            frameRate: itemFrameRate
+                            ai_model: cfg.aiModel || 'wav2vec2',
+                            enable_gpu: !!cfg.enableGpu,
+                            channel_strategy: cfg.channelStrategy || 'mono_downmix',
+                            target_channels: cfg.targetChannels || [],
+                            frame_rate: itemFrameRate
                         })
                     });
 
@@ -3598,14 +3598,14 @@ class SyncAnalyzerUI {
 
                 try {
                     // Start the background job using async endpoint
-                    const startResponse = await fetch('/api/analyze/componentized/async', {
+                    const startResponse = await fetch('/api/v1/analysis/componentized/async', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             master: item.master.path,
                             components: item.components,
                             offset_mode: offsetMode,
-                            frameRate: itemFrameRate,
+                            frame_rate: itemFrameRate,
                             job_id: jobId
                         })
                     });
@@ -3634,7 +3634,7 @@ class SyncAnalyzerUI {
                                     }
 
                                     // Poll job status
-                                    const jobResponse = await fetch(`/api/job/${jobId}`);
+                                    const jobResponse = await fetch(`/api/v1/jobs/${jobId}`);
                                     const jobData = await jobResponse.json();
 
                                     if (!jobData.success && jobData.error === 'Job not found') {
@@ -3741,18 +3741,18 @@ class SyncAnalyzerUI {
                         item.currentComponent = `${component.label} (${index + 1}/${totalComponents})`;
                         this.updateBatchTableRow(item);
 
-                        const response = await fetch('/api/analyze', {
+                        const response = await fetch('/api/v1/analysis/sync', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                master: item.master.path,
-                                dub: component.path,
+                                master_audio_path: item.master.path,
+                                dub_audio_path: component.path,
                                 methods: Array.isArray(cfg.methods) && cfg.methods.length ? cfg.methods : ['mfcc'],
-                                aiModel: cfg.aiModel || 'wav2vec2',
-                                enableGpu: !!cfg.enableGpu,
-                                channelStrategy: cfg.channelStrategy || 'mono_downmix',
-                                targetChannels: cfg.targetChannels || [],
-                                frameRate: itemFrameRate
+                                ai_model: cfg.aiModel || 'wav2vec2',
+                                enable_gpu: !!cfg.enableGpu,
+                                channel_strategy: cfg.channelStrategy || 'mono_downmix',
+                                target_channels: cfg.targetChannels || [],
+                                frame_rate: itemFrameRate
                             })
                         });
 
@@ -6434,7 +6434,7 @@ class SyncAnalyzerUI {
                 let repairedUrl = null;
                 try {
                     this.addLog('info', 'Preparing playback proxies for finished job...');
-                    const prep = await fetch('/api/proxy/prepare', {
+                    const prep = await fetch('/api/v1/proxy/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ master: item.master.path, dub: item.dub.path })
@@ -6458,7 +6458,7 @@ class SyncAnalyzerUI {
                 // If we have a repaired file for this item, prepare a URL for it too
                 if (item.repaired && item.repairedFile) {
                     try {
-                        const p = await fetch('/api/proxy/prepare', {
+                        const p = await fetch('/api/v1/proxy/prepare', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ master: item.master.path, dub: item.repairedFile })
