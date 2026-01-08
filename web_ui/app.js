@@ -963,10 +963,35 @@ class SyncAnalyzerUI {
             console.log('Response data:', data);
             
             if (data.success) {
-                this.renderFileTree(data.files, path);
+                // Combine directories and files into a single list
+                const allItems = [];
+                
+                // Add directories (mark them with type 'directory')
+                if (data.directories && Array.isArray(data.directories)) {
+                    data.directories.forEach(dir => {
+                        allItems.push({
+                            name: dir.name,
+                            type: 'directory',
+                            path: dir.path
+                        });
+                    });
+                }
+                
+                // Add files with their detected types
+                if (data.files && Array.isArray(data.files)) {
+                    data.files.forEach(file => {
+                        allItems.push({
+                            name: file.name,
+                            type: file.type || this.detectFileType(file.name),
+                            path: file.path
+                        });
+                    });
+                }
+                
+                this.renderFileTree(allItems, path);
                 this.currentPath = path;
                 this.elements.currentPath.textContent = path;
-                console.log('Successfully loaded file tree');
+                console.log('Successfully loaded file tree:', allItems.length, 'items');
             } else {
                 console.error('API returned error:', data.error);
                 this.addLog('error', `Failed to load directory: ${data.error}`);
