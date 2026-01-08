@@ -3593,9 +3593,6 @@ class SyncAnalyzerUI {
                 item.progress = 5;
                 this.updateBatchTableRow(item);
 
-                // Generate unique job ID for progress tracking
-                const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
                 try {
                     // Start the background job using async endpoint
                     const startResponse = await fetch('/api/v1/analysis/componentized/async', {
@@ -3605,8 +3602,7 @@ class SyncAnalyzerUI {
                             master: item.master.path,
                             components: item.components,
                             offset_mode: offsetMode,
-                            frame_rate: itemFrameRate,
-                            job_id: jobId
+                            frame_rate: itemFrameRate
                         })
                     });
 
@@ -3616,6 +3612,14 @@ class SyncAnalyzerUI {
                         throw new Error(startResult.error || 'Failed to start analysis');
                     }
 
+                    // Use the Celery task_id returned from server (NOT a local ID)
+                    const jobId = startResult.job_id;
+                    
+                    // Store the job ID in the batch item for reconnection after refresh
+                    item.analysisId = jobId;
+                    item.jobId = jobId;
+                    this.persistBatchQueue().catch(() => {}); // Save immediately
+                    
                     this.addLog('info', `Background job started: ${jobId}`);
 
                     // Poll for job completion with timeout
@@ -5500,36 +5504,200 @@ class SyncAnalyzerUI {
     /**
      * Check for active/orphaned jobs and reconnect to them.
      * This enables seamless reconnection after page refresh.
+     * 
+     * With Celery/Redis, jobs persist across server restarts.
+     * We check both:
+     * 1. Server's active jobs endpoint (Celery tasks)
+     * 2. Batch items with analysisId/jobId that are still 'processing'
      */
     async reconnectToActiveJobs() {
         try {
-            // Fetch active jobs from the server
-            const resp = await fetch(`${this.FASTAPI_BASE}/jobs/active`);
-            if (!resp.ok) {
-                console.log('Jobs endpoint not available or no active jobs');
-                return;
+            console.log('Checking for jobs to reconnect to...');
+            
+            // First, check batch items that have job IDs and are marked as processing
+            const processingItems = this.batchQueue.filter(item => 
+                (item.analysisId || item.jobId) && 
+                (item.status === 'processing' || item.status === 'queued')
+            );
+            
+            if (processingItems.length > 0) {
+                this.addLog('info', `Found ${processingItems.length} job(s) to check status...`);
+                
+                for (const item of processingItems) {
+                    const jobId = item.analysisId || item.jobId;
+                    await this.checkAndReconnectJob(jobId, item);
+                }
             }
             
-            const data = await resp.json();
-            const activeJobs = data.jobs || [];
-            
-            if (activeJobs.length === 0) {
-                console.log('No active jobs to reconnect to');
-                return;
+            // Also fetch active jobs from server (may find jobs we don't have locally)
+            try {
+                const resp = await fetch(`${this.FASTAPI_BASE}/jobs/active`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const activeJobs = data.jobs || [];
+                    
+                    for (const job of activeJobs) {
+                        // Check if we already have this job in batch queue
+                        const existing = this.batchQueue.find(item => 
+                            item.analysisId === job.job_id || item.jobId === job.job_id
+                        );
+                        if (!existing) {
+                            await this.reconnectToJob(job);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('Could not fetch active jobs from server:', e.message);
             }
             
-            this.addLog('info', `Found ${activeJobs.length} active job(s), attempting reconnection...`);
-            
-            for (const job of activeJobs) {
-                await this.reconnectToJob(job);
-            }
-            
-            // Also check for orphaned jobs to notify user
+            // Check for orphaned jobs
             await this.checkOrphanedJobs();
             
         } catch (e) {
             console.warn('Failed to check for active jobs:', e);
         }
+    }
+    
+    /**
+     * Check a job's status and update the batch item accordingly.
+     * If still processing, start polling. If completed, update results.
+     */
+    async checkAndReconnectJob(jobId, batchItem) {
+        try {
+            const resp = await fetch(`${this.FASTAPI_BASE}/jobs/${jobId}`);
+            if (!resp.ok) {
+                console.log(`Job ${jobId} not found on server`);
+                return;
+            }
+            
+            const jobData = await resp.json();
+            
+            if (jobData.status === 'completed') {
+                // Job finished while we were away - update with results
+                this.addLog('success', `Job ${jobId} completed - updating results`);
+                batchItem.status = 'completed';
+                batchItem.progress = 100;
+                
+                if (jobData.result) {
+                    this.applyJobResultToBatchItem(batchItem, jobData.result);
+                }
+                
+                this.updateBatchTableRow(batchItem);
+                this.updateBatchSummary();
+                this.persistBatchQueue().catch(() => {});
+                
+            } else if (jobData.status === 'failed') {
+                // Job failed
+                batchItem.status = 'failed';
+                batchItem.error = jobData.error || 'Job failed';
+                this.updateBatchTableRow(batchItem);
+                this.updateBatchSummary();
+                this.addLog('error', `Job ${jobId} failed: ${batchItem.error}`);
+                
+            } else if (jobData.status === 'processing' || jobData.status === 'queued') {
+                // Job still running - start polling
+                this.addLog('info', `Reconnecting to running job: ${jobId}`);
+                batchItem.status = 'processing';
+                batchItem.progress = jobData.progress || batchItem.progress || 0;
+                this.updateBatchTableRow(batchItem);
+                
+                // Start polling for this job
+                this.pollJobUntilComplete(jobId, batchItem);
+            }
+            
+        } catch (e) {
+            console.warn(`Error checking job ${jobId}:`, e);
+        }
+    }
+    
+    /**
+     * Apply job results to a batch item (for completed jobs found after reconnection)
+     */
+    applyJobResultToBatchItem(item, result) {
+        if (item.type === 'componentized') {
+            const componentResults = Array.isArray(result.component_results) ? result.component_results : [];
+            item.componentResults = componentResults.map((res, idx) => ({
+                component: res.component || item.components[idx]?.label || `C${idx + 1}`,
+                componentName: res.componentName || item.components[idx]?.name || `component_${idx + 1}`,
+                offset_seconds: res.offset_seconds || 0,
+                confidence: res.confidence || 0,
+                frameRate: item.frameRate,
+                quality_score: res.quality_score || 0,
+                method_results: res.method_results || [],
+                status: res.status || 'completed'
+            }));
+            
+            item.result = {
+                offset_seconds: result.mixdown_offset_seconds || result.overall_offset?.offset_seconds || 0,
+                confidence: result.mixdown_confidence || result.overall_offset?.confidence || 0,
+                method_used: result.method_used || result.offset_mode || 'componentized',
+                componentResults: item.componentResults
+            };
+        } else {
+            item.result = result;
+        }
+    }
+    
+    /**
+     * Poll a job until it completes (used for reconnection)
+     */
+    async pollJobUntilComplete(jobId, batchItem) {
+        const maxPollTime = 10 * 60 * 1000; // 10 minutes
+        const pollInterval = 2000; // 2 seconds
+        const startTime = Date.now();
+        
+        const poll = async () => {
+            if (Date.now() - startTime > maxPollTime) {
+                batchItem.status = 'failed';
+                batchItem.error = 'Polling timed out';
+                this.updateBatchTableRow(batchItem);
+                this.addLog('error', `Job ${jobId} timed out`);
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`${this.FASTAPI_BASE}/jobs/${jobId}`);
+                const jobData = await resp.json();
+                
+                // Update progress
+                if (jobData.progress > 0) {
+                    batchItem.progress = jobData.progress;
+                    batchItem.progressMessage = jobData.status_message;
+                    this.updateBatchTableRow(batchItem);
+                }
+                
+                if (jobData.status === 'completed') {
+                    batchItem.status = 'completed';
+                    batchItem.progress = 100;
+                    if (jobData.result) {
+                        this.applyJobResultToBatchItem(batchItem, jobData.result);
+                    }
+                    this.updateBatchTableRow(batchItem);
+                    this.updateBatchSummary();
+                    this.persistBatchQueue().catch(() => {});
+                    this.addLog('success', `Job ${jobId} completed`);
+                    return;
+                    
+                } else if (jobData.status === 'failed') {
+                    batchItem.status = 'failed';
+                    batchItem.error = jobData.error || 'Job failed';
+                    this.updateBatchTableRow(batchItem);
+                    this.updateBatchSummary();
+                    this.addLog('error', `Job ${jobId} failed: ${batchItem.error}`);
+                    return;
+                    
+                } else {
+                    // Still processing, poll again
+                    setTimeout(poll, pollInterval);
+                }
+                
+            } catch (e) {
+                console.warn(`Poll error for ${jobId}:`, e);
+                setTimeout(poll, pollInterval * 2); // Back off
+            }
+        };
+        
+        poll();
     }
 
     /**
