@@ -706,6 +706,503 @@
 }
 
 /* ============================================
+   Analysis Mode Selector
+   ============================================ */
+
+.analysis-mode-selector {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-xs);
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.mode-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mode-tab:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.mode-tab.active {
+    background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-red));
+    border-color: var(--vubiquity-orange);
+    color: white;
+    box-shadow: 0 2px 8px rgba(255, 107, 66, 0.3);
+}
+
+.mode-tab i {
+    font-size: 14px;
+}
+
+/* ============================================
+   Componentized Mode UI
+   ============================================ */
+
+.mode-ui {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Mode Info Box */
+.mode-info-box {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: rgba(255, 107, 66, 0.05);
+    border: 1px solid rgba(255, 107, 66, 0.2);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.mode-info-box i {
+    color: var(--vubiquity-orange);
+    font-size: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.mode-info-box .info-text {
+    color: var(--text-secondary);
+}
+
+.mode-info-box strong {
+    color: var(--text-primary);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.mode-info-box code {
+    padding: 2px 6px;
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: var(--radius-xs);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--vubiquity-orange);
+}
+
+.componentized-options {
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.componentized-options label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.offset-mode-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+}
+
+.offset-option {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.45);
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.offset-option input {
+    accent-color: var(--vubiquity-orange);
+}
+
+.offset-mode-note {
+    margin-top: var(--spacing-sm);
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.component-list-container {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.component-list-container label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.component-count {
+    color: var(--vubiquity-orange);
+    font-weight: 700;
+}
+
+.component-files-list {
+    min-height: 60px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: var(--spacing-md);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+}
+
+.component-files-list:empty::before {
+    content: 'No components selected';
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: var(--spacing-lg);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-style: italic;
+}
+
+.component-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: linear-gradient(135deg, rgba(255, 107, 66, 0.15), rgba(224, 67, 85, 0.15));
+    border: 1px solid rgba(255, 107, 66, 0.3);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.component-chip:hover {
+    background: linear-gradient(135deg, rgba(255, 107, 66, 0.25), rgba(224, 67, 85, 0.25));
+    border-color: rgba(255, 107, 66, 0.5);
+}
+
+.component-chip i {
+    font-size: 11px;
+    color: var(--vubiquity-orange);
+}
+
+.chip-name {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chip-remove {
+    padding: 2px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+}
+
+.chip-remove:hover {
+    background: rgba(255, 107, 66, 0.2);
+    color: var(--vubiquity-red);
+}
+
+.select-components-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    background: rgba(51, 133, 255, 0.1);
+    border: 1px solid var(--vubiquity-blue);
+    border-radius: var(--radius-sm);
+    color: var(--vubiquity-blue);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.select-components-btn:hover {
+    background: rgba(51, 133, 255, 0.2);
+    box-shadow: 0 2px 8px rgba(51, 133, 255, 0.2);
+}
+
+.select-components-btn i {
+    font-size: 14px;
+}
+
+/* File checkbox for component selection */
+.file-checkbox {
+    margin-right: var(--spacing-xs);
+    accent-color: var(--vubiquity-orange);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
+.file-item.selected {
+    background: rgba(255, 107, 66, 0.1) !important;
+    border-left: 3px solid var(--vubiquity-orange);
+}
+
+/* ============================================
+   Componentized Results Mini Table
+   ============================================ */
+
+.component-results-mini-table {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: var(--spacing-xs);
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.comp-result-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 50px;
+    gap: var(--spacing-sm);
+    align-items: center;
+    padding: 4px var(--spacing-xs);
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: var(--radius-xs);
+    font-size: 12px;
+    transition: background 0.2s ease;
+}
+
+.comp-result-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.comp-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    background: linear-gradient(135deg, var(--vubiquity-orange), var(--vubiquity-red));
+    color: white;
+    border-radius: var(--radius-xs);
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.comp-offset {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 11px;
+}
+
+.comp-conf {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-align: right;
+}
+
+.component-results-pending {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 12px;
+    padding: var(--spacing-xs);
+}
+
+/* Component badge (used in dub file column for componentized items) */
+.component-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: linear-gradient(135deg, rgba(255, 107, 66, 0.2), rgba(224, 67, 85, 0.2));
+    border: 1px solid rgba(255, 107, 66, 0.4);
+    border-radius: var(--radius-sm);
+    color: var(--vubiquity-orange);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* ============================================
+   Componentized Details Panel
+   ============================================ */
+
+.component-summary-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+
+.component-summary-table thead {
+    background-color: var(--bg-primary);
+}
+
+.component-summary-table th {
+    padding: var(--spacing-sm) var(--spacing-md);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.component-summary-table td {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+}
+
+.component-summary-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.component-summary-table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.component-summary-table .offset-cell,
+.component-summary-table .confidence-cell {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+}
+
+.component-summary-table .file-name-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.master-info-card {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--spacing-xs) 0;
+    border-bottom: 1px solid rgba(71, 85, 105, 0.2);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-row .label {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.info-row .value {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.info-row .file-path {
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.stat-card {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    text-align: center;
+}
+
+.stat-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--spacing-xs);
+}
+
+.stat-value {
+    color: var(--text-primary);
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.action-btn-mini {
+    padding: 4px 8px;
+    background: rgba(51, 133, 255, 0.1);
+    border: 1px solid var(--vubiquity-blue);
+    border-radius: var(--radius-xs);
+    color: var(--vubiquity-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn-mini:hover {
+    background: rgba(51, 133, 255, 0.2);
+}
+
+.action-btn-mini i {
+    font-size: 12px;
+}
+
+/* ============================================
    Method Results Table
    ============================================ */
 

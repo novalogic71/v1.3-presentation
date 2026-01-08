@@ -601,8 +601,8 @@ class OptimizedLargeFileDetector:
                     import torch.nn.functional as F
                     with torch.no_grad():
                         x = torch.from_numpy(y1.astype(np.float32)).to(self.device).view(1, 1, -1)
-                        w = torch.from_numpy(y2.astype(np.float32)[::-1].copy()).to(self.device).view(1, 1, -1)
-                        # full correlation via conv1d with padding
+                        w = torch.from_numpy(y2.astype(np.float32)).to(self.device).view(1, 1, -1)
+                        # full correlation via conv1d with padding (conv1d already performs correlation)
                         pad = w.shape[-1] - 1
                         corr = F.conv1d(x, w, padding=pad).view(-1)
                         max_corr_idx_t = torch.argmax(corr)
@@ -633,7 +633,7 @@ class OptimizedLargeFileDetector:
                 import torch
                 with torch.no_grad():
                     x = torch.from_numpy(y1.astype(np.float32)).to(self.device).view(1, 1, -1)
-                    w = torch.from_numpy(y2.astype(np.float32)[::-1].copy()).to(self.device).view(1, 1, -1)
+                    w = torch.from_numpy(y2.astype(np.float32)).to(self.device).view(1, 1, -1)
                     pad = w.shape[-1] - 1
                     corr_full = torch.nn.functional.conv1d(x, w, padding=pad).view(-1).detach().cpu().numpy()
             else:

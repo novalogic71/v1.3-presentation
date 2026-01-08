@@ -5,7 +5,7 @@ A comprehensive professional-grade audio synchronization analysis and repair sys
 ## ✨ Features
 
 ### 🎯 Core Analysis Engine
-- **Multi-Method Detection**: MFCC, cross-correlation, and AI-enhanced algorithms
+- **Multi-Method Detection**: MFCC, onset detection, spectral analysis, and cross-correlation algorithms
 - **High Precision**: Sub-frame accuracy with millisecond-level offset detection
 - **Multi-GPU Support**: Automatic workload distribution across available GPUs (NEW)
 - **Professional Grade**: Optimized for broadcast television and film workflows
@@ -73,7 +73,7 @@ Then open http://localhost:3002 in your browser.
   - Automatic load balancing across all available GPUs
   - Round-robin distribution based on process ID prevents memory exhaustion
   - Resolves batch processing hang issues at 90% progress
-  - Core MFCCs, AI models, and cross-correlation run on distributed GPUs
+  - Core analysis methods (MFCC, spectral, cross-correlation) run on distributed GPUs
 - **GPU Configuration**:
   - Enable in CLI with `--gpu`; in API set `USE_GPU=true`
   - Falls back to CPU (librosa) if CUDA/torchaudio aren't available
@@ -84,14 +84,6 @@ Then open http://localhost:3002 in your browser.
     - `LONG_FILE_THRESHOLD_SECONDS` (default 180)
     - `LONG_FILE_GPU_BYPASS` (default true)
     - `LONG_FILE_GPU_BYPASS_MAX_SECONDS` (default 900)
-- Offline AI Models:
-  - Wav2Vec2 (Transformers):
-    - `AI_WAV2VEC2_MODEL_PATH=/path/to/local/wav2vec2`
-    - `HF_LOCAL_ONLY=1` and optional `AI_MODEL_CACHE_DIR=/path/to/cache`
-  - YAMNet (TensorFlow SavedModel):
-    - `YAMNET_MODEL_PATH=/path/to/yamnet_saved_model` (directory with `saved_model.pb`)
-    - Optional: `AI_MODEL_CACHE_DIR` if you keep models under a shared cache root
-    - To avoid network, leave `AI_ALLOW_ONLINE_MODELS` unset (default) or set `=0`
 - UI Behavior:
   - Single Analyze uses the API (server decides GPU/chunked). Progress messages indicate the chosen path.
   - Batch uses the CLI and respects the UI “GPU Accel” toggle (adds `--gpu`).

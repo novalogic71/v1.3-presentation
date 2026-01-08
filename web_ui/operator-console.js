@@ -61,6 +61,13 @@ class OperatorConsole {
                     <span class="status-icon" id="operator-status-icon">🟢</span>
                     <span class="status-text" id="operator-status-text">Ready</span>
                 </div>
+                <div class="analysis-progress" id="analysis-progress" style="display: none;">
+                    <div class="progress-stage" id="progress-stage">Processing...</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="progress-details" id="progress-details"></div>
+                </div>
             </div>
         `;
 

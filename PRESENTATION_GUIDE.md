@@ -23,13 +23,15 @@ This guide provides a complete framework for presenting the Professional Audio S
 
 **Presentation Duration:** 15-20 minutes (including 5-minute live demo)
 
+**Note:** AI-based detection methods are currently disabled in this version. References to AI functionality have been removed from the presentation materials.
+
 ---
 
 ## Presentation Overview
 
 ### Key Messages
 1. **Accuracy**: 98% improvement with sub-frame precision (±0.3 seconds vs. 7+ seconds)
-2. **Intelligence**: Multi-method AI-powered detection with content-aware analysis
+2. **Intelligence**: Multi-method detection with content-aware analysis
 3. **Speed**: Multi-GPU acceleration processes 15-20 files per hour
 4. **Professional**: Frame-accurate results ready for broadcast delivery
 5. **Easy**: 3-click workflow from selection to professional-grade results
@@ -64,7 +66,7 @@ Professional Audio Sync Analyzer
 Version 1.3
 
 Frame-Perfect Sync Detection
-AI-Powered • Multi-GPU Accelerated
+Multi-Method Analysis • Multi-GPU Accelerated
 
 [Your Name/Organization]
 [Date]
@@ -111,7 +113,7 @@ Automated Sync Detection:
 ```
 Multi-Method Hybrid Approach
 
-Five Detection Methods:
+Four Detection Methods:
 1. MFCC (Mel-Frequency Cepstral Coefficients)
    → Fast, excellent for speech/music
    → 2-5 seconds processing time
@@ -131,17 +133,12 @@ Five Detection Methods:
    → Highest precision
    → 10-20 seconds processing time
 
-5. AI Neural Networks
-   → Deep learning embeddings (Wav2Vec2, YAMNet)
-   → Complex scenarios
-   → 15-30 seconds processing time
-
 Ensemble Confidence Scoring:
 Multiple methods cross-validate for reliability
 ```
 
 **Speaker Notes:**
-- "We don't rely on a single method - we use five different approaches"
+- "We don't rely on a single method - we use four different approaches"
 - "Each method has strengths for different content types"
 - "Results are combined with confidence scoring for reliability"
 - "System automatically selects best result or flags for manual review"
@@ -167,7 +164,6 @@ Top Right - Analysis Configuration:
 • Channel strategy (mono/per-channel)
 • Output options (JSON, visualizations, verbose logs)
 • GPU acceleration toggle
-• AI model selection
 ```
 
 **Speaker Notes:**
@@ -394,7 +390,6 @@ Analysis Methods:
 • Onset: Spectral flux, high-frequency content
 • Spectral: STFT with 1024-8192 FFT size
 • Cross-Correlation: Raw waveform, windowed
-• AI Neural: 768-1024 dimensional embeddings
 
 Frame Rate Detection:
 • Automatic via ffprobe
@@ -793,8 +788,8 @@ Questions?
 - "60-70% time savings compared to manual sync correction"
 
 ### Intelligence & Sophistication
-- "Five different detection methods, each optimized for different content types"
-- "AI-powered methods using Wav2Vec2 and YAMNet with 768-1024 dimensional embeddings"
+- "Four different detection methods, each optimized for different content types"
+- "Multi-method ensemble approach with cross-validation for reliability"
 - "Content-aware processing automatically classifies audio and tunes parameters"
 - "Two-pass system identifies low-confidence regions and refines them"
 

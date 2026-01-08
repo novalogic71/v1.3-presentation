@@ -20,6 +20,9 @@ router = APIRouter()
 class BatchFile(BaseModel):
     name: str
     path: str
+    type: Optional[str] = None
+    label: Optional[str] = None
+    index: Optional[int] = None
 
 
 class BatchResult(BaseModel):
@@ -32,12 +35,25 @@ class BatchResult(BaseModel):
 class BatchQueueItem(BaseModel):
     id: Union[str, int]
     master: BatchFile
-    dub: BatchFile
+    # For standard single-dub analysis
+    dub: Optional[BatchFile] = None
+    # For componentized analysis (multiple components per master)
+    type: Optional[str] = None  # 'componentized' or None for standard
+    components: Optional[List[BatchFile]] = None
+    componentResults: Optional[List[Dict[str, Any]]] = None
+    offsetMode: Optional[str] = None
+    # Common fields
     status: str = Field(default="queued")
     progress: float = 0
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     timestamp: Optional[str] = None
+    frameRate: Optional[float] = None
+    analysisId: Optional[str] = None
+    autoRepair: Optional[bool] = None
+    keepDuration: Optional[bool] = None
+    restoredFromDb: Optional[bool] = None
+    statusMessage: Optional[str] = None
 
 
 class BatchQueueState(BaseModel):

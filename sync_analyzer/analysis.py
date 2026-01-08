@@ -42,7 +42,8 @@ def analyze(
 
     detector = ProfessionalSyncDetector(use_gpu=use_gpu)
     sync_results = detector.analyze_sync(master, dub, methods)
-    consensus = detector.get_consensus_result(sync_results)
+    # Pass requested methods to consensus so it respects user's selection
+    consensus = detector.get_consensus_result(sync_results, requested_methods=methods)
 
     ai_result = None
     if enable_ai:

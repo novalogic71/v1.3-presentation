@@ -1,0 +1,5 @@
+master_file,component_0,component_1,component_2,component_3,component_4,component_5
+/mnt/data/project/episode_01/master_video.mxf,/mnt/data/project/episode_01/audio/51_Lt.wav,/mnt/data/project/episode_01/audio/51_Rt.wav,/mnt/data/project/episode_01/audio/51_C.wav,/mnt/data/project/episode_01/audio/51_LFE.wav,/mnt/data/project/episode_01/audio/51_Ls.wav,/mnt/data/project/episode_01/audio/51_Rs.wav
+/mnt/data/project/episode_02/master_video.mxf,/mnt/data/project/episode_02/audio/51_Lt.wav,/mnt/data/project/episode_02/audio/51_Rt.wav,/mnt/data/project/episode_02/audio/51_C.wav,/mnt/data/project/episode_02/audio/51_LFE.wav,/mnt/data/project/episode_02/audio/51_Ls.wav,/mnt/data/project/episode_02/audio/51_Rs.wav
+/mnt/data/project/episode_03/master_video.mxf,/mnt/data/project/episode_03/audio/51_Lt.wav,/mnt/data/project/episode_03/audio/51_Rt.wav,/mnt/data/project/episode_03/audio/51_C.wav,/mnt/data/project/episode_03/audio/51_LFE.wav,/mnt/data/project/episode_03/audio/51_Ls.wav,/mnt/data/project/episode_03/audio/51_Rs.wav
+

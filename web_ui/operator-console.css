@@ -123,7 +123,8 @@
     font-size: 14px;
 }
 
-.progress-bar {
+.progress-bar,
+.progress-bar-container {
     height: 6px;
     background: #1e293b;
     border-radius: 3px;
@@ -131,7 +132,8 @@
     margin-bottom: 8px;
 }
 
-.progress-fill {
+.progress-fill,
+.progress-bar-fill {
     height: 100%;
     background: linear-gradient(90deg, #3b82f6, #1d4ed8);
     border-radius: 3px;

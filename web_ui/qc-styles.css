@@ -532,3 +532,50 @@
         justify-content: center;
     }
 }
+
+/* Playhead - Current playback position indicator */
+.qc-playhead {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(251, 191, 36, 0.9);
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+    z-index: 100;
+    pointer-events: none;
+    transition: left 0.05s linear;
+}
+
+.qc-playhead::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: rgba(251, 191, 36, 1);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.8);
+}
+
+.qc-playhead::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: rgba(251, 191, 36, 1);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.8);
+}
+
+/* Clickable waveform for seeking */
+.qc-waveform-display {
+    cursor: pointer;
+}
+
+.qc-waveform-display:hover .qc-playhead {
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.9);
+}

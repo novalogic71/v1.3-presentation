@@ -6,7 +6,7 @@ Main API router for the Professional Audio Sync Analyzer.
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, BackgroundTasks
 from typing import List, Optional
 
-from app.api.v1.endpoints import analysis, files, reports, ai, health, batch, repair, analyze_and_repair, ui_state
+from app.api.v1.endpoints import analysis, files, reports, ai, health, batch, repair, analyze_and_repair, ui_state, jobs
 
 # Create main API router
 api_router = APIRouter()
@@ -64,4 +64,10 @@ api_router.include_router(
     ui_state.router,
     prefix="/ui/state",
     tags=["ui-state"]
+)
+
+api_router.include_router(
+    jobs.router,
+    prefix="/jobs",
+    tags=["jobs"]
 )

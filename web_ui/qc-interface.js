@@ -8,7 +8,11 @@ class QCInterface {
         this.audioEngine = null;
         this.currentData = null;
         this.isVisible = false;
-        
+        this.playheadUpdateInterval = null;
+        this.canvasWidth = 0;
+        this.totalDuration = 0;
+        this.lastSeekTime = 0;
+
         this.initializeModal();
         this.setupEventListeners();
     }
@@ -291,7 +295,7 @@ class QCInterface {
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (!this.isVisible) return;
-            
+
             switch (e.code) {
                 case 'Space':
                     e.preventDefault();
@@ -306,6 +310,51 @@ class QCInterface {
                 case 'KeyA':
                     this.playComparison(true);
                     break;
+            }
+        });
+
+        // Click-to-seek on waveform
+        document.addEventListener('click', (e) => {
+            // Check if click is in QC waveform area
+            const waveformDisplay = e.target.closest('.qc-waveform-display');
+            const waveformOverlay = e.target.closest('.qc-waveform-overlay');
+            
+            console.log('[QC Seek] Click detected, target:', e.target.className, 'waveformDisplay:', !!waveformDisplay, 'overlay:', !!waveformOverlay);
+            
+            if (!waveformDisplay && !waveformOverlay) return;
+            if (!this.isVisible) {
+                console.log('[QC Seek] QC not visible, ignoring');
+                return;
+            }
+            if (!this.audioEngine) {
+                console.log('[QC Seek] No audio engine, ignoring');
+                return;
+            }
+
+            const canvas = document.getElementById('qc-waveform-canvas');
+            if (!canvas) {
+                console.log('[QC Seek] Canvas not found');
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const progress = Math.max(0, Math.min(1, clickX / rect.width));
+
+            const totalDuration = Math.max(
+                this.audioEngine?.masterWaveformData?.duration || 0,
+                this.audioEngine?.dubWaveformData?.duration || 0,
+                this.audioEngine?.getDuration?.() || 0
+            );
+
+            console.log('[QC Seek] clickX:', clickX, 'progress:', progress, 'totalDuration:', totalDuration);
+
+            if (totalDuration > 0) {
+                const seekTime = progress * totalDuration;
+                console.log('[QC Seek] Seeking to:', seekTime);
+                this.seekTo(seekTime);
+            } else {
+                console.log('[QC Seek] No duration available');
             }
         });
     }
@@ -336,6 +385,7 @@ class QCInterface {
             modal.style.display = 'none';
         }
         this.currentData = null;
+        this.lastSeekTime = 0;  // Reset seek position when closing
         console.log('QC Interface closed');
     }
 
@@ -624,12 +674,16 @@ class QCInterface {
     }
 
     playComparison(corrected = false) {
+        console.log('[QC playComparison] called with corrected:', corrected);
+        console.log('[QC playComparison] currentData:', this.currentData);
+        
         if (!this.audioEngine) {
             this.updateStatus('Audio engine not available', 'error');
             return;
         }
 
         const detectedOffset = this.currentData?.detectedOffset || 0;
+        console.log('[QC playComparison] detectedOffset:', detectedOffset);
         const fps = this.currentData?.frameRate || 24;
         const frames = Math.round(Math.abs(detectedOffset) * fps);
         const frameSign = detectedOffset < 0 ? '-' : '+';
@@ -654,7 +708,11 @@ class QCInterface {
         }
         
         try {
-            this.audioEngine.playComparison(detectedOffset, corrected);
+            // Use last seek position if available, otherwise start from beginning
+            const startAt = this.lastSeekTime || 0;
+            console.log('[QC playComparison] Starting from:', startAt, 'corrected:', corrected);
+            this.audioEngine.playComparison(detectedOffset, corrected, startAt);
+            this.startPlayheadUpdate();
         } catch (error) {
             console.error('Playback error:', error);
             this.updateStatus(`Playback error: ${error.message}`, 'error');
@@ -665,6 +723,114 @@ class QCInterface {
         if (this.audioEngine) {
             this.audioEngine.stopPlayback();
             this.updateStatus('Playback stopped');
+        }
+        this.stopPlayheadUpdate();
+        // Keep lastSeekTime so user can resume from that position
+        // Clear it only when closing the QC interface
+    }
+
+    startPlayheadUpdate() {
+        this.stopPlayheadUpdate(); // Clear any existing interval
+
+        const canvas = document.getElementById('qc-waveform-canvas');
+        if (!canvas) return;
+
+        this.canvasWidth = canvas.width;
+        this.totalDuration = Math.max(
+            this.audioEngine?.masterWaveformData?.duration || 0,
+            this.audioEngine?.dubWaveformData?.duration || 0
+        );
+
+        if (this.totalDuration === 0) return;
+
+        // Update playhead at 60fps for smooth animation
+        this.playheadUpdateInterval = setInterval(() => {
+            this.updatePlayheadPosition();
+        }, 1000 / 60);
+    }
+
+    stopPlayheadUpdate() {
+        if (this.playheadUpdateInterval) {
+            clearInterval(this.playheadUpdateInterval);
+            this.playheadUpdateInterval = null;
+        }
+    }
+
+    updatePlayheadPosition() {
+        if (!this.audioEngine) return;
+
+        const times = this.audioEngine.getCurrentTimes();
+        const currentTime = Math.max(times.master || 0, times.dub || 0);
+
+        if (this.totalDuration === 0) return;
+
+        // Calculate playhead position as percentage of canvas width
+        const progress = Math.min(1, currentTime / this.totalDuration);
+        const playheadX = progress * this.canvasWidth;
+
+        const playhead = document.getElementById('qc-playhead');
+        if (playhead) {
+            playhead.style.left = `${playheadX}px`;
+        }
+
+        // Stop updating if playback finished
+        if (currentTime >= this.totalDuration || !this.audioEngine.isPlaying) {
+            this.stopPlayheadUpdate();
+        }
+    }
+
+    seekTo(time) {
+        console.log('[QC seekTo] Called with time:', time, 'audioEngine:', !!this.audioEngine, 'hasSeekTo:', typeof this.audioEngine?.seekTo);
+        
+        if (!this.audioEngine) {
+            console.warn('[QC seekTo] No audio engine');
+            return;
+        }
+        if (typeof this.audioEngine.seekTo !== 'function') {
+            console.warn('[QC seekTo] audioEngine.seekTo is not a function');
+            return;
+        }
+
+        try {
+            this.audioEngine.seekTo(time);
+            
+            // Get canvas and duration directly (don't rely on cached values)
+            const canvas = document.getElementById('qc-waveform-canvas');
+            const duration = Math.max(
+                this.audioEngine?.masterWaveformData?.duration || 0,
+                this.audioEngine?.dubWaveformData?.duration || 0,
+                this.audioEngine?.getDuration?.() || 0,
+                this.totalDuration || 0
+            );
+            
+            console.log('[QC seekTo] Canvas:', canvas?.width, 'Duration:', duration, 'Time:', time);
+            
+            // Manually update playhead position based on seek time
+            if (canvas && duration > 0) {
+                const canvasRect = canvas.getBoundingClientRect();
+                const canvasDisplayWidth = canvasRect.width;  // Use display width, not canvas.width
+                const progress = Math.min(1, time / duration);
+                const playheadX = progress * canvasDisplayWidth;
+                
+                const playhead = document.getElementById('qc-playhead');
+                if (playhead) {
+                    playhead.style.left = `${playheadX}px`;
+                    console.log('[QC seekTo] Playhead moved to:', playheadX, 'px (progress:', progress, ')');
+                } else {
+                    console.warn('[QC seekTo] Playhead element not found');
+                }
+            } else {
+                console.warn('[QC seekTo] Cannot move playhead - canvas:', !!canvas, 'duration:', duration);
+            }
+            
+            // Store seek position for use when playback starts
+            this.lastSeekTime = time;
+            
+            this.updateStatus(`Seeked to ${time.toFixed(2)}s`);
+            console.log('[QC seekTo] Success');
+        } catch (error) {
+            console.error('[QC seekTo] Seek error:', error);
+            this.updateStatus(`Seek error: ${error.message}`, 'error');
         }
     }
 

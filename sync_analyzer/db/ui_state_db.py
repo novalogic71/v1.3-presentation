@@ -14,7 +14,10 @@ from typing import Any, Optional
 from datetime import datetime
 import sqlite3
 
-DEFAULT_DB_PATH = Path("./sync_reports/sync_reports.db")
+# Use absolute path to ensure consistency regardless of working directory
+# Database is stored in the project's sync_reports folder
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_DB_PATH = _PROJECT_ROOT / "sync_reports" / "sync_reports.db"
 
 
 def _ensure_parent(p: Path) -> None:

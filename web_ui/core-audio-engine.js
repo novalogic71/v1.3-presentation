@@ -450,10 +450,14 @@ class CoreAudioEngine {
             return;
         }
 
+        // Store playback parameters for seek operations
+        this.lastOffsetSeconds = offsetSeconds;
+        this.lastCorrected = corrected;
+
         const run = async () => {
             // Ensure running state
             if (this.audioContext.state === 'suspended') {
-                try { 
+                try {
                     await this.audioContext.resume();
                     console.log('AudioContext resumed for playback:', this.audioContext.state);
                 } catch (e) {
@@ -678,17 +682,22 @@ class CoreAudioEngine {
                 }
 
                 const startElements = () => {
+                    console.log('[CoreAudioEngine] startElements - corrected:', corrected, 'offsetSeconds:', offsetSeconds, 'safeStartAt:', safeStartAt);
+                    
                     if (!corrected) {
                         // BEFORE FIX: Play files as-is to hear the natural sync problem
                         // Both start at same position and time - natural offset will be audible
+                        console.log('[CoreAudioEngine] BEFORE FIX mode - playing both at same position');
                         mEl.currentTime = safeStartAt;
                         dEl.currentTime = safeStartAt;
                         mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
                         dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
                     } else {
                         // AFTER FIX: Apply correction to synchronize the files (branch behavior)
+                        console.log('[CoreAudioEngine] AFTER FIX mode - applying correction');
                         if (offsetSeconds > 0) {
                             // Dub is early - delay dub (schedule dub play)
+                            console.log('[CoreAudioEngine] Dub is early by', offsetSeconds, 's - delaying dub playback');
                             mEl.currentTime = safeStartAt;
                             dEl.currentTime = safeStartAt;
                             mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
@@ -697,12 +706,15 @@ class CoreAudioEngine {
                             }, offsetSeconds * 1000);
                         } else if (offsetSeconds < 0) {
                             // Dub is late - advance dub content to sync with master
+                            const dubStartTime = Math.min(dEl.duration - 0.01, Math.max(0, safeStartAt + Math.abs(offsetSeconds)));
+                            console.log('[CoreAudioEngine] Dub is late by', Math.abs(offsetSeconds), 's - advancing dub to', dubStartTime);
                             mEl.currentTime = safeStartAt;
-                            dEl.currentTime = Math.min(dEl.duration - 0.01, Math.max(0, safeStartAt + Math.abs(offsetSeconds)));
+                            dEl.currentTime = dubStartTime;
                             mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
                             dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
                         } else {
                             // No offset - play synchronized
+                            console.log('[CoreAudioEngine] No offset - playing synchronized');
                             mEl.currentTime = safeStartAt;
                             dEl.currentTime = safeStartAt;
                             mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
@@ -835,6 +847,74 @@ class CoreAudioEngine {
         if (this.dubElement && !this.dubElementSource) this.dubElement.volume = dVal;
     }
     
+    /**
+     * Seek to a specific time position (in seconds)
+     * Works with both buffer-based and media element playback
+     */
+    seekTo(time) {
+        const seekTime = Math.max(0, Number(time) || 0);
+        console.log('CoreAudioEngine.seekTo:', seekTime);
+        
+        // For media elements - can seek directly
+        if (this.masterElement) {
+            const maxTime = this.masterElement.duration || 0;
+            this.masterElement.currentTime = Math.min(seekTime, maxTime);
+        }
+        if (this.dubElement) {
+            const maxTime = this.dubElement.duration || 0;
+            this.dubElement.currentTime = Math.min(seekTime, maxTime);
+        }
+        
+        // For buffer-based playback - need to restart from new position
+        if ((this.masterBuffer || this.dubBuffer) && this.isPlaying) {
+            // Get current offset setting
+            const currentOffset = this.lastOffsetSeconds || 0;
+            const corrected = this.lastCorrected || false;
+            
+            // Restart playback from new position
+            this.playComparison(currentOffset, corrected, seekTime);
+        }
+        
+        // Update tracking vars
+        this.lastStartAt = seekTime;
+        if (this.audioContext) {
+            this.playStartClock = this.audioContext.currentTime;
+        }
+    }
+    
+    /**
+     * Get current playback position (in seconds)
+     */
+    getCurrentTime() {
+        // Media elements have direct currentTime
+        if (this.masterElement) {
+            return this.masterElement.currentTime || 0;
+        }
+        if (this.dubElement) {
+            return this.dubElement.currentTime || 0;
+        }
+        
+        // Buffer-based: calculate from start time
+        if (this.isPlaying && this.audioContext && typeof this.playStartClock === 'number') {
+            const elapsed = Math.max(0, this.audioContext.currentTime - this.playStartClock);
+            return (this.lastStartAt || 0) + elapsed;
+        }
+        
+        return this.lastStartAt || 0;
+    }
+    
+    /**
+     * Get total duration of loaded audio
+     */
+    getDuration() {
+        let duration = 0;
+        if (this.masterBuffer) duration = Math.max(duration, this.masterBuffer.duration);
+        if (this.dubBuffer) duration = Math.max(duration, this.dubBuffer.duration);
+        if (this.masterElement) duration = Math.max(duration, this.masterElement.duration || 0);
+        if (this.dubElement) duration = Math.max(duration, this.dubElement.duration || 0);
+        return duration;
+    }
+
     /**
      * Get audio engine status for debugging
      */

@@ -208,6 +208,53 @@ html, body, .main-container, .quadrant, .header {
     flex-direction: column;
 }
 
+/* Batch table fullscreen mode */
+body.batch-table-fullscreen .main-container {
+    display: block;
+}
+
+body.batch-table-fullscreen .quadrant:not(.batch-processing) {
+    display: none;
+}
+
+body.batch-table-fullscreen .batch-processing {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    border-radius: 0;
+    border: none;
+}
+
+body.batch-table-fullscreen .batch-processing .quadrant-header {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+}
+
+body.batch-table-fullscreen .batch-processing .quadrant-content {
+    flex: 1;
+    min-height: 0;
+}
+
+body.batch-table-fullscreen .batch-table-container {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+}
+
+body.batch-table-fullscreen .batch-controls {
+    flex-wrap: wrap;
+}
+
+.batch-controls button.active {
+    background: var(--vubiquity-orange);
+    color: white;
+}
+
+body.batch-table-fullscreen .batch-splitter {
+    display: none !important;
+}
+
 /* Console Status (logs) */
 .console-status .quadrant-content { padding: 8px; display: flex; flex-direction: column; }
 .log-toolbar { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
@@ -334,6 +381,74 @@ html, body, .main-container, .quadrant, .header {
     font-size: 0.9rem;
 }
 
+/* File Search Bar */
+.file-search-container {
+    margin-bottom: 12px;
+}
+
+.search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    padding: 8px 12px;
+    transition: all 0.2s;
+}
+
+.search-input-wrapper:focus-within {
+    border-color: var(--vubiquity-orange);
+    box-shadow: 0 0 0 2px rgba(255, 107, 66, 0.1);
+}
+
+.search-icon {
+    color: var(--text-secondary);
+    margin-right: 8px;
+    font-size: 0.9rem;
+}
+
+.file-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    padding: 0;
+}
+
+.file-search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.search-clear-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    margin-left: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.search-clear-btn:hover {
+    background: var(--border-secondary);
+    color: var(--text-primary);
+}
+
+.search-results-count {
+    margin-top: 6px;
+    padding: 4px 8px;
+    background: rgba(255, 107, 66, 0.1);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--vubiquity-orange);
+    text-align: center;
+}
+
 .file-tree {
     background: var(--bg-primary);
     border: 1px solid var(--border-secondary);
@@ -359,6 +474,23 @@ html, body, .main-container, .quadrant, .header {
 .file-item.selected {
     background: var(--vubiquity-orange);
     color: white;
+}
+
+.file-item.search-match {
+    background: rgba(255, 107, 66, 0.15);
+    border-left: 2px solid var(--vubiquity-orange);
+}
+
+.file-item.search-hidden {
+    display: none;
+}
+
+.file-item .search-highlight {
+    background: var(--vubiquity-orange);
+    color: white;
+    padding: 1px 2px;
+    border-radius: 2px;
+    font-weight: 600;
 }
 
 .file-item i {
@@ -524,6 +656,14 @@ html, body, .main-container, .quadrant, .header {
 .progress-text {
     font-size: 0.9rem;
     color: #a0aec0;
+}
+
+.component-progress {
+    display: block;
+    font-size: 0.75rem;
+    color: #ff6b42;
+    margin-top: 2px;
+    font-weight: 500;
 }
 
 .log-container {
@@ -938,6 +1078,79 @@ html, body, .main-container, .quadrant, .header {
     cursor: not-allowed;
 }
 
+/* Concurrent Jobs Control */
+.concurrent-jobs-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-surface);
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-secondary);
+}
+
+.concurrent-jobs-control label {
+    color: var(--vubiquity-orange);
+    font-size: 0.85rem;
+}
+
+.concurrent-jobs-control select {
+    background: var(--bg-primary);
+    color: #e2e8f0;
+    border: 1px solid var(--border-secondary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    min-width: 80px;
+}
+
+.concurrent-jobs-control select:hover {
+    border-color: var(--vubiquity-orange);
+}
+
+.concurrent-jobs-control select:focus {
+    outline: none;
+    border-color: var(--vubiquity-orange);
+    box-shadow: 0 0 0 2px rgba(255, 107, 66, 0.2);
+}
+
+.batch-table-container {
+    min-height: 160px;
+    max-height: 400px;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.batch-splitter {
+    height: 10px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: row-resize;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px dashed rgba(148, 163, 184, 0.35);
+    border-radius: 6px;
+}
+
+.batch-splitter .splitter-grip {
+    width: 48px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.8);
+}
+
+.batch-splitter.active {
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(248, 113, 113, 0.6);
+}
+
+body.batch-details-resizing {
+    user-select: none;
+    cursor: row-resize;
+}
+
 .batch-summary {
     display: flex;
     gap: 20px;
@@ -1091,6 +1304,33 @@ html, body, .main-container, .quadrant, .header {
     color: white;
 }
 
+.status-badge.failed {
+    background: #f56565;
+    color: white;
+}
+
+.status-badge.orphaned {
+    background: #ed8936;
+    color: white;
+    animation: pulse-orphaned 2s infinite;
+}
+
+@keyframes pulse-orphaned {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.action-btn-v2.retry {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+}
+
+.action-btn-v2.retry:hover {
+    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
 .progress-mini {
     width: 60px;
     height: 6px;
@@ -1173,6 +1413,7 @@ html, body, .main-container, .quadrant, .header {
     border-radius: 6px;
     max-height: 300px;
     overflow: auto;
+    flex: 0 0 auto;
 }
 
 .details-header {
@@ -1879,6 +2120,7 @@ html, body, .main-container, .quadrant, .header {
     overflow: auto;
     box-shadow: 0 4px 12px rgba(56, 161, 105, 0.1);
     animation: expandIn 0.3s ease-out;
+    flex: 0 0 auto;
 }
 
 @keyframes expandIn {

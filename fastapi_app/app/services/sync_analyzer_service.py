@@ -35,10 +35,22 @@ class SyncAnalyzerService:
         self.analysis_cache: Dict[str, SyncAnalysisResult] = {}
         self.active_analyses: Dict[str, Dict[str, Any]] = {}
         self.executor = ThreadPoolExecutor(max_workers=settings.AI_BATCH_SIZE)
-        
+
+        # Initialize database for job persistence
+        from sync_analyzer.db.job_db import migrate_database, mark_orphaned_jobs
+        migrate_database()
+
+        # Mark any jobs from previous server instances as orphaned
+        orphaned_count = mark_orphaned_jobs()
+        if orphaned_count > 0:
+            logger.warning(f"Marked {orphaned_count} orphaned job(s) from previous server instance")
+
+        # Restore incomplete jobs from database to memory
+        self._restore_incomplete_jobs()
+
         # Initialize sync detector instances
         self._init_sync_detectors()
-        
+
         logger.info("SyncAnalyzerService initialized successfully")
 
     def _console_progress(self, analysis_id: str, progress: float, message: str, done: bool = False):
@@ -120,7 +132,42 @@ class SyncAnalyzerService:
             logger.error(f"Error initializing sync detectors: {e}")
             self.core_detector = None
             self.ai_detector = None
-    
+
+    def _restore_incomplete_jobs(self):
+        """
+        Restore incomplete jobs from database to active_analyses.
+
+        This allows clients to reconnect to jobs that were in progress
+        when the page was refreshed or the server restarted (though
+        restarted jobs will be marked as orphaned).
+        """
+        try:
+            from sync_analyzer.db.job_db import list_jobs
+
+            # Get jobs in processing or pending state
+            incomplete = list_jobs(status='processing') + list_jobs(status='pending')
+
+            for job_record in incomplete:
+                job_id = job_record['job_id']
+                request_params = json.loads(job_record['request_params'])
+
+                # Reconstruct analysis record
+                self.active_analyses[job_id] = {
+                    "id": job_id,
+                    "request": SyncAnalysisRequest(**request_params),
+                    "status": AnalysisStatus(job_record['status']),
+                    "created_at": datetime.fromisoformat(job_record['created_at']),
+                    "progress": job_record.get('progress', 0.0),
+                    "status_message": job_record.get('status_message'),
+                    "restored_from_db": True  # Flag to indicate this was restored
+                }
+
+            if incomplete:
+                logger.info(f"Restored {len(incomplete)} incomplete job(s) from database")
+
+        except Exception as e:
+            logger.warning(f"Could not restore incomplete jobs: {e}")
+
     async def analyze_sync(self, request: SyncAnalysisRequest) -> str:
         """
         Start a sync analysis operation.
@@ -161,14 +208,26 @@ class SyncAnalyzerService:
             "created_at": datetime.utcnow(),
             "progress": 0.0
         }
-        
+
         self.active_analyses[analysis_id] = analysis_record
-        
+
+        # Persist job to database
+        try:
+            from sync_analyzer.db.job_db import create_job
+            create_job(
+                job_id=analysis_id,
+                job_type='single',
+                request_params=request.model_dump()
+            )
+            logger.debug(f"Job {analysis_id} persisted to database")
+        except Exception as e:
+            logger.warning(f"Could not persist job to database: {e}")
+
         # Start analysis in background
         asyncio.create_task(self._perform_analysis(analysis_id, request))
-        
+
         logger.info(f"Started sync analysis {analysis_id} for {request.master_file} vs {request.dub_file}")
-        
+
         return analysis_id
     
     async def get_analysis_status(self, analysis_id: str) -> Optional[Dict[str, Any]]:
@@ -324,11 +383,19 @@ class SyncAnalyzerService:
     
     async def _perform_analysis(self, analysis_id: str, request: SyncAnalysisRequest):
         """Perform the actual sync analysis."""
+        from sync_analyzer.db.job_db import update_job_status, complete_job, fail_job
+
         try:
             analysis_record = self.active_analyses[analysis_id]
             analysis_record["status"] = AnalysisStatus.PROCESSING
             analysis_record["progress"] = 10.0
-            
+
+            # Update job status to processing in database
+            try:
+                update_job_status(analysis_id, status='processing', progress=10.0, status_message="Starting analysis")
+            except Exception as e:
+                logger.warning(f"Could not update job status in database: {e}")
+
             logger.info(f"Starting analysis {analysis_id}")
             
             # Perform analysis using thread pool executor
@@ -383,14 +450,21 @@ class SyncAnalyzerService:
             # Store result
             self.analysis_cache[analysis_id] = analysis_result
 
-            # Persist to database (lightweight SQLite store)
+            # Persist to reports database (lightweight SQLite store)
             try:
                 from sync_analyzer.db.report_db import save_report_from_model
                 save_report_from_model(analysis_result)
                 logger.info(f"Report persisted to SQLite store for {analysis_id}")
             except Exception as _db_err:
                 logger.warning(f"Could not persist report to DB: {_db_err}")
-            
+
+            # Persist job completion to jobs database
+            try:
+                complete_job(analysis_id, result_data=analysis_result.model_dump())
+                logger.debug(f"Job {analysis_id} marked as completed in database")
+            except Exception as e:
+                logger.warning(f"Could not complete job in database: {e}")
+
             # Update analysis record
             analysis_record["status"] = AnalysisStatus.COMPLETED
             analysis_record["result"] = analysis_result
@@ -398,19 +472,26 @@ class SyncAnalyzerService:
             analysis_record["completed_at"] = datetime.utcnow()
             # Ensure we terminate any single-line console progress neatly
             self._console_progress(analysis_id, 100.0, "Completed", done=True)
-            
+
             logger.info(f"Completed analysis {analysis_id} successfully")
             
         except Exception as e:
             logger.error(f"Analysis {analysis_id} failed: {e}")
             traceback.print_exc()
-            
+
+            # Persist job failure to database
+            try:
+                fail_job(analysis_id, error_message=str(e))
+                logger.debug(f"Job {analysis_id} marked as failed in database")
+            except Exception as db_err:
+                logger.warning(f"Could not fail job in database: {db_err}")
+
             # Update analysis record with error
             analysis_record["status"] = AnalysisStatus.FAILED
             analysis_record["error"] = str(e)
             analysis_record["progress"] = 0.0
             self._console_progress(analysis_id, 0.0, f"Failed: {e}", done=True)
-            
+
             # Create failed result
             failed_result = self._create_failed_result(analysis_record, str(e))
             self.analysis_cache[analysis_id] = failed_result
@@ -452,6 +533,7 @@ class SyncAnalyzerService:
             prefer_gpu = getattr(request, 'prefer_gpu', None)
             prefer_bypass = getattr(request, 'prefer_gpu_bypass_chunked', None)
             force_chunked = bool(getattr(request, 'force_chunked', False))
+            enable_drift = bool(getattr(request, 'enable_drift_detection', False))
             # If GPU is available and policy allows, bypass chunked up to a cap
             try:
                 sys_gpu_available = torch.cuda.is_available()
@@ -465,6 +547,17 @@ class SyncAnalyzerService:
 
             if force_chunked:
                 use_chunked = True
+            elif not enable_drift:
+                # If drift detection is disabled, NEVER use chunked analyzer
+                # Chunked analyzer is only for drift detection across the file
+                # For simple offset detection (bars/tone, dubbed content), use standard methods
+                use_chunked = False
+                try:
+                    if analysis_id in self.active_analyses:
+                        self.active_analyses[analysis_id]["status_message"] = "Drift detection disabled: using standard analysis"
+                        self._console_progress(analysis_id, 15.0, "Standard analysis (drift detection OFF)")
+                except Exception:
+                    pass
             elif use_chunked and gpu_available and (
                 (prefer_bypass is True) or (prefer_bypass is None and bool(getattr(settings, 'LONG_FILE_GPU_BYPASS', True)))
             ):

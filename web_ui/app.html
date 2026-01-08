@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>Professional Audio Sync Analyzer</title>
-    <link rel="stylesheet" href="style.css?v=20250829-8">
+    <link rel="stylesheet" href="style.css?v=20250913-2">
     <link rel="stylesheet" href="waveform-styles.css?v=20250828-0100">
     <link rel="stylesheet" href="qc-styles.css?v=20250829-1">
     <link rel="stylesheet" href="repair-qc-styles.css?v=20250902-1">
     <link rel="stylesheet" href="repair-preview-styles.css?v=20250912-1">
     <link rel="stylesheet" href="operator-console.css?v=20250115-1">
-    <link rel="stylesheet" href="styles/redesign.css?v=20251222">
+    <link rel="stylesheet" href="styles/redesign.css?v=20251222-2">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,6 +37,20 @@
         .status-badge.completed  { background:#16a34a1a; color:#86efac; }
         .status-badge.processing { background:#1d4ed81a; color:#93c5fd; }
         .status-badge.failed     { background:#7f1d1d1a; color:#fca5a5; }
+
+        /* Active Jobs Progress */
+        .active-jobs-container { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #334155; }
+        .active-jobs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #334155; }
+        .active-jobs-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: #94a3b8; }
+        .active-jobs-count { font-size: 12px; color: #64748b; font-variant-numeric: tabular-nums; }
+        .active-jobs-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
+        .active-job-item { background: #0f172a; border-radius: 6px; padding: 8px 12px; border: 1px solid #1e293b; }
+        .active-job-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .active-job-name { font-size: 12px; color: #cbd5e1; font-weight: 500; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .active-job-percentage { font-size: 12px; color: #22c55e; font-variant-numeric: tabular-nums; }
+        .active-job-progress-bar { height: 4px; background: #1f2937; border-radius: 999px; overflow: hidden; }
+        .active-job-progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #10b981); transition: width 0.3s ease; }
+        .active-job-message { font-size: 11px; color: #64748b; margin-top: 4px; font-style: italic; }
 
         /* Fullscreen details */
         .batch-details.fullscreen { position: fixed; left:0; top:0; right:0; bottom:0; width:100vw; height:100vh; z-index: 9999; background: rgba(11,18,32,0.98); padding: 16px 24px; overflow: auto; }
@@ -69,32 +83,123 @@
                 </div>
             </div>
             <div class="quadrant-content">
+                <!-- File Search Bar -->
+                <div class="file-search-container">
+                    <div class="search-input-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input
+                            type="text"
+                            id="file-search-input"
+                            class="file-search-input"
+                            placeholder="Search files and folders..."
+                            autocomplete="off"
+                        >
+                        <button class="search-clear-btn" id="search-clear-btn" style="display: none;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="search-results-count" id="search-results-count" style="display: none;">
+                        <span id="search-count-text">0 results</span>
+                    </div>
+                </div>
+
                 <div class="file-tree" id="file-tree">
                     <div class="loading">
                         <i class="fas fa-spinner fa-spin"></i> Loading files...
                     </div>
                 </div>
                 <div class="selected-files">
-                    <h3>Selected Files</h3>
-                    <div class="file-selection">
-                        <div class="file-slot" id="master-slot">
-                            <label>Master File:</label>
-                            <div class="file-placeholder">
-                                <i class="fas fa-file-audio"></i>
-                                <span>Click to select master file</span>
+                    <!-- Analysis Mode Selector -->
+                    <div class="analysis-mode-selector">
+                        <button class="mode-tab active" data-mode="standard" title="Standard two-file analysis (Keyboard: Alt+S)">
+                            <i class="fas fa-exchange-alt"></i> <span>Standard</span>
+                        </button>
+                        <button class="mode-tab" data-mode="componentized" title="Analyze multiple component files against one master (Keyboard: Alt+C)">
+                            <i class="fas fa-layer-group"></i> <span>Componentized</span>
+                        </button>
+                    </div>
+
+                    <!-- Standard Mode UI -->
+                    <div id="standard-mode-ui" class="mode-ui">
+                        <h3>Selected Files</h3>
+                        <div class="file-selection">
+                            <div class="file-slot" id="master-slot">
+                                <label>Master File:</label>
+                                <div class="file-placeholder">
+                                    <i class="fas fa-file-audio"></i>
+                                    <span>Click to select master file</span>
+                                </div>
+                            </div>
+                            <div class="file-slot" id="dub-slot">
+                                <label>Dub File:</label>
+                                <div class="file-placeholder">
+                                    <i class="fas fa-file-audio"></i>
+                                    <span>Click to select dub file</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="file-slot" id="dub-slot">
-                            <label>Dub File:</label>
-                            <div class="file-placeholder">
-                                <i class="fas fa-file-audio"></i>
-                                <span>Click to select dub file</span>
+                        <button class="analyze-btn" id="analyze-btn" disabled>
+                            <i class="fas fa-play"></i> Start Analysis
+                        </button>
+                    </div>
+
+                    <!-- Componentized Mode UI -->
+                    <div id="componentized-mode-ui" class="mode-ui" style="display: none;">
+                        <h3>Componentized Analysis</h3>
+                        <div class="mode-info-box">
+                            <i class="fas fa-info-circle"></i>
+                            <div class="info-text">
+                                <strong>Analyze multi-track audio files:</strong> Select one master reference file and multiple component files
+                                (e.g., <code>file_a0.mxf</code>, <code>file_a1.mxf</code>, <code>file_a2.mxf</code>).
+                                Choose mixdown alignment for a shared offset or anchor alignment per component.
                             </div>
+                        </div>
+                        <div class="componentized-options">
+                            <label>Offset Mode</label>
+                            <div class="offset-mode-toggle">
+                                <label class="offset-option">
+                                    <input type="radio" name="componentized-offset-mode" value="channel_aware" checked>
+                                    <span>Channel-Aware</span>
+                                </label>
+                                <label class="offset-option">
+                                    <input type="radio" name="componentized-offset-mode" value="standard">
+                                    <span>Standard</span>
+                                </label>
+                                <label class="offset-option">
+                                    <input type="radio" name="componentized-offset-mode" value="mixdown">
+                                    <span>Mixdown</span>
+                                </label>
+                                <label class="offset-option">
+                                    <input type="radio" name="componentized-offset-mode" value="anchor">
+                                    <span>Anchor</span>
+                                </label>
+                            </div>
+                            <div class="offset-mode-note">
+                                <strong>Channel-Aware:</strong> Auto-selects best method per channel type (L/R, C/LFE, Surround) with cross-channel voting. <strong>Standard:</strong> Uses selected method for all. <strong>Mixdown:</strong> Combines stems. <strong>Anchor:</strong> Aligns by strongest region.
+                            </div>
+                        </div>
+                        <div class="componentized-selection">
+                            <div class="file-slot" id="comp-master-slot">
+                                <label>Master File:</label>
+                                <div class="file-placeholder">
+                                    <i class="fas fa-file-audio"></i>
+                                    <span>Click to select master file</span>
+                                </div>
+                            </div>
+                            <div class="component-list-container">
+                                <label>Component Files: <span class="component-count" id="component-count">(0 selected)</span></label>
+                                <div class="component-files-list" id="component-files-list">
+                                    <!-- Dynamic component file chips will appear here -->
+                                </div>
+                                <button class="select-components-btn" id="select-components-btn">
+                                    <i class="fas fa-plus-circle"></i> Select Components
+                                </button>
+                            </div>
+                            <button class="analyze-btn" id="analyze-componentized-btn" disabled>
+                                <i class="fas fa-play"></i> Analyze All Components
+                            </button>
                         </div>
                     </div>
-                    <button class="analyze-btn" id="analyze-btn" disabled>
-                        <i class="fas fa-play"></i> Start Analysis
-                    </button>
                 </div>
             </div>
         </div>
@@ -130,17 +235,18 @@
                 <!-- Configuration View (shown by default) -->
                 <div class="view-panel" id="config-view">
                 <!-- Analysis Methods -->
-                <div class="config-section">
+                <div class="config-section" id="detection-methods-section">
                     <div class="config-header">
                         <h3><i class="fas fa-microscope"></i> Detection Methods</h3>
+                        <span class="channel-aware-note" id="channel-aware-note" style="display: none; font-size: 0.75rem; color: var(--accent-orange); margin-left: 0.5rem;">(auto-selected by Channel-Aware)</span>
                     </div>
-                    <div class="method-selection">
+                    <div class="method-selection" id="method-selection-container">
                         <div class="method-row">
                             <div class="method-item">
                                 <div class="method-header">
                                     <span class="method-name">MFCC</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-mfcc" value="mfcc" checked>
+                                        <input type="checkbox" id="method-mfcc" value="mfcc">
                                         <label for="method-mfcc" class="toggle-slider"></label>
                                     </div>
                                 </div>
@@ -150,7 +256,7 @@
                                 <div class="method-header">
                                     <span class="method-name">Onset</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-onset" value="onset" checked>
+                                        <input type="checkbox" id="method-onset" value="onset">
                                         <label for="method-onset" class="toggle-slider"></label>
                                     </div>
                                 </div>
@@ -162,22 +268,24 @@
                                 <div class="method-header">
                                     <span class="method-name">Spectral</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-spectral" value="spectral" checked>
+                                        <input type="checkbox" id="method-spectral" value="spectral">
                                         <label for="method-spectral" class="toggle-slider"></label>
                                     </div>
                                 </div>
                                 <span class="method-desc">Frequency correlation</span>
                             </div>
+                            <!-- AI method hidden for future implementation
                             <div class="method-item">
                                 <div class="method-header">
                                     <span class="method-name">AI Neural</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-ai" value="ai" checked>
+                                        <input type="checkbox" id="method-ai" value="ai">
                                         <label for="method-ai" class="toggle-slider"></label>
                                     </div>
                                 </div>
                                 <span class="method-desc">Neural features</span>
                             </div>
+                            -->
                         </div>
                     </div>
                 </div>
@@ -283,6 +391,13 @@
                                     <label for="verbose-logging" class="toggle-slider"></label>
                                 </div>
                             </div>
+                            <div class="toggle-item">
+                                <span class="toggle-label">Drift Detection</span>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="enable-drift-detection">
+                                    <label for="enable-drift-detection" class="toggle-slider"></label>
+                                </div>
+                            </div>
                         </div>
                         <div class="output-dir-row">
                             <label for="output-directory">Output Directory</label>
@@ -291,7 +406,7 @@
                     </div>
                 </div>
                 
-                <!-- AI Model Selection (shown when AI is enabled) -->
+                <!-- AI Model Selection - HIDDEN FOR FUTURE IMPLEMENTATION
                 <div class="config-section ai-section" id="ai-config" style="display: none;">
                     <div class="config-header">
                         <h3><i class="fas fa-brain"></i> AI Model</h3>
@@ -322,6 +437,7 @@
                         </div>
                     </div>
                 </div>
+                -->
                 </div><!-- end config-view -->
             </div>
         </div>
@@ -336,17 +452,31 @@
                 </div>
             </div>
             <div class="quadrant-content">
+                <!-- Active Jobs Progress Section -->
+                <div id="active-jobs-container" class="active-jobs-container" style="display: none;">
+                    <div class="active-jobs-header">
+                        <h3><i class="fas fa-spinner fa-spin"></i> Active Jobs</h3>
+                        <span class="active-jobs-count" id="active-jobs-count">0 running</span>
+                    </div>
+                    <div id="active-jobs-list" class="active-jobs-list">
+                        <!-- Progress bars will be inserted here -->
+                    </div>
+                </div>
+
                 <div id="log-container" class="log-container">
                     <div class="log-empty">Logs will appear here…</div>
                 </div>
             </div>
         </div>
-        
+
         <!-- Bottom Right Quadrant: Batch Processing -->
         <div class="quadrant batch-processing">
             <div class="quadrant-header">
                 <h2><i class="fas fa-list-check"></i> Batch Processing Queue</h2>
                 <div class="batch-controls">
+                    <button id="toggle-batch-fullscreen" title="Toggle full screen for batch table">
+                        <i class="fas fa-expand"></i> Full Screen
+                    </button>
                     <button id="add-to-batch" title="Add selected files to batch">
                         <i class="fas fa-plus"></i> Add to Batch
                     </button>
@@ -354,6 +484,16 @@
                         <i class="fas fa-file-csv"></i> Upload CSV
                     </button>
                     <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+                    <div class="concurrent-jobs-control" title="Number of parallel jobs to process">
+                        <label for="concurrent-jobs"><i class="fas fa-layer-group"></i></label>
+                        <select id="concurrent-jobs">
+                            <option value="1" selected>1 Job</option>
+                            <option value="2">2 Jobs</option>
+                            <option value="4">4 Jobs</option>
+                            <option value="6">6 Jobs</option>
+                            <option value="8">8 Jobs</option>
+                        </select>
+                    </div>
                     <button id="process-batch" title="Process all files in batch">
                         <i class="fas fa-play"></i> Process Batch
                     </button>
@@ -407,6 +547,10 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div class="batch-splitter" id="batch-splitter" style="display: none;">
+                    <div class="splitter-grip"></div>
+                </div>
                 
                 <!-- Enhanced expandable details section -->
                 <div class="batch-details" id="batch-details" style="display: none;">
@@ -453,7 +597,7 @@
     <script src="smart-playback-engine.js?v=20250912-1"></script>
     <script src="repair-preview-interface.js?v=20250912-1"></script>
     <script src="operator-console.js?v=20250115-1"></script>
-    <script src="app.js?v=20250902-1"></script>
+    <script src="app.js?v=20250913-13"></script>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

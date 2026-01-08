@@ -135,8 +135,7 @@ class ProfessionalSyncDetector:
         Returns:
             Tuple of (audio_samples, original_sample_rate)
         """
-        print(f"[LOAD_AUDIO] ✅✅✅ NEW CODE ACTIVE - Processing: {audio_path.name}", flush=True)
-        logger.info(f"[LOAD_AUDIO] ✅ NEW CODE ACTIVE - Processing: {audio_path.name}")
+        logger.info(f"[LOAD_AUDIO] Processing: {audio_path.name}")
         try:
             # Check if this is an Atmos file that needs special handling
             temp_wav_paths: List[str] = []
@@ -901,12 +900,15 @@ class ProfessionalSyncDetector:
         logger.info(f"Sync analysis complete. Results: {list(results.keys())}")
         return results
     
-    def get_consensus_result(self, results: Dict[str, SyncResult]) -> SyncResult:
+    def get_consensus_result(self, results: Dict[str, SyncResult], requested_methods: Optional[List[str]] = None) -> SyncResult:
         """
         Get consensus result from multiple sync detection methods.
         
         Args:
             results: Dictionary of results from different methods
+            requested_methods: Optional list of methods that were requested by user.
+                             If provided, only these methods will be considered for consensus.
+                             This ensures user's method selection is respected.
             
         Returns:
             Consensus SyncResult with highest confidence method as primary
@@ -914,16 +916,140 @@ class ProfessionalSyncDetector:
         if not results:
             return self._create_low_confidence_result("No Analysis Methods")
         
+        # If user specified methods, filter results to only include requested methods
+        # This ensures that if user selects only "onset", we don't use MFCC results
+        requested_results = {}
+        if requested_methods:
+            # Normalize method names (handle aliases like raw_audio -> correlation)
+            method_aliases = {
+                'raw_audio': 'correlation',
+            }
+            # Build set of allowed method names
+            allowed_methods = set(requested_methods)
+            # Add aliases
+            for req_method in requested_methods:
+                if req_method in method_aliases:
+                    allowed_methods.add(method_aliases[req_method])
+            
+            # Filter results to only requested methods
+            filtered_results = {
+                method: result for method, result in results.items()
+                if method in allowed_methods
+            }
+            if filtered_results:
+                requested_results = filtered_results
+                results = filtered_results  # Use filtered results for consensus
+                logger.info(f"Consensus filtering to requested methods: {requested_methods} (found: {list(results.keys())})")
+            elif results:
+                # If filtering removed all results but we have some, log warning but continue
+                # This handles edge cases where method names don't match exactly
+                logger.warning(f"Requested methods {requested_methods} not found in results {list(results.keys())}, using all results")
+        
         # Filter high-confidence results
         high_confidence_results = {
             method: result for method, result in results.items()
             if result.confidence >= self.confidence_threshold
         }
         
+        # If user requested specific methods, prioritize them even if low confidence
+        # Only use other methods if no requested methods exist
+        if requested_results and not any(method in high_confidence_results for method in requested_results.keys()):
+            # User requested methods but they all have low confidence
+            # Still use the requested method with highest confidence (user's explicit choice)
+            best_requested_method = max(requested_results.keys(),
+                                       key=lambda x: requested_results[x].confidence)
+            best_requested_result = requested_results[best_requested_method]
+            logger.info(f"Using requested method '{best_requested_method}' despite low confidence ({best_requested_result.confidence:.2%}) - respecting user selection")
+            return SyncResult(
+                offset_samples=best_requested_result.offset_samples,
+                offset_seconds=best_requested_result.offset_seconds,
+                confidence=best_requested_result.confidence,
+                method_used=f"Requested ({best_requested_method})",
+                correlation_peak=best_requested_result.correlation_peak,
+                quality_score=best_requested_result.quality_score,
+                frame_rate=best_requested_result.frame_rate,
+                analysis_metadata={
+                    "note": "Low confidence but using requested method",
+                    "requested_methods": requested_methods,
+                    "all_methods": list(results.keys()),
+                }
+            )
+        
         if high_confidence_results:
-            # PREFER correlation/raw_audio method if available (sample-accurate precision)
-            # AI and MFCC methods have coarser precision and can introduce quantization errors
-            if 'correlation' in high_confidence_results:
+            # If user requested specific methods, prefer them over default priority
+            if requested_methods and requested_results:
+                # Filter high-confidence to only requested methods if available
+                requested_high_confidence = {
+                    method: result for method, result in high_confidence_results.items()
+                    if method in requested_results
+                }
+                if requested_high_confidence:
+                    # Use requested method with highest confidence
+                    best_method = max(requested_high_confidence.keys(),
+                                    key=lambda x: requested_high_confidence[x].confidence)
+                    best_result = requested_high_confidence[best_method]
+                    logger.info(f"Using requested method '{best_method}' from high-confidence results (respecting user selection)")
+                    return SyncResult(
+                        offset_samples=best_result.offset_samples,
+                        offset_seconds=best_result.offset_seconds,
+                        confidence=best_result.confidence,
+                        method_used=f"Consensus ({best_method} primary)",
+                        correlation_peak=best_result.correlation_peak,
+                        quality_score=np.mean([r.quality_score for r in requested_high_confidence.values()]),
+                        frame_rate=best_result.frame_rate,
+                        analysis_metadata={
+                            "primary_method": best_method,
+                            "contributing_methods": list(requested_high_confidence.keys()),
+                            "method_results": {m: r.offset_seconds for m, r in requested_high_confidence.items()},
+                            "requested_methods": requested_methods,
+                        }
+                    )
+            
+            # Default priority: Onset/Spectral agreement > MFCC > Correlation
+            # Reasoning: Onset and Spectral are better at finding content matches
+            # when files have bars/tone, different edits, or dubbed content
+
+            onset_result = high_confidence_results.get('onset')
+            spectral_result = high_confidence_results.get('spectral')
+
+            # Check if onset and spectral agree (within 2 seconds)
+            if onset_result and spectral_result:
+                offset_diff = abs(onset_result.offset_seconds - spectral_result.offset_seconds)
+                if offset_diff < 2.0:
+                    # They agree - use the higher confidence one
+                    if spectral_result.confidence >= onset_result.confidence:
+                        best_method = 'spectral'
+                        best_result = spectral_result
+                    else:
+                        best_method = 'onset'
+                        best_result = onset_result
+                    logger.info(f"Using {best_method} method (onset/spectral agreement, diff={offset_diff:.3f}s)")
+                else:
+                    # They disagree - fall through to other logic
+                    logger.warning(f"Onset/spectral disagreement: {offset_diff:.3f}s - using fallback selection")
+                    # Use correlation if available (for identical content case)
+                    if 'correlation' in high_confidence_results:
+                        best_method = 'correlation'
+                        best_result = high_confidence_results[best_method]
+                        logger.info("Using correlation method (onset/spectral disagreement)")
+                    else:
+                        best_method = max(high_confidence_results.keys(),
+                                        key=lambda x: high_confidence_results[x].confidence)
+                        best_result = high_confidence_results[best_method]
+            elif onset_result or spectral_result:
+                # Only one of onset/spectral available - use it
+                if spectral_result:
+                    best_method = 'spectral'
+                    best_result = spectral_result
+                else:
+                    best_method = 'onset'
+                    best_result = onset_result
+                logger.info(f"Using {best_method} method (only onset/spectral available)")
+            elif 'mfcc' in high_confidence_results:
+                best_method = 'mfcc'
+                best_result = high_confidence_results[best_method]
+                logger.info("Using MFCC method")
+            elif 'correlation' in high_confidence_results:
                 best_method = 'correlation'
                 best_result = high_confidence_results[best_method]
                 logger.info("Using correlation method (sample-accurate precision)")

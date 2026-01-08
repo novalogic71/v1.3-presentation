@@ -178,6 +178,10 @@ class SyncAnalysisRequest(BaseModel):
         default=None,
         description="If true, forces chunked analyzer regardless of GPU"
     )
+    enable_drift_detection: Optional[bool] = Field(
+        default=False,
+        description="If true, uses chunked analyzer for drift detection. If false, uses standard analysis for simple offset detection."
+    )
     
     @validator('master_file', 'dub_file')
     def validate_file_paths(cls, v):

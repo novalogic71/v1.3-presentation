@@ -250,10 +250,6 @@ if (window.WaveformVisualizer) {
             
             this.drawUnifiedTimeline(ctx, masterData, dubBeforeData, dubAfterData, offsetSeconds);
             
-            // Force a simple test draw to verify canvas is working
-            ctx.fillStyle = '#ff0000';
-            ctx.fillRect(10, 10, 50, 20);
-            console.log('✅ Test red rectangle drawn at (10,10)');
             
         } catch (error) {
             console.error('❌ Error drawing unified timeline:', error);
@@ -280,7 +276,6 @@ if (window.WaveformVisualizer) {
 
         
 
-        console.log(`✅ Unified timeline generated successfully`);
 
         // Add compact player for direct playback (single stream)
         try {
