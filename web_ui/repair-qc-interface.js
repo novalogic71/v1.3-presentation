@@ -8,7 +8,7 @@ class RepairQCInterface {
         this.audioEngine = null;
         this.currentData = null;
         this.isVisible = false;
-        this.apiBase = options.apiBase || (window.app ? window.app.FASTAPI_BASE : 'http://localhost:8000/api/v1');
+        this.apiBase = options.apiBase || (window.app ? window.app.FASTAPI_BASE : '/api/v1');
 
         this.initializeModal();
         this.setupEventListeners();

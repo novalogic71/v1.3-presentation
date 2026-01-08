@@ -648,8 +648,8 @@ let batchUI = null;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Get API base from main UI if available
-    const apiBase = window.syncUI?.FASTAPI_BASE || 'http://localhost:8000/api/v1';
+    // Get API base from main UI if available, use relative path as fallback
+    const apiBase = window.syncUI?.FASTAPI_BASE || '/api/v1';
     batchUI = new BatchProcessorUI(apiBase);
 });
 

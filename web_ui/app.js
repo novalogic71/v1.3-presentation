@@ -1,12 +1,8 @@
 class SyncAnalyzerUI {
     constructor() {
-        // Derive FastAPI base using current hostname to avoid hardcoding
-        try {
-            const host = window.location && window.location.hostname ? window.location.hostname : 'localhost';
-            this.FASTAPI_BASE = `http://${host}:8000/api/v1`;
-        } catch (e) {
-            this.FASTAPI_BASE = 'http://localhost:8000/api/v1';
-        }
+        // Use relative URL since UI is served from the same FastAPI server
+        // This avoids CORS issues and protocol/port mismatches
+        this.FASTAPI_BASE = '/api/v1';
         this.currentPath = '/mnt/data';
         this.selectedMaster = null;
         this.selectedDub = null;
