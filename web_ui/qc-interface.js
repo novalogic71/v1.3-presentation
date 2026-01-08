@@ -584,6 +584,31 @@ class QCInterface {
         const maxDuration = Math.max(masterData.duration, dubData.duration);
         const offsetPixels = (visualOffset / maxDuration) * width;
         
+        // Auto-normalize: find the max peak across both waveforms to scale properly
+        let maxPeak = 0;
+        for (let i = 0; i < masterData.peaks.length; i++) {
+            maxPeak = Math.max(maxPeak, masterData.peaks[i]);
+        }
+        for (let i = 0; i < dubData.peaks.length; i++) {
+            maxPeak = Math.max(maxPeak, dubData.peaks[i]);
+        }
+        
+        // Check if we have placeholder/zero data
+        if (maxPeak < 0.0001) {
+            console.warn('[QC] Waveform data appears to be placeholder (all zeros)');
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Waveform data unavailable - audio extraction may have failed', width / 2, centerY - 20);
+            ctx.fillText('The offset visualization is still accurate based on analysis results', width / 2, centerY + 20);
+            // Draw basic offset indicator anyway
+            this.drawOffsetIndicator(ctx, canvas, offset, isAfterView);
+            return;
+        }
+        
+        const normalizeScale = 1.0 / maxPeak; // Scale factor to make peaks use full height
+        console.log('[QC] Waveform normalization: maxPeak=', maxPeak.toFixed(4), 'scale=', normalizeScale.toFixed(2));
+        
         // Draw master waveform (top half - always starts at 0)
         ctx.strokeStyle = '#4ade80'; // green
         ctx.lineWidth = 2;
@@ -591,7 +616,9 @@ class QCInterface {
         for (let i = 0; i < masterData.peaks.length; i++) {
             // Scale master waveform based on its actual duration relative to max duration
             const x = (i / masterData.peaks.length) * (masterData.duration / maxDuration) * width;
-            const y = centerY - (masterData.peaks[i] * waveHeight);
+            // Apply normalization to make quiet audio visible
+            const normalizedPeak = masterData.peaks[i] * normalizeScale;
+            const y = centerY - (normalizedPeak * waveHeight);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
@@ -611,7 +638,9 @@ class QCInterface {
             // Scale dub waveform based on its actual duration relative to max duration, then apply offset
             const baseX = (i / dubData.peaks.length) * (dubData.duration / maxDuration) * width;
             const x = baseX + offsetPixels;
-            const y = centerY + (dubData.peaks[i] * waveHeight);
+            // Apply same normalization as master
+            const normalizedPeak = dubData.peaks[i] * normalizeScale;
+            const y = centerY + (normalizedPeak * waveHeight);
             
             // Only draw if within canvas bounds
             if (x >= 0 && x <= width) {
@@ -1049,6 +1078,46 @@ class QCInterface {
         URL.revokeObjectURL(url);
         
         this.updateStatus('Results exported');
+    }
+    
+    /**
+     * Draw a basic offset indicator when waveform data is unavailable
+     */
+    drawOffsetIndicator(ctx, canvas, offset, isAfterView) {
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerY = height / 2;
+        
+        // Draw timeline
+        ctx.strokeStyle = '#4b5563';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(width, centerY);
+        ctx.stroke();
+        
+        // Draw master indicator (at center)
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(width / 2 - 2, centerY - 40, 4, 80);
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('MASTER', width / 2, centerY - 50);
+        
+        // Calculate dub position based on offset
+        const visualOffset = isAfterView ? 0 : offset;
+        const dubX = width / 2 + (visualOffset * 20); // Scale factor for visibility
+        
+        // Draw dub indicator
+        ctx.fillStyle = '#f87171';
+        ctx.fillRect(Math.max(10, Math.min(width - 10, dubX)) - 2, centerY - 40, 4, 80);
+        ctx.fillText('DUB', Math.max(30, Math.min(width - 30, dubX)), centerY + 60);
+        
+        // Draw offset label
+        if (!isAfterView && Math.abs(offset) > 0.001) {
+            ctx.fillStyle = '#fbbf24';
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(`Offset: ${offset.toFixed(3)}s`, width / 2, height - 20);
+        }
     }
 }
 
