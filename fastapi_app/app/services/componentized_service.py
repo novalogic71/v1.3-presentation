@@ -713,48 +713,48 @@ def _run_gpu_analysis(
     job_id: str = None
 ) -> Dict[str, Any]:
     """
-    Run GPU-accelerated analysis using Wav2Vec2 embeddings.
+    Run GPU-accelerated analysis with automatic verification.
     
-    This is the fastest single-method detection mode, using GPU acceleration
-    for embedding extraction and correlation.
+    Process:
+    1. Run fast Wav2Vec2 GPU analysis on each component
+    2. Check if offsets are consistent (within tolerance)
+    3. If INCONSISTENT → Mix components and re-analyze with MFCC+Onset to verify/correct
+    4. Apply verified offset to all components
     """
-    logger.info("="*60)
-    logger.info("🚀 GPU FAST MODE ACTIVATED - Wav2Vec2 Analysis")
-    logger.info("="*60)
-    job_manager.update_progress(job_id, 5, "Starting GPU-accelerated analysis (Wav2Vec2)...")
+    import tempfile
     
-    # Import the GPU detector
+    logger.info("="*60)
+    logger.info("🚀 GPU FAST MODE ACTIVATED")
+    logger.info("="*60)
+    
+    total_comps = len(components)
+    
+    # STEP 1: Run fast GPU analysis on all components
+    logger.info("Step 1: Fast GPU analysis on all components...")
+    job_manager.update_progress(job_id, 5, "Starting GPU analysis (Wav2Vec2)...")
+    
     try:
         from sync_analyzer.core.simple_gpu_sync import SimpleGPUSyncDetector
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"🖥️  GPU Device: {device}")
-        if device == "cuda":
-            logger.info(f"🎮 CUDA GPU: {torch.cuda.get_device_name(0)}")
-            logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-        else:
-            logger.warning("⚠️  CUDA not available, GPU analysis will run on CPU (slower)")
+        logger.info(f"🖥️  Device: {device}")
     except ImportError as e:
         logger.error(f"GPU analysis requires torch and transformers: {e}")
-        raise RuntimeError("GPU analysis unavailable: missing dependencies (torch, transformers)")
+        raise RuntimeError("GPU analysis unavailable: missing dependencies")
     
     job_manager.update_progress(job_id, 10, "Loading Wav2Vec2 model...")
     detector = SimpleGPUSyncDetector(device=device)
     
     component_results = []
-    total_comps = len(components)
+    offsets = []
     
     for comp_idx, comp in enumerate(components):
-        base_progress = 15 + int((comp_idx / total_comps) * 80)
-        job_manager.update_progress(
-            job_id, base_progress,
-            f"GPU analyzing component {comp_idx + 1}/{total_comps}: {comp['name']}"
-        )
+        base_progress = 15 + int((comp_idx / total_comps) * 50)
+        job_manager.update_progress(job_id, base_progress, f"GPU analyzing: {comp['name']}")
         
         channel_type = detect_channel_type(comp["name"])
         
         try:
-            # Run GPU analysis
             result = detector.detect_sync(master_path, comp["path"])
             
             component_results.append({
@@ -766,45 +766,158 @@ def _run_gpu_analysis(
                 "confidence": result.confidence,
                 "quality_score": result.confidence,
                 "method_used": "gpu (wav2vec2)",
-                "method_results": [{
-                    "method": "gpu",
-                    "offset_seconds": result.offset_seconds,
-                    "confidence": result.confidence,
-                    "time_taken": result.time_taken if hasattr(result, 'time_taken') else 0,
-                    "device": result.device if hasattr(result, 'device') else device,
-                }],
+                "method_results": [{"method": "gpu", "offset_seconds": result.offset_seconds, "confidence": result.confidence}],
                 "status": "completed",
             })
-            logger.info(f"GPU analysis for {comp['name']}: offset={result.offset_seconds:.3f}s, conf={result.confidence:.2%}")
+            offsets.append(result.offset_seconds)
+            logger.info(f"GPU: {comp['name']}: offset={result.offset_seconds:.3f}s, conf={result.confidence:.2%}")
         except Exception as comp_err:
-            logger.error(f"GPU analysis error for {comp['name']}: {comp_err}")
+            logger.error(f"GPU error for {comp['name']}: {comp_err}")
             component_results.append({
                 "component": comp["label"],
                 "componentName": comp["name"],
                 "channel_type": channel_type,
-                "optimal_methods": ["gpu"],
                 "offset_seconds": 0.0,
                 "confidence": 0.0,
                 "error": str(comp_err),
                 "status": "failed",
             })
     
-    # Vote for consensus offset
-    job_manager.update_progress(job_id, 95, "Computing GPU consensus...")
+    # STEP 2: Check if offsets are consistent
+    if len(offsets) > 1:
+        offset_spread = max(offsets) - min(offsets)
+        consistency_threshold = 2.0  # seconds
+        offsets_consistent = offset_spread <= consistency_threshold
+        
+        logger.info(f"Step 2: Checking consistency - spread={offset_spread:.3f}s, threshold={consistency_threshold}s")
+        
+        if offsets_consistent:
+            logger.info(f"✅ Offsets are CONSISTENT (spread={offset_spread:.3f}s) - using GPU results directly")
+        else:
+            # STEP 3: Offsets differ - verify with mix-and-analyze
+            logger.warning(f"⚠️ Offsets DIFFER (spread={offset_spread:.3f}s) - verifying with mix analysis...")
+            job_manager.update_progress(job_id, 70, "Offsets differ - verifying with mix analysis...")
+            
+            mixed_file = None
+            try:
+                mixed_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                mixed_path = mixed_file.name
+                mixed_file.close()
+                
+                # Build FFmpeg command to mix all components
+                inputs = []
+                for comp in components:
+                    inputs.extend(['-i', comp['path']])
+                
+                # Dynamic filter based on number of inputs
+                if total_comps == 2:
+                    filter_complex = '[0:a][1:a]amerge=inputs=2,pan=stereo|c0<c0|c1<c1[out]'
+                elif total_comps == 4:
+                    filter_complex = '[0:a][1:a][2:a][3:a]amerge=inputs=4,pan=stereo|c0<c0+0.5*c1|c1<c2+0.5*c1[out]'
+                elif total_comps == 6:
+                    filter_complex = '[0:a][1:a][2:a][3:a][4:a][5:a]amerge=inputs=6,pan=stereo|c0<c0+0.707*c2+0.707*c4|c1<c1+0.707*c2+0.707*c5[out]'
+                else:
+                    inputs_str = ''.join([f'[{i}:a]' for i in range(total_comps)])
+                    filter_complex = f'{inputs_str}amerge=inputs={total_comps},pan=stereo|c0<c0|c1<c1[out]'
+                
+                cmd = [
+                    'ffmpeg', '-y',
+                    *inputs,
+                    '-filter_complex', filter_complex,
+                    '-map', '[out]',
+                    '-ac', '2',
+                    '-ar', '48000',
+                    '-t', '300',
+                    mixed_path
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0:
+                    logger.warning(f"Mix failed: {result.stderr[:200]}")
+                else:
+                    logger.info(f"✅ Created stereo mix for verification")
+                    
+                    # Analyze with MFCC + Onset
+                    job_manager.update_progress(job_id, 80, "Verifying with MFCC+Onset...")
+                    
+                    from sync_analyzer.analysis import analyze
+                    consensus, results, _ = analyze(
+                        Path(master_path), 
+                        Path(mixed_path), 
+                        methods=['mfcc', 'onset']
+                    )
+                    
+                    mfcc_result = results.get('mfcc')
+                    onset_result = results.get('onset')
+                    
+                    # Determine verified offset
+                    if mfcc_result and mfcc_result.confidence >= 0.8:
+                        verified_offset = mfcc_result.offset_seconds
+                        verified_confidence = mfcc_result.confidence
+                        verify_method = 'mfcc'
+                    elif onset_result:
+                        verified_offset = onset_result.offset_seconds
+                        verified_confidence = onset_result.confidence
+                        verify_method = 'onset'
+                    else:
+                        verified_offset = consensus.offset_seconds if consensus else offsets[0]
+                        verified_confidence = consensus.confidence if consensus else 0.5
+                        verify_method = 'consensus'
+                    
+                    # Check if MFCC and Onset agree
+                    methods_agree = False
+                    if mfcc_result and onset_result:
+                        diff = abs(mfcc_result.offset_seconds - onset_result.offset_seconds)
+                        methods_agree = diff < 0.5
+                        if methods_agree:
+                            verified_confidence = max(mfcc_result.confidence, onset_result.confidence)
+                    
+                    logger.info(f"🔍 Verification result: {verified_offset:.3f}s ({verify_method}, {verified_confidence:.1%} conf)")
+                    
+                    # STEP 4: Correct all component results with verified offset
+                    job_manager.update_progress(job_id, 90, "Correcting offsets...")
+                    
+                    for comp_result in component_results:
+                        original_offset = comp_result['offset_seconds']
+                        if abs(original_offset - verified_offset) > consistency_threshold:
+                            logger.info(f"🔧 Correcting {comp_result['component']}: {original_offset:.3f}s → {verified_offset:.3f}s")
+                            comp_result['original_offset_seconds'] = original_offset
+                            comp_result['offset_seconds'] = verified_offset
+                            comp_result['offset_corrected'] = True
+                            comp_result['correction_method'] = f'verified ({verify_method})'
+                        comp_result['confidence'] = verified_confidence
+                        comp_result['quality_score'] = verified_confidence
+                        comp_result['method_used'] = f"gpu (verified {verify_method})"
+                        comp_result['methods_agree'] = methods_agree
+                    
+                    # Return with verification info
+                    return {
+                        "offset_mode": "gpu",
+                        "voted_offset_seconds": verified_offset,
+                        "vote_agreement": 1.0 if methods_agree else 0.8,
+                        "vote_count": total_comps,
+                        "total_components": total_comps,
+                        "analysis_methods": ["gpu", "mfcc", "onset"],
+                        "method_used": f"gpu (verified {verify_method})",
+                        "verification_triggered": True,
+                        "original_spread": offset_spread,
+                        "component_results": component_results,
+                        "overall_offset": {"offset_seconds": verified_offset, "confidence": verified_confidence},
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Verification failed: {e}")
+            finally:
+                if mixed_file and os.path.exists(mixed_path) and mixed_path.startswith('/tmp'):
+                    try:
+                        os.unlink(mixed_path)
+                    except Exception:
+                        pass
+    
+    # Standard return (consistent offsets or single component)
+    job_manager.update_progress(job_id, 95, "Computing consensus...")
     voted_offset, vote_count, total_count = vote_for_offset(component_results)
     vote_agreement = vote_count / total_count if total_count > 0 else 0.0
-    
-    # Override outliers with voted offset if we have agreement
-    if vote_agreement >= 0.5:
-        tolerance = 0.5  # Tighter tolerance for GPU mode (0.5s)
-        for comp_result in component_results:
-            comp_offset = comp_result.get('offset_seconds', 0)
-            if abs(comp_offset - voted_offset) > tolerance:
-                original_offset = comp_offset
-                comp_result['offset_seconds'] = voted_offset
-                comp_result['original_offset_seconds'] = original_offset
-                comp_result['offset_overridden'] = True
-    
     overall_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results) if component_results else 0.0
     
     return {
@@ -816,11 +929,190 @@ def _run_gpu_analysis(
         "analysis_methods": ["gpu"],
         "method_used": "gpu (wav2vec2)",
         "component_results": component_results,
-        "overall_offset": {
-            "offset_seconds": voted_offset,
-            "confidence": overall_confidence,
-        },
+        "overall_offset": {"offset_seconds": voted_offset, "confidence": overall_confidence},
     }
+
+
+def _run_smart_hybrid_analysis(
+    master_path: str,
+    components: List[Dict[str, Any]],
+    job_id: str = None
+) -> Dict[str, Any]:
+    """
+    Smart Hybrid Analysis - Best for multichannel content.
+    
+    This method:
+    1. Mixes all components to stereo (comparable to master)
+    2. Uses MFCC + Onset together (proven most accurate)
+    3. Analyzes ONCE, applies single offset to all components
+    
+    This is the most reliable method for multichannel MXF deliveries
+    where individual channels may differ but timing is the same.
+    """
+    import tempfile
+    
+    logger.info("="*60)
+    logger.info("🧠 SMART HYBRID MODE - Mix & Analyze Once")
+    logger.info("="*60)
+    job_manager.update_progress(job_id, 5, "Starting smart hybrid analysis...")
+    
+    total_comps = len(components)
+    
+    # Step 1: Create stereo mix from all components
+    job_manager.update_progress(job_id, 10, f"Mixing {total_comps} components to stereo...")
+    logger.info(f"📦 Mixing {total_comps} components into stereo mix...")
+    
+    mixed_file = None
+    try:
+        # Create temp file for mixed audio
+        mixed_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        mixed_path = mixed_file.name
+        mixed_file.close()
+        
+        # Build FFmpeg command to mix all components
+        inputs = []
+        for comp in components:
+            inputs.extend(['-i', comp['path']])
+        
+        # Dynamic filter based on number of inputs
+        if total_comps == 1:
+            # Single component - just convert to stereo
+            filter_complex = '[0:a]aformat=channel_layouts=stereo[out]'
+        elif total_comps == 2:
+            filter_complex = '[0:a][1:a]amerge=inputs=2,pan=stereo|c0<c0|c1<c1[out]'
+        elif total_comps == 4:
+            # Standard 4-channel (L, C, R, LFE or similar) - mix to stereo
+            filter_complex = '[0:a][1:a][2:a][3:a]amerge=inputs=4,pan=stereo|c0<c0+0.5*c1|c1<c2+0.5*c1[out]'
+        elif total_comps == 6:
+            # 5.1 - standard downmix
+            filter_complex = '[0:a][1:a][2:a][3:a][4:a][5:a]amerge=inputs=6,pan=stereo|c0<c0+0.707*c2+0.707*c4|c1<c1+0.707*c2+0.707*c5[out]'
+        else:
+            # Generic: mix all to stereo
+            inputs_str = ''.join([f'[{i}:a]' for i in range(total_comps)])
+            filter_complex = f'{inputs_str}amerge=inputs={total_comps},pan=stereo|c0<c0|c1<c1[out]'
+        
+        cmd = [
+            'ffmpeg', '-y',
+            *inputs,
+            '-filter_complex', filter_complex,
+            '-map', '[out]',
+            '-ac', '2',
+            '-ar', '48000',
+            '-t', '300',  # First 5 minutes is enough for sync detection
+            mixed_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            logger.warning(f"FFmpeg mix warning: {result.stderr[:200]}")
+            # Fallback: use first component only
+            logger.info("Falling back to first component only...")
+            mixed_path = components[0]['path']
+        else:
+            logger.info(f"✅ Created stereo mix: {mixed_path}")
+        
+        # Step 2: Run MFCC + Onset analysis on the mixed audio
+        job_manager.update_progress(job_id, 30, "Running MFCC + Onset analysis on mixed audio...")
+        logger.info("🔍 Analyzing mixed audio with MFCC + Onset...")
+        
+        from sync_analyzer.analysis import analyze
+        consensus, results, _ = analyze(
+            Path(master_path), 
+            Path(mixed_path), 
+            methods=['mfcc', 'onset']
+        )
+        
+        # Get best result (prefer MFCC if high confidence, else use consensus)
+        mfcc_result = results.get('mfcc')
+        onset_result = results.get('onset')
+        
+        if mfcc_result and mfcc_result.confidence >= 0.8:
+            best_offset = mfcc_result.offset_seconds
+            best_confidence = mfcc_result.confidence
+            method_used = 'mfcc'
+            logger.info(f"✅ Using MFCC result: {best_offset:.3f}s ({best_confidence:.1%} confidence)")
+        elif onset_result:
+            best_offset = onset_result.offset_seconds
+            best_confidence = onset_result.confidence
+            method_used = 'onset'
+            logger.info(f"✅ Using Onset result: {best_offset:.3f}s ({best_confidence:.1%} confidence)")
+        else:
+            best_offset = consensus.offset_seconds if consensus else 0.0
+            best_confidence = consensus.confidence if consensus else 0.0
+            method_used = 'consensus'
+            logger.info(f"✅ Using Consensus result: {best_offset:.3f}s ({best_confidence:.1%} confidence)")
+        
+        # Check if both methods agree (high reliability indicator)
+        methods_agree = False
+        if mfcc_result and onset_result:
+            offset_diff = abs(mfcc_result.offset_seconds - onset_result.offset_seconds)
+            methods_agree = offset_diff < 0.5  # Within 0.5s
+            if methods_agree:
+                logger.info(f"✅ MFCC and Onset AGREE (diff={offset_diff:.3f}s) - HIGH RELIABILITY")
+                best_confidence = max(mfcc_result.confidence, onset_result.confidence)
+            else:
+                logger.warning(f"⚠️ MFCC and Onset differ by {offset_diff:.3f}s")
+        
+        # Step 3: Apply single offset to all components
+        job_manager.update_progress(job_id, 90, "Applying offset to all components...")
+        
+        component_results = []
+        for comp in components:
+            channel_type = detect_channel_type(comp["name"])
+            component_results.append({
+                "component": comp["label"],
+                "componentName": comp["name"],
+                "channel_type": channel_type,
+                "optimal_methods": ["mfcc", "onset"],
+                "offset_seconds": best_offset,
+                "confidence": best_confidence,
+                "quality_score": best_confidence,
+                "method_used": f"smart ({method_used})",
+                "methods_agree": methods_agree,
+                "method_results": [
+                    {
+                        "method": "mfcc",
+                        "offset_seconds": mfcc_result.offset_seconds if mfcc_result else 0,
+                        "confidence": mfcc_result.confidence if mfcc_result else 0,
+                    },
+                    {
+                        "method": "onset",
+                        "offset_seconds": onset_result.offset_seconds if onset_result else 0,
+                        "confidence": onset_result.confidence if onset_result else 0,
+                    },
+                ],
+                "status": "completed",
+            })
+        
+        logger.info(f"🎯 Smart Hybrid Analysis complete: offset={best_offset:.3f}s, confidence={best_confidence:.1%}")
+        
+        return {
+            "offset_mode": "smart",
+            "voted_offset_seconds": best_offset,
+            "vote_agreement": 1.0 if methods_agree else 0.5,
+            "vote_count": total_comps,
+            "total_components": total_comps,
+            "analysis_methods": ["mfcc", "onset"],
+            "method_used": f"smart hybrid ({method_used})",
+            "methods_agree": methods_agree,
+            "component_results": component_results,
+            "overall_offset": {
+                "offset_seconds": best_offset,
+                "confidence": best_confidence,
+            },
+        }
+        
+    except Exception as e:
+        logger.error(f"Smart hybrid analysis failed: {e}")
+        raise RuntimeError(f"Smart hybrid analysis failed: {e}")
+    
+    finally:
+        # Cleanup temp file
+        if mixed_file and os.path.exists(mixed_path) and mixed_path.startswith('/tmp'):
+            try:
+                os.unlink(mixed_path)
+            except Exception:
+                pass
 
 
 def _run_fingerprint_analysis(

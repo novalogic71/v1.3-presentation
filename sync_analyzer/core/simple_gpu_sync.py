@@ -35,6 +35,8 @@ class SimpleSyncResult:
     sample_rate: int
     method: str = "wav2vec2_gpu"
     processing_time: float = 0.0
+    bars_tone_detected: bool = False
+    bars_tone_duration: float = 0.0
     
 
 class SimpleGPUSyncDetector:
@@ -300,11 +302,110 @@ class SimpleGPUSyncDetector:
         
         return offset_frames, confidence
     
+    def detect_bars_tone(self, audio: torch.Tensor, max_search_seconds: float = 120.0) -> float:
+        """
+        Detect bars and tone (1kHz reference tone) at the head of the audio.
+        
+        Args:
+            audio: Audio tensor (1D)
+            max_search_seconds: Maximum duration to search for tone
+            
+        Returns:
+            Timestamp where program content starts (0.0 if no tone detected)
+        """
+        try:
+            # Convert to numpy for FFT analysis
+            if isinstance(audio, torch.Tensor):
+                audio_np = audio.cpu().numpy()
+            else:
+                audio_np = audio
+            
+            sr = self.target_sr
+            max_samples = int(max_search_seconds * sr)
+            audio_np = audio_np[:max_samples]
+            
+            # Parameters for tone detection
+            tone_freq = 1000  # 1kHz reference tone
+            freq_tolerance = 50  # Hz tolerance
+            window_size = int(0.1 * sr)  # 100ms windows
+            hop_size = window_size // 2
+            min_tone_duration = 5.0  # Minimum 5 seconds of tone
+            
+            tone_detected = []
+            
+            for start in range(0, len(audio_np) - window_size, hop_size):
+                window = audio_np[start:start + window_size]
+                time_seconds = start / sr
+                
+                # FFT to find dominant frequency
+                fft = np.fft.rfft(window * np.hanning(len(window)))
+                freqs = np.fft.rfftfreq(len(window), 1/sr)
+                magnitude = np.abs(fft)
+                
+                # Find peak frequency
+                peak_idx = np.argmax(magnitude)
+                peak_freq = freqs[peak_idx]
+                
+                # Calculate energy in 1kHz band
+                freq_min_idx = np.searchsorted(freqs, tone_freq - freq_tolerance)
+                freq_max_idx = np.searchsorted(freqs, tone_freq + freq_tolerance)
+                tone_band_energy = np.sum(magnitude[freq_min_idx:freq_max_idx] ** 2)
+                total_energy = np.sum(magnitude ** 2) + 1e-10
+                
+                # Detect 1kHz tone
+                is_tone = (
+                    abs(peak_freq - tone_freq) < freq_tolerance and
+                    tone_band_energy > 0.3 * total_energy and
+                    total_energy > 1e-6  # Not silence
+                )
+                
+                tone_detected.append((time_seconds, is_tone))
+            
+            if not tone_detected:
+                return 0.0
+            
+            # Find continuous tone region at start
+            tone_start = None
+            tone_end = None
+            consecutive_tone = 0
+            consecutive_threshold = int(min_tone_duration / 0.1)
+            
+            for time_sec, is_tone in tone_detected:
+                if is_tone:
+                    if tone_start is None:
+                        tone_start = time_sec
+                    consecutive_tone += 1
+                else:
+                    # Tone just ended - check if it was long enough
+                    if consecutive_tone >= consecutive_threshold and tone_start is not None:
+                        tone_end = time_sec
+                        # Found valid tone region at start - stop searching
+                        if tone_start < 1.0:
+                            break
+                    # Not enough consecutive tone - reset and keep looking
+                    if consecutive_tone < consecutive_threshold:
+                        tone_start = None
+                    consecutive_tone = 0
+            
+            if tone_start is not None and tone_start < 1.0 and tone_end is not None:
+                program_start = tone_end + 0.5
+                logger.info(f"GPU Detector: Bars/tone from {tone_start:.1f}s to {tone_end:.1f}s, "
+                           f"program starts at {program_start:.1f}s")
+                return program_start
+            
+            logger.info("GPU Detector: No bars/tone detected at head of file")
+            return 0.0
+            
+        except Exception as e:
+            logger.warning(f"GPU Detector: Error detecting bars/tone: {e}")
+            return 0.0
+    
     def detect_sync(
         self,
         master_path: str,
         dub_path: str,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        skip_bars_tone: bool = True
     ) -> SimpleSyncResult:
         """
         Detect sync offset between master and dub audio.
@@ -313,6 +414,7 @@ class SimpleGPUSyncDetector:
             master_path: Path to master audio/video file
             dub_path: Path to dub audio/video file
             progress_callback: Optional callback(progress, message)
+            skip_bars_tone: If True, auto-detect and skip bars/tone at head of master
             
         Returns:
             SimpleSyncResult with offset and confidence
@@ -328,11 +430,28 @@ class SimpleGPUSyncDetector:
         update_progress(0, "Loading master audio...")
         master_audio, sr = self._load_audio(master_path)
         
+        # Detect bars/tone in master
+        master_program_start = 0.0
+        if skip_bars_tone:
+            update_progress(5, "Checking for bars/tone...")
+            master_program_start = self.detect_bars_tone(master_audio)
+            if master_program_start > 0:
+                logger.info(f"Master has bars/tone, program starts at {master_program_start:.2f}s")
+        
         update_progress(20, "Loading dub audio...")
         dub_audio, _ = self._load_audio(dub_path)
         
+        # Trim master audio if bars/tone detected
+        if master_program_start > 0:
+            start_sample = int(master_program_start * sr)
+            master_audio_trimmed = master_audio[start_sample:]
+            logger.info(f"Using master audio from {master_program_start:.2f}s "
+                       f"({len(master_audio_trimmed)/sr:.2f}s remaining)")
+        else:
+            master_audio_trimmed = master_audio
+        
         update_progress(40, "Extracting master embeddings...")
-        master_emb = self._extract_embeddings(master_audio)
+        master_emb = self._extract_embeddings(master_audio_trimmed)
         
         update_progress(60, "Extracting dub embeddings...")
         dub_emb = self._extract_embeddings(dub_audio)
@@ -342,6 +461,13 @@ class SimpleGPUSyncDetector:
         
         # Convert frame offset to time
         offset_seconds = offset_frames * self.frame_duration
+        
+        # Add bars/tone duration back to offset (so it's relative to original file start)
+        if master_program_start > 0:
+            offset_seconds += master_program_start
+            logger.info(f"Adjusting offset by +{master_program_start:.2f}s for bars/tone: "
+                       f"final offset = {offset_seconds:.3f}s")
+        
         offset_samples = int(offset_seconds * sr)
         
         processing_time = time.time() - start_time
@@ -353,7 +479,9 @@ class SimpleGPUSyncDetector:
             confidence=confidence,
             sample_rate=sr,
             method="wav2vec2_gpu",
-            processing_time=processing_time
+            processing_time=processing_time,
+            bars_tone_detected=master_program_start > 0,
+            bars_tone_duration=master_program_start
         )
 
 

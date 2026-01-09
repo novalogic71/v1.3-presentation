@@ -282,6 +282,14 @@ def create_application() -> FastAPI:
             return FileResponse(repair_path, media_type="text/html")
         raise HTTPException(status_code=404, detail="Repair interface not found")
     
+    @app.get("/dashboard", response_class=HTMLResponse, tags=["ui"])
+    async def serve_dashboard():
+        """Serve the system monitoring dashboard."""
+        dashboard_path = web_ui_dir / "dashboard.html"
+        if dashboard_path.exists():
+            return FileResponse(dashboard_path, media_type="text/html")
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    
     # Health check endpoint (MUST be before wildcard route)
     @app.get("/health", tags=["health"])
     async def health_check():

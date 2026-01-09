@@ -8244,7 +8244,7 @@ class SyncAnalyzerUI {
     updateMethodSelection() {
         const selectedMethods = [];
         
-        // GPU mode is exclusive - fastest single-method detection
+        // GPU mode is exclusive - fastest single-method detection (auto-verifies if needed)
         if (this.elements.methodGpu && this.elements.methodGpu.checked) {
             selectedMethods.push('gpu');
             // Uncheck other methods when GPU is selected (exclusive mode)
@@ -8353,9 +8353,10 @@ class SyncAnalyzerUI {
                 [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi, this.elements.methodGpu, this.elements.methodFingerprint].forEach(cb => {
                     if (cb) cb.disabled = false;
                 });
-                // Restore at least one method if none selected (and GPU isn't checked)
+                // Restore at least one method if none selected (and exclusive modes aren't checked)
                 const gpuChecked = this.elements.methodGpu && this.elements.methodGpu.checked;
-                if (!gpuChecked && !this.elements.methodMfcc.checked && !this.elements.methodOnset.checked &&
+                const exclusiveModeOn = gpuChecked;
+                if (!exclusiveModeOn && !this.elements.methodMfcc.checked && !this.elements.methodOnset.checked &&
                     !this.elements.methodSpectral.checked && (!this.elements.methodAi || !this.elements.methodAi.checked)) {
                     this.elements.methodOnset.checked = true;
                     this.elements.methodSpectral.checked = true;
