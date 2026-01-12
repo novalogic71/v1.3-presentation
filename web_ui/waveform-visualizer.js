@@ -147,10 +147,10 @@ class WaveformVisualizer {
                             </div>
                         </div>
                         <div class="timeline-view-toggle">
-                            <button class="timeline-toggle-btn active" data-view="overlay" title="Overlay View - Both waveforms together">
+                            <button class="timeline-toggle-btn" data-view="overlay" title="Overlay View - Both waveforms together">
                                 <i class="fas fa-layer-group"></i> Overlay
                             </button>
-                            <button class="timeline-toggle-btn" data-view="stacked" title="Stacked View - Separate but aligned">
+                            <button class="timeline-toggle-btn active" data-view="stacked" title="Stacked View - Separate but aligned">
                                 <i class="fas fa-bars"></i> Stacked
                             </button>
                         </div>
@@ -162,8 +162,8 @@ class WaveformVisualizer {
                             <canvas id="unified-timeline-${masterId}-${dubId}" 
                                     class="unified-timeline-canvas zoomable-canvas"
                                     width="${this.waveformWidth * this.pixelRatio}"
-                                    height="${(this.waveformHeight * 2.2) * this.pixelRatio}"
-                                    style="width: ${this.waveformWidth}px; height: ${(this.waveformHeight * 2.2)}px;">
+                                    height="${(this.waveformHeight * 2.5) * this.pixelRatio}"
+                                    style="width: ${this.waveformWidth}px; height: ${(this.waveformHeight * 2.5)}px;">
                             </canvas>
                             
                             <div class="waveform-overlay">
@@ -336,7 +336,7 @@ class WaveformVisualizer {
     /**
      * Draw unified timeline with master and dub waveforms
      */
-    drawUnifiedTimeline(ctx, masterData, dubBeforeData, dubAfterData, offsetSeconds, viewMode = 'overlay') {
+    drawUnifiedTimeline(ctx, masterData, dubBeforeData, dubAfterData, offsetSeconds, viewMode = 'stacked') {
         const width = this.waveformWidth;
         const height = this.waveformHeight * 2.2;
         
@@ -502,48 +502,301 @@ class WaveformVisualizer {
     }
     
     /**
-     * Draw waveforms stacked vertically
+     * Draw waveforms stacked vertically in DAW-style multi-track view
+     * Matches the componentized visualization style with track labels and offset markers
      */
     drawStackedWaveforms(ctx, masterData, dubData, offsetSeconds) {
         const width = this.waveformWidth;
-        const trackHeight = this.waveformHeight;
-        const spacing = 20;
-        const masterCenterY = trackHeight / 2;
-        const dubCenterY = trackHeight * 1.5 + spacing;
+        const labelWidth = 70;
+        const waveformWidth = width - labelWidth;
+        const trackHeight = this.waveformHeight * 0.9;
+        const trackPadding = 4;
+        const timelineHeight = 25;
         
-        // Draw separator line
-        ctx.strokeStyle = '#4a5568';
+        // Calculate durations
+        const masterDuration = this.viewWindow;
+        const dubDuration = this.viewWindow;
+        const maxDuration = Math.max(masterDuration, dubDuration);
+        const pxPerSecond = waveformWidth / maxDuration;
+        
+        // Draw timeline ruler at top
+        this.drawTimelineRulerForStacked(ctx, labelWidth, 0, waveformWidth, timelineHeight, maxDuration);
+        
+        // Track 1: Master (AREF)
+        const masterY = timelineHeight;
+        this.drawDAWTrack(ctx, masterData, {
+            x: 0,
+            y: masterY,
+            labelWidth: labelWidth,
+            waveformWidth: waveformWidth,
+            trackHeight: trackHeight,
+            maxDuration: maxDuration,
+            name: 'AREF',
+            color: '#60a5fa',  // Blue for master
+            type: 'master',
+            offset: 0
+        });
+        
+        // Track 2: Dub
+        const dubY = masterY + trackHeight + trackPadding;
+        this.drawDAWTrack(ctx, dubData, {
+            x: 0,
+            y: dubY,
+            labelWidth: labelWidth,
+            waveformWidth: waveformWidth,
+            trackHeight: trackHeight,
+            maxDuration: maxDuration,
+            name: 'Dub',
+            color: '#4ade80',  // Teal/green for dub
+            type: 'dub',
+            offset: offsetSeconds
+        });
+        
+        // Draw mode indicator
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText('Offset Applied', width - 10, timelineHeight - 8);
+        ctx.textAlign = 'left';
+    }
+    
+    /**
+     * Draw timeline ruler for stacked view
+     */
+    drawTimelineRulerForStacked(ctx, x, y, width, height, duration) {
+        // Background
+        const bgGradient = ctx.createLinearGradient(x, y, x, y + height);
+        bgGradient.addColorStop(0, '#1e293b');
+        bgGradient.addColorStop(1, '#0f172a');
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(x, y, width, height);
+        
+        // Border
+        ctx.strokeStyle = '#334155';
         ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, width, height);
+        
+        // Time markers
+        const pxPerSecond = width / duration;
+        const tickInterval = this.calculateTickInterval(duration);
+        
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#475569';
+        
+        for (let t = 0; t <= duration; t += tickInterval) {
+            const tickX = x + t * pxPerSecond;
+            
+            // Draw tick
+            ctx.beginPath();
+            ctx.moveTo(tickX, y + height - 8);
+            ctx.lineTo(tickX, y + height);
+            ctx.stroke();
+            
+            // Draw time label
+            const minutes = Math.floor(t / 60);
+            const seconds = Math.floor(t % 60);
+            const label = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            ctx.fillText(label, tickX, y + height - 10);
+        }
+    }
+    
+    /**
+     * Calculate appropriate tick interval for timeline
+     */
+    calculateTickInterval(duration) {
+        if (duration <= 30) return 5;
+        if (duration <= 60) return 10;
+        if (duration <= 300) return 30;
+        if (duration <= 600) return 60;
+        return 120;
+    }
+    
+    /**
+     * Draw a single DAW-style track with label, waveform, and offset marker
+     */
+    drawDAWTrack(ctx, waveformData, options) {
+        const { x, y, labelWidth, waveformWidth, trackHeight, maxDuration, name, color, type, offset } = options;
+        const pxPerSecond = waveformWidth / maxDuration;
+        
+        // Draw track background with gradient
+        const bgGradient = ctx.createLinearGradient(x, y, x, y + trackHeight);
+        bgGradient.addColorStop(0, '#0f172a');
+        bgGradient.addColorStop(0.5, type === 'master' ? '#1e3a5f' : '#134e4a');
+        bgGradient.addColorStop(1, '#0f172a');
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(x, y, labelWidth + waveformWidth, trackHeight);
+        
+        // Draw track border
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, labelWidth + waveformWidth, trackHeight);
+        
+        // Draw label background
+        ctx.fillStyle = type === 'master' ? 'rgba(96, 165, 250, 0.15)' : 'rgba(74, 222, 128, 0.15)';
+        ctx.fillRect(x, y, labelWidth, trackHeight);
+        
+        // Draw label text
+        ctx.fillStyle = color;
+        ctx.font = 'bold 11px JetBrains Mono, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(name, x + 8, y + trackHeight / 2 + 4);
+        
+        // Draw separator line between label and waveform
+        ctx.strokeStyle = '#334155';
         ctx.beginPath();
-        ctx.moveTo(0, trackHeight + spacing / 2);
-        ctx.lineTo(width, trackHeight + spacing / 2);
+        ctx.moveTo(x + labelWidth, y);
+        ctx.lineTo(x + labelWidth, y + trackHeight);
         ctx.stroke();
         
-        // Draw master waveform in top section
-        this.drawWaveform(ctx, masterData, {
-            strokeStyle: '#4CAF50',
-            fillStyle: 'rgba(76, 175, 80, 0.3)',
-            lineWidth: 1,
-            centerLine: true,
-            yOffset: masterCenterY,
-            trackHeight: trackHeight
-        });
+        // Draw center line for waveform
+        const centerY = y + trackHeight / 2;
+        ctx.strokeStyle = '#334155';
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x + labelWidth, centerY);
+        ctx.lineTo(x + labelWidth + waveformWidth, centerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
         
-        // Draw dub waveform in bottom section
-        this.drawWaveform(ctx, dubData, {
-            strokeStyle: '#f44336',
-            fillStyle: 'rgba(244, 67, 54, 0.3)',
-            lineWidth: 1,
-            centerLine: true,
-            yOffset: dubCenterY,
-            trackHeight: trackHeight
-        });
+        // Draw offset marker for non-master tracks
+        if (type !== 'master' && Math.abs(offset) > 0.001) {
+            const offsetPx = Math.abs(offset) * pxPerSecond;
+            const markerX = x + labelWidth + offsetPx;
+            
+            // Offset marker line
+            ctx.strokeStyle = '#f87171';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(markerX, y);
+            ctx.lineTo(markerX, y + trackHeight);
+            ctx.stroke();
+            
+            // Offset label background
+            const offsetLabel = this.formatOffsetLabel(offset);
+            ctx.font = 'bold 9px Arial';
+            const labelMetrics = ctx.measureText(offsetLabel);
+            const labelPadding = 4;
+            const labelBgWidth = labelMetrics.width + labelPadding * 2;
+            const labelBgHeight = 14;
+            const labelBgX = markerX - labelBgWidth / 2;
+            const labelBgY = y + 2;
+            
+            ctx.fillStyle = '#f87171';
+            ctx.beginPath();
+            ctx.roundRect(labelBgX, labelBgY, labelBgWidth, labelBgHeight, 3);
+            ctx.fill();
+            
+            // Offset label text
+            ctx.fillStyle = '#1f2937';
+            ctx.textAlign = 'center';
+            ctx.fillText(offsetLabel, markerX, labelBgY + 10);
+            ctx.textAlign = 'left';
+        }
         
-        // Add track labels
-        ctx.fillStyle = '#cbd5e0';
-        ctx.font = '12px Arial';
-        ctx.fillText('Master', 10, 20);
-        ctx.fillText('Dub', 10, trackHeight + spacing + 20);
+        // Draw waveform
+        if (waveformData && waveformData.length > 0) {
+            const waveHeight = (trackHeight - 8) / 2;
+            const offsetPx = (type !== 'master' ? offset : 0) * pxPerSecond;
+            
+            // Draw upper half
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            let firstPoint = true;
+            
+            for (let i = 0; i < waveformData.length; i++) {
+                const sampleTime = (i / waveformData.length) * maxDuration;
+                const drawX = x + labelWidth + sampleTime * pxPerSecond + offsetPx;
+                
+                if (drawX < x + labelWidth || drawX > x + labelWidth + waveformWidth) continue;
+                
+                const amplitude = waveformData[i] || 0;
+                const drawY = centerY - amplitude * waveHeight;
+                
+                if (firstPoint) {
+                    ctx.moveTo(drawX, drawY);
+                    firstPoint = false;
+                } else {
+                    ctx.lineTo(drawX, drawY);
+                }
+            }
+            ctx.stroke();
+            
+            // Draw lower half (mirrored)
+            ctx.beginPath();
+            firstPoint = true;
+            for (let i = 0; i < waveformData.length; i++) {
+                const sampleTime = (i / waveformData.length) * maxDuration;
+                const drawX = x + labelWidth + sampleTime * pxPerSecond + offsetPx;
+                
+                if (drawX < x + labelWidth || drawX > x + labelWidth + waveformWidth) continue;
+                
+                const amplitude = waveformData[i] || 0;
+                const drawY = centerY + amplitude * waveHeight;
+                
+                if (firstPoint) {
+                    ctx.moveTo(drawX, drawY);
+                    firstPoint = false;
+                } else {
+                    ctx.lineTo(drawX, drawY);
+                }
+            }
+            ctx.stroke();
+            
+            // Fill waveform area
+            const r = parseInt(color.slice(1, 3), 16) || 100;
+            const g = parseInt(color.slice(3, 5), 16) || 200;
+            const b = parseInt(color.slice(5, 7), 16) || 150;
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
+            
+            ctx.beginPath();
+            for (let i = 0; i < waveformData.length; i++) {
+                const sampleTime = (i / waveformData.length) * maxDuration;
+                const drawX = x + labelWidth + sampleTime * pxPerSecond + offsetPx;
+                
+                if (drawX < x + labelWidth || drawX > x + labelWidth + waveformWidth) continue;
+                
+                const amplitude = waveformData[i] || 0;
+                const topY = centerY - amplitude * waveHeight;
+                
+                if (i === 0) {
+                    ctx.moveTo(drawX, topY);
+                } else {
+                    ctx.lineTo(drawX, topY);
+                }
+            }
+            // Close through bottom
+            for (let i = waveformData.length - 1; i >= 0; i--) {
+                const sampleTime = (i / waveformData.length) * maxDuration;
+                const drawX = x + labelWidth + sampleTime * pxPerSecond + offsetPx;
+                
+                if (drawX < x + labelWidth || drawX > x + labelWidth + waveformWidth) continue;
+                
+                const amplitude = waveformData[i] || 0;
+                const bottomY = centerY + amplitude * waveHeight;
+                ctx.lineTo(drawX, bottomY);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+    
+    /**
+     * Format offset label for display
+     */
+    formatOffsetLabel(offsetSeconds) {
+        const absOffset = Math.abs(offsetSeconds);
+        const sign = offsetSeconds >= 0 ? '+' : '-';
+        
+        if (absOffset >= 60) {
+            const mins = Math.floor(absOffset / 60);
+            const secs = (absOffset % 60).toFixed(2);
+            return `${sign}${mins}:${secs.padStart(5, '0')}`;
+        } else {
+            return `${sign}${absOffset.toFixed(2)}s`;
+        }
     }
     
     /**
