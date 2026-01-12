@@ -323,11 +323,20 @@ class QCPlayer {
     }
     
     _applyVolumes() {
+        console.log(`QCPlayer._applyVolumes: master=${this.masterVolume} (muted=${this.masterMuted}), dub=${this.dubVolume} (muted=${this.dubMuted})`);
         if (this.masterAudio) {
-            this.masterAudio.volume = this.masterMuted ? 0 : this.masterVolume;
+            const masterVol = this.masterMuted ? 0 : this.masterVolume;
+            this.masterAudio.volume = masterVol;
+            console.log(`QCPlayer: Set master volume to ${masterVol}`);
+        } else {
+            console.warn('QCPlayer: masterAudio not available');
         }
         if (this.dubAudio) {
-            this.dubAudio.volume = this.dubMuted ? 0 : this.dubVolume;
+            const dubVol = this.dubMuted ? 0 : this.dubVolume;
+            this.dubAudio.volume = dubVol;
+            console.log(`QCPlayer: Set dub volume to ${dubVol}`);
+        } else {
+            console.warn('QCPlayer: dubAudio not available');
         }
     }
     

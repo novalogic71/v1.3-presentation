@@ -736,11 +736,14 @@ class QCInterface {
             if (e.target.classList.contains('qc-volume-slider')) {
                 const track = e.target.dataset.track;
                 const value = parseFloat(e.target.value);
-                console.log(`QC Volume: ${track} = ${value}`);
+                console.log(`[QC Volume] track=${track}, value=${value}, qcPlayer=${!!this.qcPlayer}, nativePlayer=${!!this.nativePlayer}`);
 
                 if (this.qcPlayer) {
+                    console.log('[QC Volume] Calling qcPlayer method...');
                     if (track === 'master') this.qcPlayer.setMasterVolume(value);
                     if (track === 'dub') this.qcPlayer.setDubVolume(value);
+                } else {
+                    console.warn('[QC Volume] qcPlayer not available!');
                 }
                 if (this.nativePlayer) this.nativePlayer.setVolume(track, value);
                 if (this.multiTrackPlayer) this.multiTrackPlayer.setTrackVolume(track, value);
@@ -766,11 +769,14 @@ class QCInterface {
             if (e.target.classList.contains('qc-mute-toggle')) {
                 const track = e.target.dataset.track;
                 const muted = e.target.checked;
-                console.log(`QC Mute: ${track} = ${muted}`);
+                console.log(`[QC Mute] track=${track}, muted=${muted}, qcPlayer=${!!this.qcPlayer}`);
 
                 if (this.qcPlayer) {
+                    console.log('[QC Mute] Calling qcPlayer method...');
                     if (track === 'master') this.qcPlayer.setMasterMuted(muted);
                     if (track === 'dub') this.qcPlayer.setDubMuted(muted);
+                } else {
+                    console.warn('[QC Mute] qcPlayer not available!');
                 }
                 if (this.nativePlayer) this.nativePlayer.setMuted(track, muted);
                 if (this.multiTrackPlayer) this.multiTrackPlayer.setTrackMuted(track, muted);
