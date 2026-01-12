@@ -344,8 +344,8 @@
                 </svg>
             </div>
             <h1 class="app-title">Professional Audio Sync Analyzer</h1>
-            <p class="app-subtitle">Frame-Perfect Sync Detection • Multi-Method Analysis • Multi-GPU Accelerated</p>
-            <span class="version-badge"><i class="fas fa-tag"></i> Version 1.3</span>
+            <p class="app-subtitle">AI-Powered GPU Analysis • Cross-Browser Sync • Smart Hybrid Detection</p>
+            <span class="version-badge"><i class="fas fa-tag"></i> Version 1.3.1</span>
         </div>
 
         <!-- Features Section -->
@@ -353,29 +353,29 @@
             <h2 class="section-title">Key Features</h2>
             <div class="features-grid">
                 <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-brain"></i></div>
+                    <h3 class="feature-title">AI-Powered GPU Analysis</h3>
+                    <p class="feature-description">Wav2Vec2 neural network sync detection with full GPU acceleration. 10-50x faster than CPU methods with automatic bars/tone detection.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-sync-alt"></i></div>
+                    <h3 class="feature-title">Cross-Browser Sync</h3>
+                    <p class="feature-description">Jobs sync across all browser sessions via Redis. API-submitted jobs automatically appear in UI within 10 seconds.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-magic"></i></div>
+                    <h3 class="feature-title">Smart Hybrid Mode</h3>
+                    <p class="feature-description">Automatic verification using MFCC when GPU results are inconsistent. Targeted refinement for sub-frame accuracy.</p>
+                </div>
+                <div class="feature-card">
                     <div class="feature-icon"><i class="fas fa-crosshairs"></i></div>
                     <h3 class="feature-title">Sub-Frame Accuracy</h3>
                     <p class="feature-description">98% accuracy improvement with frame-perfect timing. Displays exact offsets like "-240f @ 23.976fps" for precise sync correction.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-microchip"></i></div>
-                    <h3 class="feature-title">Multi-GPU Acceleration</h3>
-                    <p class="feature-description">Automatic workload distribution across all available GPUs with round-robin load balancing. Process 15-20 files per hour.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-                    <h3 class="feature-title">Multi-Method Detection</h3>
-                    <p class="feature-description">Four complementary analysis methods (MFCC, Onset, Spectral, Cross-Correlation) cross-validate for reliability.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="fas fa-film"></i></div>
-                    <h3 class="feature-title">Frame Rate Detection</h3>
-                    <p class="feature-description">Uses ffprobe to detect actual video frame rates (23.976, 24, 29.97 fps, etc.) for accurate frame count displays.</p>
-                </div>
-                <div class="feature-card">
                     <div class="feature-icon"><i class="fas fa-layer-group"></i></div>
-                    <h3 class="feature-title">Batch Processing</h3>
-                    <p class="feature-description">CSV-based workflows with 1-8 parallel workers. Process up to 100 file pairs with real-time progress monitoring.</p>
+                    <h3 class="feature-title">Componentized Analysis</h3>
+                    <p class="feature-description">Per-channel analysis for multichannel files. Offset visualization and analysis findings for each component.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon"><i class="fas fa-wrench"></i></div>
@@ -392,17 +392,17 @@
                 <div class="step">
                     <div class="step-number">1</div>
                     <h3 class="step-title">Select Files</h3>
-                    <p class="step-description">Browse to your media files and select master (reference) and dub files using the file browser.</p>
+                    <p class="step-description">Choose Componentized mode for multichannel files. Select master and component files using the file browser.</p>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
-                    <h3 class="step-title">Configure Analysis</h3>
-                    <p class="step-description">Choose detection methods (MFCC, Onset, Spectral, Cross-Correlation) and configure parameters. Defaults work great for most cases.</p>
+                    <h3 class="step-title">Enable GPU Fast</h3>
+                    <p class="step-description">Click Config tab and ensure GPU Fast is enabled (default). Smart hybrid automatically verifies inconsistent results.</p>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
-                    <h3 class="step-title">Analyze & Review</h3>
-                    <p class="step-description">Click "Start Analysis" to detect sync offset. Review results in QC interface and apply repairs if needed.</p>
+                    <h3 class="step-title">Process & Review</h3>
+                    <p class="step-description">Click "Process Batch" to analyze. View offset visualization, findings, and apply repairs from the results panel.</p>
                 </div>
             </div>
         </section>
@@ -413,9 +413,9 @@
                 <i class="fas fa-play"></i>
                 Enter Application
             </button>
-            <a href="/presentation-guide.html" class="btn btn-secondary" target="_blank">
-                <i class="fas fa-book"></i>
-                Presentation Guide
+            <a href="/dashboard" class="btn btn-secondary" target="_blank">
+                <i class="fas fa-tachometer-alt"></i>
+                Backend Dashboard
             </a>
             <a href="/docs" class="btn btn-secondary" target="_blank">
                 <i class="fas fa-code"></i>

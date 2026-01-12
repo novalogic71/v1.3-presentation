@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Dashboard - Audio Sync Analyzer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e14;
+            --bg-secondary: #0d1117;
+            --bg-card: #161b22;
+            --bg-surface: #21262d;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-green: #3fb950;
+            --accent-blue: #58a6ff;
+            --accent-orange: #d29922;
+            --accent-red: #f85149;
+            --accent-purple: #a371f7;
+            --accent-cyan: #39c5cf;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .dashboard {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 i { color: var(--accent-cyan); }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-badge.healthy { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+        .status-badge.degraded { background: rgba(210, 153, 34, 0.15); color: var(--accent-orange); }
+        .status-badge.critical { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+
+        .status-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .refresh-btn {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .refresh-btn.spinning i { animation: spin 1s linear infinite; }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .last-update {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .back-link {
+            color: var(--accent-blue);
+            text-decoration: none;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .back-link:hover { text-decoration: underline; }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+        }
+
+        .grid-full { grid-column: 1 / -1; }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-header h2 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-primary);
+        }
+
+        .card-header h2 i {
+            font-size: 16px;
+        }
+
+        .card-body { padding: 20px; }
+
+        /* GPU Card */
+        .gpu-card .card-header h2 i { color: var(--accent-green); }
+
+        .gpu-item {
+            background: var(--bg-surface);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .gpu-item:last-child { margin-bottom: 0; }
+
+        .gpu-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .gpu-name i { color: var(--accent-green); }
+
+        .gpu-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .gpu-stat {
+            background: var(--bg-card);
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .gpu-stat .label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .gpu-stat .value {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .gpu-stat .value.memory { color: var(--accent-blue); }
+        .gpu-stat .value.util { color: var(--accent-green); }
+        .gpu-stat .value.temp { color: var(--accent-orange); }
+        .gpu-stat .value.power { color: var(--accent-purple); }
+
+        /* Progress Bars */
+        .progress-bar {
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-bar .fill.green { background: var(--accent-green); }
+        .progress-bar .fill.blue { background: var(--accent-blue); }
+        .progress-bar .fill.orange { background: var(--accent-orange); }
+        .progress-bar .fill.red { background: var(--accent-red); }
+
+        /* System Stats */
+        .system-card .card-header h2 i { color: var(--accent-blue); }
+
+        .system-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .system-stat {
+            text-align: center;
+        }
+
+        .system-stat .icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 20px;
+        }
+
+        .system-stat .icon.cpu { background: rgba(88, 166, 255, 0.15); color: var(--accent-blue); }
+        .system-stat .icon.memory { background: rgba(163, 113, 247, 0.15); color: var(--accent-purple); }
+        .system-stat .icon.disk { background: rgba(57, 197, 207, 0.15); color: var(--accent-cyan); }
+
+        .system-stat .value {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .system-stat .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .system-stat .detail {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        /* Celery Card */
+        .celery-card .card-header h2 i { color: var(--accent-orange); }
+
+        .worker-list { display: flex; flex-direction: column; gap: 12px; }
+
+        .worker-item {
+            background: var(--bg-surface);
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .worker-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .worker-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .worker-status.offline { background: var(--accent-red); }
+
+        .worker-name {
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .worker-stats {
+            display: flex;
+            gap: 16px;
+        }
+
+        .worker-stat {
+            text-align: center;
+        }
+
+        .worker-stat .value {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-blue);
+        }
+
+        .worker-stat .label {
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .queue-info {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .queue-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .queue-value {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-orange);
+        }
+
+        /* Redis Card */
+        .redis-card .card-header h2 i { color: var(--accent-red); }
+
+        .redis-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .redis-stat {
+            background: var(--bg-surface);
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .redis-stat .label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .redis-stat .value {
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Process Table */
+        .process-card .card-header h2 i { color: var(--accent-purple); }
+
+        .process-table {
+            width: 100%;
+            font-size: 12px;
+        }
+
+        .process-table th {
+            text-align: left;
+            padding: 10px 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .process-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .process-table tr:last-child td { border-bottom: none; }
+
+        .process-table .pid { color: var(--text-muted); }
+        .process-table .name { color: var(--accent-blue); font-weight: 500; }
+        .process-table .cpu { color: var(--accent-green); }
+        .process-table .mem { color: var(--accent-purple); }
+        .process-table .status { 
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .process-table .status.running { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+        .process-table .status.sleeping { background: rgba(88, 166, 255, 0.15); color: var(--accent-blue); }
+
+        /* No Data */
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .no-data i {
+            font-size: 32px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Auto-refresh indicator */
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .auto-refresh input {
+            accent-color: var(--accent-blue);
+        }
+
+        /* GPU Processes */
+        .gpu-processes {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .gpu-process-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .gpu-process-count {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .gpu-process-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .gpu-process-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .gpu-process-item .pid {
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .gpu-process-item .name {
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+
+        .gpu-process-item .memory {
+            color: var(--accent-purple);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Console Card */
+        .console-card .card-header h2 i { color: var(--accent-cyan); }
+
+        .console-container {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        .console-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .console-container::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        .console-container::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .log-line {
+            padding: 2px 0;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+        }
+
+        .log-line:last-child {
+            border-bottom: none;
+        }
+
+        .log-source {
+            flex-shrink: 0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .log-source.celery { background: rgba(210, 153, 34, 0.2); color: var(--accent-orange); }
+        .log-source.celery_error { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        .log-source.fastapi { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+
+        .log-message {
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .log-message.error { color: var(--accent-red); }
+        .log-message.warning { color: var(--accent-orange); }
+        .log-message.info { color: var(--text-secondary); }
+        .log-message.success { color: var(--accent-green); }
+
+        .console-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .console-controls button {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .console-controls button:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .log-count {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1><i class="fas fa-tachometer-alt"></i> System Dashboard</h1>
+            <div class="header-actions">
+                <a href="/app" class="back-link"><i class="fas fa-arrow-left"></i> Back to App</a>
+                <div class="auto-refresh">
+                    <input type="checkbox" id="auto-refresh" checked>
+                    <label for="auto-refresh">Auto-refresh (5s)</label>
+                </div>
+                <span class="last-update" id="last-update">--</span>
+                <div class="status-badge healthy" id="health-status">
+                    <span>Healthy</span>
+                </div>
+                <button class="refresh-btn" id="refresh-btn">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- GPU Card -->
+            <div class="card gpu-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-microchip"></i> GPU Status</h2>
+                </div>
+                <div class="card-body" id="gpu-content">
+                    <div class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Card -->
+            <div class="card system-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-server"></i> System Resources</h2>
+                </div>
+                <div class="card-body" id="system-content">
+                    <div class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Celery Card -->
+            <div class="card celery-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-cogs"></i> Celery Workers</h2>
+                </div>
+                <div class="card-body" id="celery-content">
+                    <div class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Redis Card -->
+            <div class="card redis-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-database"></i> Redis</h2>
+                </div>
+                <div class="card-body" id="redis-content">
+                    <div class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Process Table -->
+            <div class="card process-card grid-full">
+                <div class="card-header">
+                    <h2><i class="fas fa-list-ul"></i> Backend Processes</h2>
+                </div>
+                <div class="card-body" id="process-content">
+                    <div class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console Logs -->
+            <div class="card console-card grid-full">
+                <div class="card-header">
+                    <h2><i class="fas fa-terminal"></i> Console Logs</h2>
+                </div>
+                <div class="card-body">
+                    <div class="console-controls">
+                        <div>
+                            <button id="scroll-bottom-btn"><i class="fas fa-arrow-down"></i> Scroll to Bottom</button>
+                            <button id="clear-console-btn"><i class="fas fa-trash"></i> Clear</button>
+                        </div>
+                        <span class="log-count" id="log-count">0 lines</span>
+                    </div>
+                    <div class="console-container" id="console-content">
+                        <div class="no-data">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Loading logs...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/dashboard';
+        let autoRefreshInterval = null;
+
+        async function fetchStats() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            refreshBtn.classList.add('spinning');
+
+            try {
+                const [statsResponse, logsResponse] = await Promise.all([
+                    fetch(`${API_BASE}/stats`),
+                    fetch(`${API_BASE}/logs?lines=150`)
+                ]);
+                
+                const data = await statsResponse.json();
+                const logsData = await logsResponse.json();
+                
+                updateGPU(data.gpu);
+                updateSystem(data.system);
+                updateCelery(data.celery);
+                updateRedis(data.redis);
+                updateProcesses(data.processes);
+                updateConsoleLogs(logsData.logs);
+                updateHealth();
+                
+                document.getElementById('last-update').textContent = 
+                    new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            } finally {
+                refreshBtn.classList.remove('spinning');
+            }
+        }
+
+        async function updateHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                const badge = document.getElementById('health-status');
+                badge.className = `status-badge ${data.status}`;
+                badge.querySelector('span').textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+            } catch (error) {
+                console.error('Error fetching health:', error);
+            }
+        }
+
+        function updateGPU(gpu) {
+            const container = document.getElementById('gpu-content');
+            
+            if (!gpu.available) {
+                container.innerHTML = `
+                    <div class="no-data">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p>GPU not available: ${gpu.error || 'Unknown error'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const gpuHtml = gpu.gpus.map(g => `
+                <div class="gpu-item">
+                    <div class="gpu-name">
+                        <i class="fas fa-microchip"></i>
+                        GPU ${g.index}: ${g.name}
+                    </div>
+                    <div class="gpu-stats">
+                        <div class="gpu-stat">
+                            <div class="label">Memory Used</div>
+                            <div class="value memory">${g.memory_used_mb.toFixed(0)} MB</div>
+                            <div class="progress-bar">
+                                <div class="fill blue" style="width: ${g.memory_percent}%"></div>
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                                ${g.memory_percent}% of ${g.memory_total_mb.toFixed(0)} MB
+                            </div>
+                        </div>
+                        <div class="gpu-stat">
+                            <div class="label">GPU Utilization</div>
+                            <div class="value util">${g.utilization_percent}%</div>
+                            <div class="progress-bar">
+                                <div class="fill green" style="width: ${g.utilization_percent}%"></div>
+                            </div>
+                        </div>
+                        <div class="gpu-stat">
+                            <div class="label">Temperature</div>
+                            <div class="value temp">${g.temperature_c}°C</div>
+                        </div>
+                        <div class="gpu-stat">
+                            <div class="label">Power Draw</div>
+                            <div class="value power">${g.power_draw_w.toFixed(0)} W</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // GPU Processes section
+            const processCount = gpu.process_count || 0;
+            const processes = gpu.processes || [];
+            
+            const processesHtml = processCount > 0 ? `
+                <div class="gpu-processes">
+                    <div class="gpu-process-header">
+                        <span style="font-size: 12px; color: var(--text-secondary);">
+                            <i class="fas fa-running"></i> GPU Processes
+                        </span>
+                        <span class="gpu-process-count">${processCount} active</span>
+                    </div>
+                    <div class="gpu-process-list">
+                        ${processes.map(p => `
+                            <div class="gpu-process-item">
+                                <span class="pid">PID ${p.pid}</span>
+                                <span class="name">${p.name}</span>
+                                <span class="memory">${p.memory_mb.toFixed(0)} MB</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : `
+                <div class="gpu-processes">
+                    <div class="gpu-process-header">
+                        <span style="font-size: 12px; color: var(--text-secondary);">
+                            <i class="fas fa-running"></i> GPU Processes
+                        </span>
+                        <span class="gpu-process-count" style="background: rgba(139, 148, 158, 0.15); color: var(--text-muted);">0 active</span>
+                    </div>
+                    <div style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 12px;">
+                        No processes currently using GPU
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = gpuHtml + processesHtml;
+        }
+
+        function updateSystem(system) {
+            const container = document.getElementById('system-content');
+            
+            if (system.error) {
+                container.innerHTML = `<div class="no-data"><p>${system.error}</p></div>`;
+                return;
+            }
+
+            const cpu = system.cpu;
+            const mem = system.memory;
+            const disk = system.disk;
+
+            container.innerHTML = `
+                <div class="system-stats">
+                    <div class="system-stat">
+                        <div class="icon cpu"><i class="fas fa-microchip"></i></div>
+                        <div class="value" style="color: var(--accent-blue)">${cpu.percent}%</div>
+                        <div class="label">CPU Usage</div>
+                        <div class="progress-bar">
+                            <div class="fill blue" style="width: ${cpu.percent}%"></div>
+                        </div>
+                        <div class="detail">${cpu.count} cores @ ${cpu.frequency_mhz.toFixed(0)} MHz</div>
+                        <div class="detail">Load: ${cpu.load_avg_1m} / ${cpu.load_avg_5m} / ${cpu.load_avg_15m}</div>
+                    </div>
+                    <div class="system-stat">
+                        <div class="icon memory"><i class="fas fa-memory"></i></div>
+                        <div class="value" style="color: var(--accent-purple)">${mem.percent}%</div>
+                        <div class="label">Memory</div>
+                        <div class="progress-bar">
+                            <div class="fill ${mem.percent > 90 ? 'red' : mem.percent > 70 ? 'orange' : 'green'}" style="width: ${mem.percent}%"></div>
+                        </div>
+                        <div class="detail">${mem.used_gb} / ${mem.total_gb} GB</div>
+                        <div class="detail">${mem.available_gb} GB available</div>
+                    </div>
+                    <div class="system-stat">
+                        <div class="icon disk"><i class="fas fa-hdd"></i></div>
+                        <div class="value" style="color: var(--accent-cyan)">${disk.percent}%</div>
+                        <div class="label">Disk</div>
+                        <div class="progress-bar">
+                            <div class="fill ${disk.percent > 90 ? 'red' : disk.percent > 70 ? 'orange' : 'green'}" style="width: ${disk.percent}%"></div>
+                        </div>
+                        <div class="detail">${disk.used_gb} / ${disk.total_gb} GB</div>
+                        <div class="detail">${disk.free_gb} GB free</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateCelery(celery) {
+            const container = document.getElementById('celery-content');
+            
+            if (celery.worker_count === 0) {
+                container.innerHTML = `
+                    <div class="no-data">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>No Celery workers online</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const workersHtml = celery.workers.map(w => `
+                <div class="worker-item">
+                    <div class="worker-info">
+                        <div class="worker-status ${w.status === 'online' ? '' : 'offline'}"></div>
+                        <div class="worker-name">${w.name}</div>
+                    </div>
+                    <div class="worker-stats">
+                        <div class="worker-stat">
+                            <div class="value">${w.active_tasks}</div>
+                            <div class="label">Active</div>
+                        </div>
+                        <div class="worker-stat">
+                            <div class="value">${w.reserved_tasks}</div>
+                            <div class="label">Reserved</div>
+                        </div>
+                        <div class="worker-stat">
+                            <div class="value">${w.pool}</div>
+                            <div class="label">Pool</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `
+                <div class="worker-list">${workersHtml}</div>
+                <div class="queue-info">
+                    <span class="queue-label">Queue Length</span>
+                    <span class="queue-value">${celery.queue_length}</span>
+                </div>
+            `;
+        }
+
+        function updateRedis(redis) {
+            const container = document.getElementById('redis-content');
+            
+            if (!redis.connected) {
+                container.innerHTML = `
+                    <div class="no-data">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>Redis not connected: ${redis.error || ''}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="redis-stats">
+                    <div class="redis-stat">
+                        <div class="label">Version</div>
+                        <div class="value">${redis.version}</div>
+                    </div>
+                    <div class="redis-stat">
+                        <div class="label">Clients</div>
+                        <div class="value">${redis.connected_clients}</div>
+                    </div>
+                    <div class="redis-stat">
+                        <div class="label">Memory Used</div>
+                        <div class="value">${redis.used_memory_mb} MB</div>
+                    </div>
+                    <div class="redis-stat">
+                        <div class="label">Peak Memory</div>
+                        <div class="value">${redis.used_memory_peak_mb} MB</div>
+                    </div>
+                    <div class="redis-stat">
+                        <div class="label">Commands</div>
+                        <div class="value">${redis.total_commands_processed.toLocaleString()}</div>
+                    </div>
+                    <div class="redis-stat">
+                        <div class="label">Uptime</div>
+                        <div class="value">${formatUptime(redis.uptime_seconds)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateProcesses(processes) {
+            const container = document.getElementById('process-content');
+            
+            if (!processes || processes.length === 0) {
+                container.innerHTML = `
+                    <div class="no-data">
+                        <i class="fas fa-info-circle"></i>
+                        <p>No relevant processes found</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="process-table">
+                    <thead>
+                        <tr>
+                            <th>PID</th>
+                            <th>Name</th>
+                            <th>Command</th>
+                            <th>CPU %</th>
+                            <th>Mem %</th>
+                            <th>Status</th>
+                            <th>Uptime</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${processes.map(p => `
+                            <tr>
+                                <td class="pid">${p.pid}</td>
+                                <td class="name">${p.name}</td>
+                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${p.cmdline}">${p.cmdline}</td>
+                                <td class="cpu">${p.cpu_percent}%</td>
+                                <td class="mem">${p.memory_percent}%</td>
+                                <td><span class="status ${p.status}">${p.status}</span></td>
+                                <td>${formatUptime(p.uptime_seconds)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function formatUptime(seconds) {
+            if (seconds < 60) return `${seconds}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+            return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
+        }
+
+        function updateConsoleLogs(logs) {
+            const container = document.getElementById('console-content');
+            const countEl = document.getElementById('log-count');
+            
+            if (!logs || logs.length === 0) {
+                container.innerHTML = `
+                    <div class="no-data" style="padding: 20px;">
+                        <i class="fas fa-file-alt"></i>
+                        <p>No logs available</p>
+                    </div>
+                `;
+                countEl.textContent = '0 lines';
+                return;
+            }
+
+            // Determine log level from message content
+            function getLogLevel(message) {
+                const lowerMsg = message.toLowerCase();
+                if (lowerMsg.includes('error') || lowerMsg.includes('exception') || lowerMsg.includes('failed')) return 'error';
+                if (lowerMsg.includes('warning') || lowerMsg.includes('warn')) return 'warning';
+                if (lowerMsg.includes('success') || lowerMsg.includes('completed') || lowerMsg.includes('done')) return 'success';
+                return 'info';
+            }
+
+            container.innerHTML = logs.map(log => `
+                <div class="log-line">
+                    <span class="log-source ${log.source}">${log.source}</span>
+                    <span class="log-message ${getLogLevel(log.message)}">${escapeHtml(log.message)}</span>
+                </div>
+            `).join('');
+
+            countEl.textContent = `${logs.length} lines`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollConsoleToBottom() {
+            const container = document.getElementById('console-content');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearConsole() {
+            const container = document.getElementById('console-content');
+            container.innerHTML = `
+                <div class="no-data" style="padding: 20px;">
+                    <i class="fas fa-file-alt"></i>
+                    <p>Console cleared</p>
+                </div>
+            `;
+            document.getElementById('log-count').textContent = '0 lines';
+        }
+
+        // Event listeners
+        document.getElementById('refresh-btn').addEventListener('click', fetchStats);
+        document.getElementById('scroll-bottom-btn').addEventListener('click', scrollConsoleToBottom);
+        document.getElementById('clear-console-btn').addEventListener('click', clearConsole);
+
+        document.getElementById('auto-refresh').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                autoRefreshInterval = setInterval(fetchStats, 5000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+
+        // Initial load
+        fetchStats();
+        autoRefreshInterval = setInterval(fetchStats, 5000);
+    </script>
+</body>
+</html>
+

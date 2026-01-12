@@ -563,13 +563,13 @@ class CoreAudioEngine {
                     // BEFORE FIX: Play files as-is to hear the natural sync problem
                     // No timing adjustments - let the inherent offset be audible
                 } else {
-                    // AFTER FIX: Apply correction to synchronize the files (branch behavior)
+                    // AFTER FIX: Apply correction by offsetting buffer positions
                     if (offsetSeconds > 0) {
-                        // Dub is early - delay dub to sync with master
-                        dubWhen = now + offsetSeconds;
+                        // Dub is early - skip ahead in dub buffer
+                        dubOffset = Math.min(Math.max(0, safeStartAt + offsetSeconds), Math.max(0.01, this.dubBuffer.duration - 0.1));
                     } else if (offsetSeconds < 0) {
-                        // Dub is late - advance dub content to sync with master
-                        dubOffset = Math.min(Math.max(0, safeStartAt + Math.abs(offsetSeconds)), Math.max(0.01, this.dubBuffer.duration - 0.01));
+                        // Dub is late - skip ahead in master buffer  
+                        masterOffset = Math.min(Math.max(0, safeStartAt + Math.abs(offsetSeconds)), Math.max(0.01, this.masterBuffer.duration - 0.1));
                     }
                 }
             }
@@ -686,30 +686,31 @@ class CoreAudioEngine {
                     
                     if (!corrected) {
                         // BEFORE FIX: Play files as-is to hear the natural sync problem
-                        // Both start at same position and time - natural offset will be audible
+                        // Both start at same position - natural offset in content will be audible
                         console.log('[CoreAudioEngine] BEFORE FIX mode - playing both at same position');
                         mEl.currentTime = safeStartAt;
                         dEl.currentTime = safeStartAt;
                         mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
                         dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
                     } else {
-                        // AFTER FIX: Apply correction to synchronize the files (branch behavior)
-                        console.log('[CoreAudioEngine] AFTER FIX mode - applying correction');
+                        // AFTER FIX: Apply correction by offsetting playback positions
+                        console.log('[CoreAudioEngine] AFTER FIX mode - applying correction, offset:', offsetSeconds);
                         if (offsetSeconds > 0) {
-                            // Dub is early - delay dub (schedule dub play)
-                            console.log('[CoreAudioEngine] Dub is early by', offsetSeconds, 's - delaying dub playback');
-                            mEl.currentTime = safeStartAt;
-                            dEl.currentTime = safeStartAt;
-                            mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
-                            setTimeout(() => { 
-                                dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
-                            }, offsetSeconds * 1000);
-                        } else if (offsetSeconds < 0) {
-                            // Dub is late - advance dub content to sync with master
-                            const dubStartTime = Math.min(dEl.duration - 0.01, Math.max(0, safeStartAt + Math.abs(offsetSeconds)));
-                            console.log('[CoreAudioEngine] Dub is late by', Math.abs(offsetSeconds), 's - advancing dub to', dubStartTime);
+                            // Dub is early (dub content is ahead of master)
+                            // To fix: skip ahead in dub file by offset amount
+                            const dubStartTime = Math.min(dEl.duration - 0.1, Math.max(0, safeStartAt + offsetSeconds));
+                            console.log('[CoreAudioEngine] Dub is early by', offsetSeconds, 's - skipping dub to', dubStartTime);
                             mEl.currentTime = safeStartAt;
                             dEl.currentTime = dubStartTime;
+                            mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
+                            dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
+                        } else if (offsetSeconds < 0) {
+                            // Dub is late (dub content is behind master)
+                            // To fix: skip ahead in master file by |offset| amount
+                            const masterStartTime = Math.min(mEl.duration - 0.1, Math.max(0, safeStartAt + Math.abs(offsetSeconds)));
+                            console.log('[CoreAudioEngine] Dub is late by', Math.abs(offsetSeconds), 's - skipping master to', masterStartTime);
+                            mEl.currentTime = masterStartTime;
+                            dEl.currentTime = safeStartAt;
                             mEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Master play blocked: '+e.message, 'Audio'); }catch{} });
                             dEl.play().catch((e)=>{ try{ window.showToast?.('error', 'Dub play blocked: '+e.message, 'Audio'); }catch{} });
                         } else {

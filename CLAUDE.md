@@ -6,6 +6,60 @@
 - Add to memory
 - add to memory
 
+# Recent Critical Fixes (January 2026)
+
+## AI-Powered GPU Analysis (NEW)
+- FEATURE: Wav2Vec2 GPU-accelerated sync detection
+- IMPLEMENTATION: `sync_analyzer/core/simple_gpu_sync.py`
+- PERFORMANCE: 10-50x faster than CPU methods
+- FEATURES:
+  - Full PyTorch GPU acceleration
+  - Cross-correlation using FFT on GPU
+  - Automatic bars/tone detection at file head
+  - Smart hybrid mode with MFCC verification
+
+## Cross-Browser Sync (NEW)
+- FEATURE: Server-side batch queue storage in Redis
+- ENDPOINT: `/api/v1/batch-queue` - GET/POST/PUT/DELETE
+- BEHAVIOR: Jobs sync across all browser sessions in real-time
+- FILES:
+  - `fastapi_app/app/api/v1/endpoints/batch_queue.py`
+  - `web_ui/app.js` - `loadBatchQueueFromServer()`, `syncFromServer()`
+
+## API Job Discovery (NEW)
+- FEATURE: Jobs submitted via API automatically appear in UI
+- ENDPOINT: `/api/v1/job-registry` - Tracks all jobs
+- POLLING: UI polls every 10 seconds for new API jobs
+- FILES:
+  - `fastapi_app/app/api/v1/endpoints/job_registry.py`
+  - `fastapi_app/app/api/v1/endpoints/componentized.py` - Registers jobs
+  - `web_ui/app.js` - `pollForNewApiJobs()`
+
+## Smart Hybrid Analysis (NEW)
+- FEATURE: GPU analysis with automatic MFCC verification
+- TRIGGER: When GPU results across components are inconsistent (spread > 0.5s)
+- REFINEMENT: Targeted MFCC on individual components for sub-frame accuracy
+- FILE: `fastapi_app/app/services/componentized_service.py`
+
+## Audio Fingerprinting (NEW)
+- FEATURE: Chromaprint-based fingerprint sync detection
+- FILE: `sync_analyzer/core/fingerprint_sync.py`
+- DEPENDENCY: `pyacoustid`, `chromaprint` (fpcalc)
+- NOTE: Not suitable for dubbed content (different languages)
+
+## Analysis Findings Display (NEW)
+- FEATURE: Detailed messaging for each component
+- FINDINGS: Bars/tone detected, tail length, head offset differences
+- UI: Finding tags with color coding (info, warning, error)
+- FILE: `web_ui/app.js` - `getFindingTagClass()`
+
+## UI Enhancements (NEW)
+- Job dropdown styled to match Export button (green)
+- Refresh button to manually sync job statuses
+- Restart button for completed jobs
+- Offset visualization in batch details
+- Compact QC/Repair modals with text truncation
+
 # Recent Critical Fixes (September 2025)
 
 ## Offset Calculation Fixes

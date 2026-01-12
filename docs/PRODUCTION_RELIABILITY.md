@@ -73,6 +73,22 @@ sudo systemctl start sync-analyzer
 - `sync-analyzer-celery.service` - Celery worker
 - Both have automatic restart on failure
 
+### 6. Cross-Browser Job Sync (NEW)
+**Problem:** Jobs only visible in the browser that submitted them.
+
+**Solution:** Server-side batch queue storage:
+- Batch queue stored in Redis (`/api/v1/batch-queue`)
+- Jobs sync across all browser sessions
+- Status updates visible everywhere within 10 seconds
+
+### 7. API Job Discovery (NEW)
+**Problem:** Jobs submitted via API don't appear in UI.
+
+**Solution:** Job registry for all jobs:
+- All API jobs registered in `/api/v1/job-registry`
+- UI polls for new jobs every 10 seconds
+- Jobs appear in batch queue automatically
+
 ---
 
 ## Deployment Options
@@ -154,9 +170,18 @@ LOG_LEVEL=INFO
 LOG_FILE=/opt/sync-analyzer/logs/app.log
 USE_GPU=true
 
-# Optional tuning
-LONG_FILE_THRESHOLD_SECONDS=180
+# GPU/AI Settings
+AI_WAV2VEC2_MODEL_PATH=""                    # Custom model path (optional)
 AI_MODEL_CACHE_DIR=/opt/sync-analyzer/ai_models
+HF_LOCAL_ONLY=1                              # Use local models only (no downloads)
+
+# Long File Settings
+LONG_FILE_THRESHOLD_SECONDS=180
+LONG_FILE_GPU_BYPASS=true
+LONG_FILE_GPU_BYPASS_MAX_SECONDS=900
+
+# CORS (if UI on different domain)
+ALLOWED_ORIGINS=http://localhost:8000,http://localhost:3002
 ```
 
 ### Key Settings for Reliability
@@ -354,6 +379,16 @@ cp .env "$BACKUP_DIR/"
 ├── scripts/
 │   ├── healthcheck.sh                  # Health check script
 │   └── supervisor_eventlistener.py     # Process event monitoring
+├── fastapi_app/app/api/v1/endpoints/
+│   ├── batch_queue.py                  # NEW: Server-side batch queue storage
+│   ├── job_registry.py                 # NEW: API job discovery
+│   └── dashboard.py                    # NEW: Backend monitoring dashboard
+├── sync_analyzer/core/
+│   ├── simple_gpu_sync.py              # NEW: Wav2Vec2 GPU detector
+│   └── fingerprint_sync.py             # NEW: Chromaprint fingerprint detector
+├── web_ui/
+│   ├── app.js                          # UPDATED: Cross-browser sync, API polling
+│   └── dashboard.html                  # NEW: Backend monitoring UI
 └── docs/
     └── PRODUCTION_RELIABILITY.md       # This guide
 ```

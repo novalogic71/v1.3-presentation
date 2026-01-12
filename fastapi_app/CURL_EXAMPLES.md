@@ -544,6 +544,143 @@ ls -la /mnt/data/
 python -c "import fastapi, uvicorn; print('Dependencies OK')"
 ```
 
+## Batch Queue Endpoints (Cross-Browser Sync)
+
+### 1. Get Batch Queue
+```bash
+curl -X GET "http://localhost:8000/api/v1/batch-queue"
+```
+
+### 2. Save Batch Queue
+```bash
+curl -X POST "http://localhost:8000/api/v1/batch-queue" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "id": 1234567890,
+        "type": "componentized",
+        "status": "queued",
+        "master": {"path": "/mnt/data/master.mov", "name": "master.mov"},
+        "components": [
+          {"path": "/mnt/data/comp_a0.wav", "label": "a0", "name": "comp_a0.wav"}
+        ]
+      }
+    ],
+    "clientId": "browser-session-123"
+  }'
+```
+
+### 3. Update Single Item
+```bash
+curl -X PUT "http://localhost:8000/api/v1/batch-queue/item/1234567890" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "completed",
+    "progress": 100,
+    "result": {"offset_seconds": -0.5, "confidence": 0.95}
+  }'
+```
+
+### 4. Delete Single Item
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/batch-queue/item/1234567890"
+```
+
+### 5. Clear Batch Queue
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/batch-queue"
+```
+
+## Job Registry Endpoints (API Job Discovery)
+
+### 1. Get All Jobs
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry"
+```
+
+### 2. Get Jobs by Status
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry?status=completed"
+```
+
+### 3. Get Recent Jobs (Last 6 Hours)
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry?since_hours=6"
+```
+
+### 4. Get New Jobs Since Timestamp
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry/new?since=2026-01-09T12:00:00"
+```
+
+### 5. Get Specific Job
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry/abc123-task-id"
+```
+
+### 6. Remove Job from Registry
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/job-registry/abc123-task-id"
+```
+
+## GPU Analysis Examples
+
+### 1. GPU-Accelerated Componentized Analysis
+```bash
+curl -X POST "http://localhost:8000/api/v1/analysis/componentized/async" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master": "/mnt/data/master.mov",
+    "components": [
+      {"path": "/mnt/data/Lt.wav", "label": "Lt"},
+      {"path": "/mnt/data/Rt.wav", "label": "Rt"},
+      {"path": "/mnt/data/C.wav", "label": "C"},
+      {"path": "/mnt/data/LFE.wav", "label": "LFE"}
+    ],
+    "methods": ["gpu"],
+    "offset_mode": "channel_aware",
+    "frameRate": 23.976
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "job_id": "abc123-def456-ghi789",
+  "status": "queued",
+  "message": "Analysis queued in Celery. Poll /api/v1/jobs/<task_id> for status."
+}
+```
+
+### 2. Check Job Status
+```bash
+curl -X GET "http://localhost:8000/api/v1/jobs/abc123-def456-ghi789"
+```
+
+## Dashboard Endpoints
+
+### 1. Get System Info
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/system-info"
+```
+
+### 2. Get GPU Info
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/gpu-info"
+```
+
+### 3. Get Celery Workers Info
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/celery-info"
+```
+
+### 4. Get Console Logs
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/console-logs?lines=100"
+```
+
 ## Notes
 
 - All file paths in examples use `/mnt/data` as the mount point. Adjust this for your system.
@@ -553,5 +690,7 @@ python -c "import fastapi, uvicorn; print('Dependencies OK')"
 - Health checks provide detailed component status information.
 - Rate limiting is enabled by default (60 requests per minute per IP).
 - All timestamps are in ISO 8601 format (UTC).
+- **Cross-Browser Sync**: Batch queue is stored in Redis - all browsers see the same state.
+- **API Job Discovery**: Jobs submitted via API automatically appear in the UI.
 
 For more information, see the API documentation at `http://localhost:8000/docs` or `http://localhost:8000/redoc`.

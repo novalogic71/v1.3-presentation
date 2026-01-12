@@ -84,26 +84,53 @@ python -m sync_analyzer.cli.sync_cli \
 
 ### Option B: Web Interface (Recommended)
 
-1. **Start the web server:**
+1. **Start all services (FastAPI + Celery):**
    ```bash
-   cd web_ui
-   python server.py
+   ./start_all.sh
    ```
 
 2. **Open your browser:**
-   Navigate to: http://localhost:3001
+   Navigate to: http://localhost:8000/app
 
 3. **Analyze files:**
    - Use the file browser to navigate to your media files
-   - Click on a master file (it will highlight in green)
-   - Click on a dub file (it will highlight in orange)  
-   - Click the "Analyze" button
-   - View results in the analysis panel
+   - For **Standard** mode: Select master and dub files
+   - For **Componentized** mode: Select master and multiple component files
+   - Enable **GPU Fast** for AI-accelerated analysis (recommended)
+   - Click "Add to Batch" then "Process Batch"
+   - View results in the batch processing queue
 
 4. **Repair sync issues:**
-   - After analysis, repair controls will appear
-   - Click "Auto Fix" for automatic correction
-   - Or use "Manual Repair" to fine-tune the offset
+   - Click on a completed job to view details
+   - Use "QC" to review the sync visually
+   - Click "Repair" for automatic correction
+
+### Option C: Backend Dashboard (NEW)
+
+Monitor GPU, system resources, and job status:
+
+```bash
+# Open the dashboard
+http://localhost:8000/dashboard
+```
+
+## 🚀 GPU-Accelerated Analysis (NEW)
+
+The system now supports AI-powered GPU analysis using Wav2Vec2:
+
+### Enable GPU Fast Mode
+1. In the web UI, go to **Config** tab
+2. Enable **🚀 GPU Fast** toggle (enabled by default)
+3. Process your batch as normal
+
+### GPU Features
+- **10-50x faster** than CPU methods
+- **Smart Hybrid**: Automatically verifies results if inconsistent
+- **Bars/Tone Detection**: Skips test patterns at file head
+- **Cross-Browser Sync**: Jobs visible in all browser sessions
+
+### Fallback Behavior
+If GPU is unavailable, the system automatically falls back to CPU-based MFCC+Onset analysis.
 
 ## 📊 Understanding Results
 
