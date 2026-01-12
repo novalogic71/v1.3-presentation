@@ -7358,11 +7358,16 @@ class SyncAnalyzerUI {
             const initWaveformOnce = () => {
                 if (!waveformSection.dataset.waveformInitialized) {
                     waveformSection.dataset.waveformInitialized = 'true';
-                    this.initializeEnhancedWaveform(item, offsetSeconds);
+                    // Use same stacked waveform visualization as componentized view
+                    this.renderStandardStackedWaveforms(item, offsetSeconds);
                 }
             };
-            // Initialize on first expand click
-            sectionHeader?.addEventListener('click', initWaveformOnce, { once: true });
+            // Initialize on first expand click OR if section is already expanded
+            if (waveformSection.classList.contains('expanded')) {
+                initWaveformOnce();
+            } else {
+                sectionHeader?.addEventListener('click', initWaveformOnce, { once: true });
+            }
         }
 
         // Bind per-channel repair button if per-channel results exist
@@ -7889,6 +7894,189 @@ class SyncAnalyzerUI {
     }
 
     /**
+     * Render stacked waveforms for standard (non-componentized) items
+     * Uses same visualization style as componentized view
+     */
+    async renderStandardStackedWaveforms(item, offsetSeconds) {
+        const container = document.getElementById(`stacked-waveforms-${item.id}`);
+        if (!container) {
+            console.warn('Waveforms container not found');
+            return;
+        }
+
+        try {
+            // Show loading state
+            container.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: #64748b;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 32px; margin-bottom: 12px;"></i>
+                    <p>Loading audio waveforms...</p>
+                </div>
+            `;
+
+            const minOffset = Math.min(0, offsetSeconds);
+            const maxOffset = Math.max(0, offsetSeconds);
+
+            // Get audio URLs
+            const masterUrl = this.getAudioUrlForFile(item.master.path, 'master');
+            const dubUrl = this.getAudioUrlForFile(item.dub.path, 'dub');
+
+            // Initialize audio engine if needed
+            if (!this.waveformVisualizer || !this.waveformVisualizer.audioEngine) {
+                if (!this.waveformVisualizer) {
+                    this.waveformVisualizer = new WaveformVisualizer();
+                }
+                if (!this.waveformVisualizer.audioEngine) {
+                    this.waveformVisualizer.audioEngine = new CoreAudioEngine();
+                }
+            }
+            const audioEngine = this.waveformVisualizer.audioEngine;
+
+            // Load master audio
+            let masterWaveformData = null;
+            try {
+                masterWaveformData = await audioEngine.loadAudioUrl(masterUrl, 'master');
+            } catch (err) {
+                console.error('Failed to load master audio:', err);
+                throw new Error(`Failed to load master audio: ${err.message}`);
+            }
+
+            // Load dub audio
+            let dubWaveformData = null;
+            try {
+                dubWaveformData = await audioEngine.loadAudioUrl(dubUrl, 'dub');
+            } catch (err) {
+                console.error('Failed to load dub audio:', err);
+                throw new Error(`Failed to load dub audio: ${err.message}`);
+            }
+
+            // Calculate canvas dimensions based on actual durations
+            const durations = [
+                masterWaveformData?.duration || 0,
+                dubWaveformData?.duration || 0
+            ];
+            const maxDuration = Math.max(...durations, 0);
+            const startTime = Math.min(0, minOffset);
+            const endTime = Math.max(maxDuration + Math.max(0, maxOffset), maxDuration);
+            const timeRange = Math.max(endTime - startTime, 30);
+            const gridIntervalSeconds = this.getWaveformGridInterval(timeRange);
+
+            const waveformHeight = 70;
+            const labelHeight = 14;
+            const trackSpacing = 16;
+            const labelWidth = 76;
+            const labelGap = 10;
+            const labelArea = labelWidth + labelGap;
+            const pixelsPerSecond = this.getWaveformPixelsPerSecond(timeRange);
+            const waveformPixelWidth = Math.min(4000, Math.max(1200, Math.round(timeRange * pixelsPerSecond)));
+            const canvasWidth = waveformPixelWidth + labelArea;
+
+            // Get frame rate and format offset
+            const fps = item.frameRate || this.detectedFrameRate || 23.976;
+            const timecode = this.formatTimecode(offsetSeconds, fps);
+            const timecodeWithSeconds = this.formatTimecodeWithSeconds(offsetSeconds, fps);
+            const offsetLeft = labelArea + ((offsetSeconds - startTime) / timeRange) * waveformPixelWidth;
+            const clampedOffsetLeft = Math.max(labelArea, Math.min(labelArea + waveformPixelWidth, offsetLeft));
+
+            // Create container structure (same as componentized view)
+            container.innerHTML = `
+                <div class="waveform-timeline-container" style="position: relative; width: 100%; background: rgba(8, 15, 32, 0.65); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px; padding: 38px 20px 22px; overflow-x: auto;">
+                    <!-- Master waveform track -->
+                    <div class="waveform-track" style="position: relative; width: ${canvasWidth}px; height: ${waveformHeight}px; margin-bottom: ${trackSpacing}px;">
+                        <div class="track-label" style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: ${labelWidth}px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: #f8fafc; background: rgba(37, 99, 235, 0.92); border: 1px solid rgba(255, 255, 255, 0.2); padding: 4px 6px; border-radius: 4px; z-index: 10;">
+                            AREF
+                        </div>
+                        <canvas id="master-waveform-${item.id}" 
+                                style="position: absolute; left: ${labelArea}px; top: 0; width: ${waveformPixelWidth}px; height: ${waveformHeight}px;"
+                                width="${Math.floor(waveformPixelWidth * (window.devicePixelRatio || 1))}"
+                                height="${Math.floor(waveformHeight * (window.devicePixelRatio || 1))}">
+                        </canvas>
+                    </div>
+
+                    <!-- Dub waveform track -->
+                    <div class="waveform-track" style="position: relative; width: ${canvasWidth}px; height: ${waveformHeight}px; margin-bottom: ${trackSpacing}px;">
+                        <div class="track-label" style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: ${labelWidth}px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: #f8fafc; background: rgba(21, 128, 61, 0.92); border: 1px solid rgba(255, 255, 255, 0.18); padding: 4px 6px; border-radius: 4px; z-index: 10;">
+                            Dub
+                        </div>
+                        <canvas id="dub-waveform-${item.id}" 
+                                style="position: absolute; left: ${labelArea}px; top: 0; width: ${waveformPixelWidth}px; height: ${waveformHeight}px;"
+                                width="${Math.floor(waveformPixelWidth * (window.devicePixelRatio || 1))}"
+                                height="${Math.floor(waveformHeight * (window.devicePixelRatio || 1))}">
+                        </canvas>
+                        <div class="offset-indicator" title="Offset: ${timecodeWithSeconds}" style="position: absolute; left: ${clampedOffsetLeft}px; top: 2px; background: rgba(248, 113, 113, 0.95); color: #0f172a; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.35); z-index: 20;">
+                            Offset: ${timecode}
+                        </div>
+                    </div>
+
+                    <!-- Zero reference line -->
+                    <div class="zero-line" style="position: absolute; left: ${labelArea + ((0 - startTime) / timeRange) * waveformPixelWidth}px; top: 0; bottom: 0; width: 2px; background: rgba(248, 113, 113, 0.9); box-shadow: 0 0 8px rgba(248, 113, 113, 0.35); z-index: 5;">
+                        <div style="position: absolute; top: 2px; left: 50%; transform: translateX(-50%); background: rgba(34, 197, 94, 0.95); color: #0f172a; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.35);">
+                            Zero: 00:00:00:00
+                        </div>
+                    </div>
+                </div>
+
+                <div class="waveform-legend" style="margin-top: 14px; display: flex; gap: 24px; font-size: 12px; color: #cbd5f5;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 30px; height: 16px; background: rgba(37, 99, 235, 0.92); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 2px;"></div>
+                        <span>AREF (Reference)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 30px; height: 16px; background: rgba(21, 128, 61, 0.92); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 2px;"></div>
+                        <span>Dub (Output)</span>
+                    </div>
+                </div>
+            `;
+
+            // Render master waveform (blue - AREF)
+            const masterCanvas = container.querySelector(`#master-waveform-${item.id}`);
+            if (masterCanvas && masterWaveformData) {
+                this.drawRealWaveform(masterCanvas, masterWaveformData, {
+                    color: 'rgba(248, 250, 252, 0.98)',
+                    fillColor: 'rgba(248, 250, 252, 0.85)',
+                    backgroundColor: 'rgba(30, 64, 175, 0.95)',
+                    startTime,
+                    timeRange,
+                    gridIntervalSeconds,
+                    labelHeight,
+                    showTimeLabels: true,
+                    gridColor: 'rgba(248, 250, 252, 0.18)',
+                    labelColor: 'rgba(248, 250, 252, 0.8)',
+                    centerLineColor: 'rgba(248, 250, 252, 0.12)'
+                });
+            }
+
+            // Render dub waveform (green - OUTPUT)
+            const dubCanvas = container.querySelector(`#dub-waveform-${item.id}`);
+            if (dubCanvas && dubWaveformData) {
+                this.drawRealWaveform(dubCanvas, dubWaveformData, {
+                    color: 'rgba(248, 250, 252, 0.96)',
+                    fillColor: 'rgba(248, 250, 252, 0.8)',
+                    backgroundColor: 'rgba(21, 128, 61, 0.95)',
+                    startTime,
+                    timeRange,
+                    gridIntervalSeconds,
+                    labelHeight,
+                    showTimeLabels: true,
+                    gridColor: 'rgba(248, 250, 252, 0.18)',
+                    labelColor: 'rgba(248, 250, 252, 0.8)',
+                    centerLineColor: 'rgba(248, 250, 252, 0.12)',
+                    offsetSeconds: offsetSeconds
+                });
+            }
+
+        } catch (error) {
+            console.error('Failed to render standard stacked waveforms:', error);
+            container.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: #64748b;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
+                    <p>Failed to render waveform visualization</p>
+                    <p style="font-size: 11px; margin-top: 8px; opacity: 0.7;">${error.message}</p>
+                </div>
+            `;
+        }
+    }
+
+    /**
      * Draw real waveform on canvas from waveform data
      */
     drawRealWaveform(canvas, waveformData, options = {}) {
@@ -8210,19 +8398,19 @@ class SyncAnalyzerUI {
                 ${this.generateOperatorGuidance(item, offsetSeconds, confidence, severity, severityText)}
 
                 <!-- Expandable Sections -->
-                <div class="details-section" id="section-waveform-${item.id}">
+                <div class="details-section expanded" id="section-waveform-${item.id}">
                     <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
                         <div class="section-title">
-                            <i class="fas fa-waveform"></i>
-                            <span>Waveform Visualization</span>
+                            <i class="fas fa-waveform-lines"></i>
+                            <span>Offset Visualization</span>
                         </div>
                         <i class="fas fa-chevron-down section-toggle"></i>
                     </div>
                     <div class="section-content">
-                        <div class="enhanced-waveform-visualization" id="enhanced-waveform-${item.id}">
+                        <div class="stacked-waveforms-container" id="stacked-waveforms-${item.id}">
                             <div class="waveform-loading">
                                 <i class="fas fa-spinner fa-spin"></i>
-                                <span>Generating waveform visualization...</span>
+                                <span>Loading waveforms...</span>
                             </div>
                         </div>
                     </div>
