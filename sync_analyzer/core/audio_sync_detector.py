@@ -502,8 +502,21 @@ class ProfessionalSyncDetector:
         correlation = scipy.signal.correlate(master_mfcc, dub_mfcc, mode='full')
         
         # Find peak
-        peak_idx = np.argmax(np.abs(correlation))
+        correlation_abs = np.abs(correlation)
+        peak_idx = np.argmax(correlation_abs)
         peak_value = correlation[peak_idx]
+        
+        # CRITICAL FIX: Validate peak prominence to reject false peaks
+        sorted_peaks = np.sort(correlation_abs)[-5:]  # Top 5 peaks
+        if len(sorted_peaks) > 1:
+            peak_ratio = sorted_peaks[-1] / (sorted_peaks[-2] + 1e-8)
+            if peak_ratio < 1.5:  # Peak must be at least 1.5x stronger than second peak
+                logger.warning(f"MFCC: Low peak prominence ratio: {peak_ratio:.2f}. May indicate false match.")
+                confidence_penalty = peak_ratio / 1.5  # Scale from 0-1
+            else:
+                confidence_penalty = 1.0
+        else:
+            confidence_penalty = 1.0
         
         # Convert to sample offset
         # For correlate(master, dub, mode='full'), zero-lag index is len(dub)-1
@@ -511,15 +524,24 @@ class ProfessionalSyncDetector:
         offset_samples = offset_frames * self.hop_length
         offset_seconds = offset_samples / self.sample_rate
         
+        # Sanity check - reject offsets >50% of analysis duration
+        analysis_duration = len(dub_mfcc) * self.hop_length / self.sample_rate
+        max_reasonable_offset = analysis_duration * 0.5
+        if abs(offset_seconds) > max_reasonable_offset:
+            logger.warning(f"MFCC: Offset {offset_seconds:.2f}s exceeds 50% of analysis duration "
+                         f"({analysis_duration:.1f}s). Likely false peak.")
+            return self._create_low_confidence_result(
+                f"MFCC - Offset too large ({offset_seconds:.2f}s > {max_reasonable_offset:.1f}s)"
+            )
+        
         # Calculate confidence based on peak prominence (more lenient scoring)
-        correlation_abs = np.abs(correlation)
         peak_height = correlation_abs[peak_idx]
         mean_correlation = np.mean(correlation_abs)
         std_correlation = np.std(correlation_abs)
 
         # Use signal-to-noise ratio approach: (peak - mean) / std
         snr = (peak_height - mean_correlation) / (std_correlation + 1e-8)
-        confidence = min(max(snr / 5, 0.0), 1.0)  # Normalize SNR to 0-1 range
+        confidence = min(max(snr / 5, 0.0), 1.0) * confidence_penalty  # Apply prominence penalty
         
         # Quality assessment
         quality_score = self._assess_correlation_quality(correlation, peak_idx)
@@ -579,17 +601,40 @@ class ProfessionalSyncDetector:
         
         # Cross-correlate
         correlation = scipy.signal.correlate(master_onset_signal, dub_onset_signal, mode='full')
-        peak_idx = np.argmax(correlation)
+        correlation_abs = np.abs(correlation)
+        peak_idx = np.argmax(correlation_abs)
+        
+        # CRITICAL FIX: Validate peak prominence to reject false peaks
+        sorted_peaks = np.sort(correlation_abs)[-5:]  # Top 5 peaks
+        if len(sorted_peaks) > 1:
+            peak_ratio = sorted_peaks[-1] / (sorted_peaks[-2] + 1e-8)
+            if peak_ratio < 1.5:  # Peak must be at least 1.5x stronger than second peak
+                logger.warning(f"Onset: Low peak prominence ratio: {peak_ratio:.2f}. May indicate false match.")
+                confidence_penalty = peak_ratio / 1.5  # Scale from 0-1
+            else:
+                confidence_penalty = 1.0
+        else:
+            confidence_penalty = 1.0
         
         # Zero-lag at len(dub)-1 for correlate(master, dub)
         offset_frames = peak_idx - (len(dub_onset_signal) - 1)
         offset_samples = offset_frames * self.hop_length
         offset_seconds = offset_samples / self.sample_rate
         
+        # Sanity check - reject offsets >50% of analysis duration
+        analysis_duration = max_length * self.hop_length / self.sample_rate
+        max_reasonable_offset = analysis_duration * 0.5
+        if abs(offset_seconds) > max_reasonable_offset:
+            logger.warning(f"Onset: Offset {offset_seconds:.2f}s exceeds 50% of analysis duration "
+                         f"({analysis_duration:.1f}s). Likely false peak.")
+            return self._create_low_confidence_result(
+                f"Onset - Offset too large ({offset_seconds:.2f}s > {max_reasonable_offset:.1f}s)"
+            )
+        
         # Calculate confidence
         peak_value = correlation[peak_idx]
-        mean_correlation = np.mean(np.abs(correlation))
-        confidence = min(peak_value / (mean_correlation + 1e-8) / 5, 1.0)
+        mean_correlation = np.mean(correlation_abs)
+        confidence = min(peak_value / (mean_correlation + 1e-8) / 5, 1.0) * confidence_penalty  # Apply prominence penalty
         
         return SyncResult(
             offset_samples=int(offset_samples),
@@ -651,19 +696,41 @@ class ProfessionalSyncDetector:
         combined_correlation = np.average(correlations, axis=0, weights=weights)
         
         # Find peak
-        peak_idx = np.argmax(np.abs(combined_correlation))
+        correlation_abs = np.abs(combined_correlation)
+        peak_idx = np.argmax(correlation_abs)
         peak_value = combined_correlation[peak_idx]
+        
+        # CRITICAL FIX: Validate peak prominence to reject false peaks
+        sorted_peaks = np.sort(correlation_abs)[-5:]  # Top 5 peaks
+        if len(sorted_peaks) > 1:
+            peak_ratio = sorted_peaks[-1] / (sorted_peaks[-2] + 1e-8)
+            if peak_ratio < 1.5:  # Peak must be at least 1.5x stronger than second peak
+                logger.warning(f"Spectral: Low peak prominence ratio: {peak_ratio:.2f}. May indicate false match.")
+                confidence_penalty = peak_ratio / 1.5  # Scale from 0-1
+            else:
+                confidence_penalty = 1.0
+        else:
+            confidence_penalty = 1.0
         
         # Convert to sample offset (zero-lag at len(dub)-1)
         offset_frames = peak_idx - (dub_spectral.shape[1] - 1)
         offset_samples = offset_frames * self.hop_length
         offset_seconds = offset_samples / self.sample_rate
         
+        # Sanity check - reject offsets >50% of analysis duration
+        analysis_duration = dub_spectral.shape[1] * self.hop_length / self.sample_rate
+        max_reasonable_offset = analysis_duration * 0.5
+        if abs(offset_seconds) > max_reasonable_offset:
+            logger.warning(f"Spectral: Offset {offset_seconds:.2f}s exceeds 50% of analysis duration "
+                         f"({analysis_duration:.1f}s). Likely false peak.")
+            return self._create_low_confidence_result(
+                f"Spectral - Offset too large ({offset_seconds:.2f}s > {max_reasonable_offset:.1f}s)"
+            )
+        
         # Calculate confidence
-        correlation_abs = np.abs(combined_correlation)
         peak_height = correlation_abs[peak_idx]
         mean_correlation = np.mean(correlation_abs)
-        confidence = min(peak_height / (mean_correlation + 1e-8) / 8, 1.0)
+        confidence = min(peak_height / (mean_correlation + 1e-8) / 8, 1.0) * confidence_penalty  # Apply prominence penalty
         
         return SyncResult(
             offset_samples=int(offset_samples),
@@ -730,9 +797,35 @@ class ProfessionalSyncDetector:
             peak_idx = best_local_idx
             peak_value = float(correlation_abs[peak_idx])
 
+        # CRITICAL FIX: Validate peak prominence to reject false peaks
+        # A true sync peak should be significantly stronger than other peaks
+        sorted_peaks = np.sort(correlation_abs)[-5:]  # Top 5 peaks
+        if len(sorted_peaks) > 1:
+            peak_ratio = sorted_peaks[-1] / (sorted_peaks[-2] + 1e-8)
+            if peak_ratio < 2.0:  # Peak must be at least 2x stronger than second peak
+                logger.warning(f"Low peak prominence ratio: {peak_ratio:.2f} (peak={peak_value:.4f}, "
+                             f"2nd={sorted_peaks[-2]:.4f}). This may indicate a false match.")
+                # Reduce confidence significantly for ambiguous peaks
+                confidence_penalty = peak_ratio / 2.0  # Scale from 0-1
+            else:
+                confidence_penalty = 1.0
+        else:
+            confidence_penalty = 1.0
+
         # Get offset in samples (NO downsampling - exact sample precision)
         offset_samples = int(lags[peak_idx])
         offset_seconds = offset_samples / float(self.sample_rate)
+
+        # CRITICAL FIX: Sanity check - reject offsets >50% of analysis duration
+        analysis_duration = min_len / self.sample_rate
+        max_reasonable_offset = analysis_duration * 0.5
+        if abs(offset_seconds) > max_reasonable_offset:
+            logger.warning(f"Offset {offset_seconds:.2f}s exceeds 50% of analysis duration "
+                         f"({analysis_duration:.1f}s). Likely false peak.")
+            # Return low-confidence result
+            return self._create_low_confidence_result(
+                f"Raw Audio - Offset too large ({offset_seconds:.2f}s > {max_reasonable_offset:.1f}s)"
+            )
 
         # Calculate confidence from peak prominence
         peak_height = correlation_abs[peak_idx]
@@ -740,7 +833,7 @@ class ProfessionalSyncDetector:
         std_correlation = np.std(correlation_abs)
 
         snr = (peak_height - mean_correlation) / (std_correlation + 1e-8)
-        confidence = min(max(snr / 8, 0.0), 1.0)
+        confidence = min(max(snr / 8, 0.0), 1.0) * confidence_penalty  # Apply prominence penalty
 
         return SyncResult(
             offset_samples=offset_samples,
@@ -983,7 +1076,23 @@ class ProfessionalSyncDetector:
         else:
             master_audio_for_analysis = master_audio
 
-        # Extract features (use trimmed master for analysis)
+        # CRITICAL FIX: Limit audio duration to prevent false correlation peaks
+        # Long files (>5 min) can have similar content later, causing false matches
+        MAX_ANALYSIS_DURATION = 300.0  # 5 minutes
+        master_samples_limit = int(MAX_ANALYSIS_DURATION * self.sample_rate)
+        dub_samples_limit = int(MAX_ANALYSIS_DURATION * self.sample_rate)
+
+        if len(master_audio_for_analysis) > master_samples_limit:
+            logger.info(f"Limiting master audio to first {MAX_ANALYSIS_DURATION:.0f}s for analysis "
+                       f"(was {len(master_audio_for_analysis)/self.sample_rate:.1f}s)")
+            master_audio_for_analysis = master_audio_for_analysis[:master_samples_limit]
+        
+        if len(dub_audio) > dub_samples_limit:
+            logger.info(f"Limiting dub audio to first {MAX_ANALYSIS_DURATION:.0f}s for analysis "
+                       f"(was {len(dub_audio)/self.sample_rate:.1f}s)")
+            dub_audio = dub_audio[:dub_samples_limit]
+
+        # Extract features (use trimmed and limited audio for analysis)
         logger.info("Extracting audio features...")
         master_features = self.extract_audio_features(master_audio_for_analysis)
         dub_features = self.extract_audio_features(dub_audio)

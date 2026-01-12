@@ -54,7 +54,8 @@ class SmartVerifier:
     
     # Default thresholds for indicators
     INDICATORS = {
-        'large_offset': 10.0,          # seconds - offsets > 10s get flagged
+        'large_offset': 5.0,          # seconds - offsets > 5s get flagged (lowered from 10s)
+        'very_large_offset': 30.0,     # seconds - offsets > 30s ALWAYS trigger verification
         'low_confidence': 0.70,        # GPU confidence below 70% triggers
         'offset_vs_duration': 0.5,     # offset > 50% of shorter file
         'component_disagreement': 0.5,  # seconds - component spread threshold
@@ -63,16 +64,17 @@ class SmartVerifier:
     
     # Severity weights for each indicator
     SEVERITY_WEIGHTS = {
-        'large_offset': 0.25,
+        'large_offset': 0.35,          # Increased from 0.25 - large offsets are more suspicious
+        'very_large_offset': 1.0,      # Always triggers verification
         'low_confidence': 0.30,
-        'offset_vs_duration': 0.20,
+        'offset_vs_duration': 0.25,    # Increased from 0.20
         'first_in_batch': 0.05,
         'component_disagreement': 0.30,
         'onset_deviation': 0.35,
     }
     
     # Threshold for triggering verification
-    VERIFICATION_THRESHOLD = 0.30  # 30% severity triggers verification
+    VERIFICATION_THRESHOLD = 0.20  # 20% severity triggers verification (lowered from 30%)
     
     def __init__(self, 
                  sample_rate: int = 22050,
@@ -119,6 +121,12 @@ class SmartVerifier:
         """
         triggered = []
         severity = 0.0
+        
+        # Check: Very large offset (MANDATORY verification)
+        if abs(gpu_offset) > self.thresholds.get('very_large_offset', 30.0):
+            triggered.append(f"very_large_offset ({abs(gpu_offset):.1f}s > {self.thresholds.get('very_large_offset', 30.0)}s)")
+            severity += self.SEVERITY_WEIGHTS['very_large_offset']
+            logger.warning(f"Indicator triggered: very_large_offset ({gpu_offset:.1f}s) - MANDATORY verification")
         
         # Check: Large offset
         if abs(gpu_offset) > self.thresholds['large_offset']:
