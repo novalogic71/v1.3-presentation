@@ -72,8 +72,9 @@ class QCPlayer {
         const audio = document.createElement('audio');
         audio.id = id;
         audio.preload = 'auto';
-        // Use 'anonymous' for CORS - 'use-credentials' can cause issues
-        audio.crossOrigin = 'anonymous';
+        // Don't set crossOrigin for same-origin requests (UI served from same server)
+        // Setting it can cause CORS issues with streaming responses
+        // audio.crossOrigin = 'anonymous';
         audio.style.display = 'none';
         document.body.appendChild(audio);
         return audio;

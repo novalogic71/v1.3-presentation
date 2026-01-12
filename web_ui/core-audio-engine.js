@@ -254,7 +254,8 @@ class CoreAudioEngine {
         const isVideo = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.mkv') || lower.endsWith('.avi');
         const el = document.createElement(isVideo ? 'video' : 'audio');
         el.style.display = 'none';
-        el.crossOrigin = 'use-credentials';
+        // Don't set crossOrigin for same-origin requests (UI and API served from same server)
+        // el.crossOrigin = 'use-credentials';
         el.preload = 'auto';
         el.playsInline = true;
         el.src = url;

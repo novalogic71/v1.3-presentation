@@ -55,7 +55,8 @@ class MultiTrackPlayer {
         const audio = document.createElement('audio');
         audio.id = `mtp-audio-${trackId}`;
         audio.preload = 'metadata'; // Fast: only load metadata, not full audio
-        audio.crossOrigin = 'anonymous';
+        // Don't set crossOrigin for same-origin requests
+        // audio.crossOrigin = 'anonymous';
         audio.style.display = 'none';
         this.container.appendChild(audio);
         

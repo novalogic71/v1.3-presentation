@@ -470,7 +470,8 @@ if (window.WaveformVisualizer) {
                 el.setAttribute('data-role', key);
                 el.preload = 'auto';
                 el.style.display = 'none';
-                el.crossOrigin = 'use-credentials';
+                // Don't set crossOrigin for same-origin requests
+                // el.crossOrigin = 'use-credentials';
                 unifiedEl.appendChild(el);
             }
             if (el.src !== url) el.src = url;

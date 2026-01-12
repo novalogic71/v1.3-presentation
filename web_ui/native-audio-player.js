@@ -28,7 +28,8 @@ class NativeAudioPlayer {
         const audio = document.createElement('audio');
         audio.id = `native-audio-${id}`;
         audio.preload = 'metadata'; // Fast: just get duration
-        audio.crossOrigin = 'anonymous';
+        // Don't set crossOrigin for same-origin requests
+        // audio.crossOrigin = 'anonymous';
         audio.style.display = 'none';
         document.body.appendChild(audio);
         
