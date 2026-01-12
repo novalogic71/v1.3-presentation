@@ -103,7 +103,7 @@ class AudioEmbeddingExtractor:
         """Initialize Wav2Vec2 model for embeddings."""
         try:
             import transformers
-            from transformers import Wav2Vec2Model, Wav2Vec2Processor
+            from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
             
             # Allow overriding the model path/id to a local directory
             model_name = os.getenv("AI_WAV2VEC2_MODEL_PATH", "facebook/wav2vec2-base-960h")
@@ -113,8 +113,12 @@ class AudioEmbeddingExtractor:
             # Enforce fully offline usage if HF_LOCAL_ONLY is set, or when a local path is provided
             local_only_env = str(os.getenv("HF_LOCAL_ONLY", "1")).lower() in {"1", "true", "yes"}
             force_local = local_only_env or os.path.isdir(model_name)
+            
+            logger.info(f"Loading Wav2Vec2 from: {model_name}, cache: {cache_dir}, local_only: {force_local}")
 
-            self.processor = Wav2Vec2Processor.from_pretrained(
+            # Use FeatureExtractor instead of Processor - we only need audio preprocessing,
+            # not tokenization (which requires vocab.json that may not be in cache)
+            self.processor = Wav2Vec2FeatureExtractor.from_pretrained(
                 model_name,
                 cache_dir=cache_dir,
                 local_files_only=force_local,

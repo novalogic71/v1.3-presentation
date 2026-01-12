@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/sync", response_model=SyncAnalysisResponse, status_code=202)
+@router.post("/sync", response_model=SyncAnalysisResponse)
 async def analyze_sync(
     request: SyncAnalysisRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    wait: bool = Query(False, description="Wait for analysis to complete before returning")
 ):
     """
     Analyze sync between master and dub audio/video files.
@@ -91,6 +92,47 @@ async def analyze_sync(
     """
     try:
         analysis_id = await sync_analyzer_service.analyze_sync(request)
+        
+        # If wait=True, poll until analysis completes
+        if wait:
+            max_wait_seconds = 600  # 10 minute timeout
+            poll_interval = 0.5  # Check every 500ms
+            elapsed = 0
+            
+            while elapsed < max_wait_seconds:
+                status = await sync_analyzer_service.get_analysis_status(analysis_id)
+                if not status:
+                    break
+                    
+                current_status = status.get("status")
+                if hasattr(current_status, "value"):
+                    current_status = current_status.value
+                    
+                if current_status in ["completed", "failed", "cancelled"]:
+                    # Analysis finished - return full result
+                    result = await sync_analyzer_service.get_analysis_result(analysis_id)
+                    result_dict = None
+                    if result:
+                        result_dict = result.model_dump() if hasattr(result, 'model_dump') else result
+                    
+                    return SyncAnalysisResponse(
+                        analysis_id=analysis_id,
+                        status=AnalysisStatus(current_status) if current_status in ["completed", "failed", "cancelled", "pending", "processing"] else AnalysisStatus.COMPLETED,
+                        message=f"Sync analysis {current_status}",
+                        result=result_dict,
+                        progress=100.0 if current_status == "completed" else status.get("progress", 0)
+                    )
+                
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+            
+            # Timeout - return current status
+            return SyncAnalysisResponse(
+                analysis_id=analysis_id,
+                status=AnalysisStatus.PROCESSING,
+                message="Analysis still in progress (timeout waiting)",
+                progress=status.get("progress", 0) if status else 0
+            )
         
         return SyncAnalysisResponse(
             analysis_id=analysis_id,

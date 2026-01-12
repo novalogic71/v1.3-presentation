@@ -9,9 +9,11 @@ This document provides complete end-to-end API request schemas and workflows for
 3. [File Management Workflow](#file-management-workflow)
 4. [Single Analysis Workflow](#single-analysis-workflow)
 5. [Batch Processing Workflow](#batch-processing-workflow)
-6. [Complete API Schema Reference](#complete-api-schema-reference)
-7. [Error Handling](#error-handling)
-8. [Best Practices](#best-practices)
+6. [Waveform API Workflow](#-waveform-api-workflow-new)
+7. [Backend Monitoring Workflow](#-backend-monitoring-workflow-new)
+8. [Complete API Schema Reference](#complete-api-schema-reference)
+9. [Error Handling](#error-handling)
+10. [Best Practices](#best-practices)
 
 ---
 
@@ -484,6 +486,247 @@ enum BatchStatus {
 
 ---
 
+## 🔄 Cross-Browser Sync Workflow (NEW)
+
+The batch queue is stored server-side in Redis, enabling real-time sync across all browser sessions.
+
+### 1. Get Current Batch Queue
+
+**Endpoint:** `GET /batch-queue`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/batch-queue"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "items": [
+    {
+      "id": 1234567890,
+      "type": "componentized",
+      "status": "completed",
+      "master": {"path": "/mnt/data/master.mov", "name": "master.mov"},
+      "components": [...],
+      "result": {...}
+    }
+  ],
+  "updated_at": "2026-01-09T12:00:00Z"
+}
+```
+
+### 2. Save Batch Queue (Auto-synced from UI)
+
+**Endpoint:** `POST /batch-queue`
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/batch-queue" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [...],
+    "clientId": "browser-abc123"
+  }'
+```
+
+---
+
+## 🔍 API Job Discovery Workflow (NEW)
+
+Jobs submitted via API automatically appear in the UI batch queue.
+
+### 1. Submit Job via API
+
+**Endpoint:** `POST /analysis/componentized/async`
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/analysis/componentized/async" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master": "/mnt/data/master.mov",
+    "components": [
+      {"path": "/mnt/data/Lt.wav", "label": "Lt"}
+    ],
+    "methods": ["gpu"],
+    "offset_mode": "channel_aware"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "job_id": "abc123-def456",
+  "status": "queued"
+}
+```
+
+### 2. Job Automatically Appears in UI
+
+The UI polls `/api/v1/job-registry` every 10 seconds and adds new jobs to the batch queue.
+
+### 3. Query Job Registry
+
+**Endpoint:** `GET /job-registry`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/job-registry?since_hours=24"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "jobs": [
+    {
+      "job_id": "abc123-def456",
+      "type": "componentized",
+      "status": "completed",
+      "master_file": "/mnt/data/master.mov",
+      "master_name": "master.mov",
+      "component_count": 4,
+      "progress": 100,
+      "result": {...},
+      "created_at": "2026-01-09T12:00:00Z",
+      "source": "api"
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+## 📊 Backend Monitoring Workflow (NEW)
+
+Monitor GPU, system resources, and job status via the dashboard API.
+
+### 1. Get GPU Status
+
+**Endpoint:** `GET /dashboard/gpu-info`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/gpu-info"
+```
+
+### 2. Get System Info
+
+**Endpoint:** `GET /dashboard/system-info`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/system-info"
+```
+
+### 3. Get Celery Worker Status
+
+**Endpoint:** `GET /dashboard/celery-info`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/dashboard/celery-info"
+```
+
+---
+
+## 🎵 Waveform API Workflow (NEW)
+
+Pre-generated waveforms enable instant QC visualization without needing to decode audio files in the browser.
+
+### 1. Get Waveforms by Analysis ID
+
+**Endpoint:** `GET /waveforms/analysis/{analysis_id}`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/waveforms/analysis/analysis_20250109_120000_abc123"
+```
+
+**Response:**
+```json
+{
+  "analysis_id": "analysis_20250109_120000_abc123",
+  "master": {
+    "source_path": "/mnt/data/master.mp4",
+    "source_name": "master.mp4",
+    "duration": 120.5,
+    "sample_rate": 22050,
+    "width": 2000,
+    "peaks": [0.1, 0.2, 0.15, ...],
+    "rms": [0.05, 0.1, 0.08, ...],
+    "generated_at": "2025-01-09T12:00:00Z"
+  },
+  "dub": {
+    "source_path": "/mnt/data/dub.mxf",
+    "source_name": "dub.mxf",
+    "duration": 120.5,
+    "sample_rate": 22050,
+    "width": 2000,
+    "peaks": [0.12, 0.18, 0.14, ...],
+    "rms": [0.06, 0.09, 0.07, ...],
+    "generated_at": "2025-01-09T12:00:00Z"
+  },
+  "generated_at": "2025-01-09T12:00:00Z"
+}
+```
+
+### 2. Generate Waveforms Manually
+
+**Endpoint:** `POST /waveforms/generate`
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/waveforms/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_path": "/mnt/data/project/master.mp4",
+    "dub_path": "/mnt/data/project/dub.mxf",
+    "analysis_id": "analysis_20250109_120000_abc123",
+    "force_regenerate": false
+  }'
+```
+
+### 3. Generate Waveforms (Background)
+
+**Endpoint:** `POST /waveforms/generate-async`
+
+Returns immediately while waveform generation runs in background.
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/waveforms/generate-async" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_path": "/mnt/data/project/master.mp4",
+    "dub_path": "/mnt/data/project/dub.mxf",
+    "analysis_id": "analysis_20250109_120000_abc123"
+  }'
+```
+
+### 4. List Cached Waveforms
+
+**Endpoint:** `GET /waveforms/list`
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/waveforms/list?limit=50"
+```
+
+### 5. Clear Waveform Cache
+
+**Endpoint:** `DELETE /waveforms/clear`
+
+```bash
+# Clear all waveforms
+curl -X DELETE "http://localhost:8000/api/v1/waveforms/clear"
+
+# Clear waveforms older than 30 days
+curl -X DELETE "http://localhost:8000/api/v1/waveforms/clear?older_than_days=30"
+```
+
+### Waveform Notes
+
+- Waveforms are automatically generated after analysis completes
+- Cache files are small (~50-100KB each) and load instantly
+- Stored in `waveform_cache/` directory
+- Use `generate_all_waveforms.py` to batch-generate for existing analyses
+
+---
+
 ## 🔗 Related Documentation
 
 - [API Reference](./README.md) - Complete API documentation
@@ -501,4 +744,4 @@ For technical support or questions:
 
 ---
 
-*Generated on 2025-08-28 | Version 1.0.0*
+*Generated on 2026-01-09 | Version 1.3.0*

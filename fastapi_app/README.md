@@ -433,6 +433,53 @@ curl -X POST "http://localhost:8000/api/v1/ai/sync" \
   }'
 ```
 
+### Waveform Endpoints
+
+Pre-generated waveforms enable instant QC visualization in the browser.
+
+#### 1. Get Waveforms by Analysis ID
+```http
+GET /api/v1/waveforms/analysis/{analysis_id}
+```
+
+**Curl Example:**
+```bash
+curl -X GET "http://localhost:8000/api/v1/waveforms/analysis/analysis_20250109_120000_abc123"
+```
+
+#### 2. Generate Waveforms
+```http
+POST /api/v1/waveforms/generate
+Content-Type: application/json
+
+{
+  "master_path": "/mnt/data/project/master.mp4",
+  "dub_path": "/mnt/data/project/dub.mxf",
+  "analysis_id": "analysis_20250109_120000_abc123"
+}
+```
+
+**Curl Example:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/waveforms/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "master_path": "/mnt/data/project/master.mp4",
+    "dub_path": "/mnt/data/project/dub.mxf",
+    "analysis_id": "analysis_20250109_120000_abc123"
+  }'
+```
+
+#### 3. List Cached Waveforms
+```http
+GET /api/v1/waveforms/list?limit=50
+```
+
+#### 4. Clear Waveform Cache
+```http
+DELETE /api/v1/waveforms/clear?older_than_days=30
+```
+
 ### Health and Monitoring
 
 #### 1. Health Check

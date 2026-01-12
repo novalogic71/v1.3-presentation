@@ -164,6 +164,10 @@ def create_application() -> FastAPI:
                 "name": "health",
                 "description": "Health checks and system status monitoring.",
             },
+            {
+                "name": "waveforms",
+                "description": "Pre-generated waveform data for instant QC visualization. Waveforms are generated during analysis and cached for fast loading.",
+            },
         ],
     )
     

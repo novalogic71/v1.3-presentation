@@ -458,6 +458,19 @@ class SyncAnalyzerService:
             except Exception as _db_err:
                 logger.warning(f"Could not persist report to DB: {_db_err}")
 
+            # Generate waveform data for QC visualization (background, non-blocking)
+            try:
+                from sync_analyzer.utils.waveform_generator import WaveformGenerator
+                waveform_gen = WaveformGenerator()
+                waveform_gen.generate_pair(
+                    request.master_file,
+                    request.dub_file,
+                    analysis_id
+                )
+                logger.info(f"Waveform data generated for {analysis_id}")
+            except Exception as _wf_err:
+                logger.warning(f"Waveform generation failed (non-critical): {_wf_err}")
+
             # Persist job completion to jobs database
             try:
                 complete_job(analysis_id, result_data=analysis_result.model_dump())

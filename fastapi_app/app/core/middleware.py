@@ -86,6 +86,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         current_time = time.time()
         client_ip = request.client.host if request.client else "unknown"
         
+        # Skip rate limiting for localhost - needed for batch processing UI
+        if client_ip in ("127.0.0.1", "localhost", "::1"):
+            response = await call_next(request)
+            response.headers["X-RateLimit-Limit"] = "unlimited"
+            response.headers["X-RateLimit-Remaining"] = "unlimited"
+            return response
+        
         # Reset counters every minute
         if current_time - self.last_reset >= 60:
             self.request_counts.clear()
@@ -107,10 +114,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Process request
         response = await call_next(request)
         
-        # Add rate limit headers
+        # Add rate limit headers (use .get() to handle race condition during reset)
+        current_count = self.request_counts.get(client_ip, 0)
         response.headers["X-RateLimit-Limit"] = str(self.requests_per_minute)
         response.headers["X-RateLimit-Remaining"] = str(
-            max(0, self.requests_per_minute - self.request_counts[client_ip])
+            max(0, self.requests_per_minute - current_count)
         )
         response.headers["X-RateLimit-Reset"] = str(int(self.last_reset + 60))
         
