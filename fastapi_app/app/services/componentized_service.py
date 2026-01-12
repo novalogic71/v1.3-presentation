@@ -28,6 +28,7 @@ except ImportError:
     sf = None
 
 from sync_analyzer.analysis import analyze
+from sync_analyzer.core.smart_verify import SmartVerifier
 from .job_manager import job_manager
 
 logger = logging.getLogger(__name__)
@@ -523,14 +524,25 @@ def detect_channel_type(filename: str) -> str:
             3: 'mixdown'
         }.get(idx, 'unknown')
     
-    # Pattern 2: Pro Tools / standard channel naming
+    # Pattern 2: Channel configuration patterns (5.1, 7.1, 2.0, etc.)
+    # Match: 5_1, 5.1, 51, 5-1 (surround)
+    if re.search(r'[_\-\.]?5[_\-\.]?1[_\-\.]?|[_\-\.]surround[_\-\.]?', fn_lower):
+        return 'surround_51'
+    # Match: 7_1, 7.1, 71 (7.1 surround)
+    if re.search(r'[_\-\.]?7[_\-\.]?1[_\-\.]?', fn_lower):
+        return 'surround_71'
+    # Match: 2_0, 2.0, 20, stereo, LTRT (stereo/mixdown)
+    if re.search(r'[_\-\.]?2[_\-\.]?0[_\-\.]?|[_\-\.]ltrt|[_\-\.]stereo[_\-\.]?|[_\-\.]2ch', fn_lower):
+        return 'mixdown'
+    
+    # Pattern 3: Pro Tools / standard channel naming
     if re.search(r'[_\-\.]lfe[_\-\.]?|[_\-\.]sub[_\-\.]?', fn_lower):
         return 'center_lfe'
     if re.search(r'[_\-\.]c[_\-\.]|[_\-\.]center[_\-\.]?|[_\-\.]dialogue[_\-\.]?', fn_lower):
         return 'center_lfe'
-    if re.search(r'[_\-\.](ls|rs|lrs|rrs|lss|rss)[_\-\.]?|[_\-\.]surround|[_\-\.]rear', fn_lower):
+    if re.search(r'[_\-\.](ls|rs|lrs|rrs|lss|rss)[_\-\.]?|[_\-\.]rear', fn_lower):
         return 'surround'
-    if re.search(r'[_\-\.](lt|rt)[_\-\.]|[_\-\.]ltrt|[_\-\.]mix[_\-\.]?|[_\-\.]stereo[_\-\.]?|[_\-\.]2ch', fn_lower):
+    if re.search(r'[_\-\.](lt|rt)[_\-\.]|[_\-\.]mix[_\-\.]?', fn_lower):
         return 'mixdown'
     if re.search(r'[_\-\.](l|r|left|right)[_\-\.]', fn_lower):
         return 'stereo_lr'
@@ -544,6 +556,8 @@ def get_optimal_method(channel_type: str) -> List[str]:
         'stereo_lr': ['spectral'],
         'center_lfe': ['onset'],
         'surround': ['spectral'],
+        'surround_51': ['spectral', 'onset'],  # 5.1 surround - use both
+        'surround_71': ['spectral', 'onset'],  # 7.1 surround - use both
         'mixdown': ['onset', 'spectral'],
         'unknown': ['spectral', 'onset']
     }.get(channel_type, ['spectral'])
@@ -609,7 +623,8 @@ def run_componentized_analysis(
     refine_window_seconds: float = 8.0,
     refine_pad_seconds: float = 2.0,
     frame_rate: float = 23.976,
-    job_id: str = None
+    job_id: str = None,
+    verbose: bool = False
 ) -> Dict[str, Any]:
     """
     Run componentized analysis with the specified mode.
@@ -748,6 +763,19 @@ def _run_gpu_analysis(
     component_results = []
     offsets = []
     
+    # Get master duration for comparison
+    import subprocess
+    master_duration = None
+    try:
+        probe_cmd = ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', 
+                     '-of', 'default=noprint_wrappers=1:nokey=1', master_path]
+        master_duration = float(subprocess.check_output(probe_cmd, text=True).strip())
+    except Exception:
+        pass
+    
+    # Store master findings
+    master_findings = []
+    
     for comp_idx, comp in enumerate(components):
         base_progress = 15 + int((comp_idx / total_comps) * 50)
         job_manager.update_progress(job_id, base_progress, f"GPU analyzing: {comp['name']}")
@@ -756,6 +784,42 @@ def _run_gpu_analysis(
         
         try:
             result = detector.detect_sync(master_path, comp["path"])
+            
+            # Build findings/notes list
+            findings = []
+            
+            # Bars/tone detection
+            if result.bars_tone_detected:
+                findings.append(f"🎵 Bars/tone detected at head ({result.bars_tone_duration:.1f}s)")
+                if comp_idx == 0:  # Only add to master findings once
+                    master_findings.append(f"Master has bars/tone ({result.bars_tone_duration:.1f}s)")
+            
+            # Get component duration for tail comparison
+            comp_duration = None
+            try:
+                probe_cmd = ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+                             '-of', 'default=noprint_wrappers=1:nokey=1', comp["path"]]
+                comp_duration = float(subprocess.check_output(probe_cmd, text=True).strip())
+            except Exception:
+                pass
+            
+            # Compare durations (accounting for offset)
+            if master_duration and comp_duration:
+                # Calculate effective content end times
+                master_end = master_duration
+                comp_end = comp_duration + result.offset_seconds  # Component end relative to master timeline
+                
+                tail_diff = comp_end - master_end
+                if tail_diff > 1.0:  # Component extends >1s beyond master
+                    findings.append(f"📏 Component tail is longer (+{tail_diff:.1f}s)")
+                elif tail_diff < -1.0:  # Component ends before master
+                    findings.append(f"📏 Component tail is shorter ({tail_diff:.1f}s)")
+                
+                # Head difference
+                if result.offset_seconds > 1.0:
+                    findings.append(f"🔄 Head offset: component starts {result.offset_seconds:.1f}s into master")
+                elif result.offset_seconds < -1.0:
+                    findings.append(f"🔄 Head offset: component starts {abs(result.offset_seconds):.1f}s before master")
             
             component_results.append({
                 "component": comp["label"],
@@ -768,6 +832,10 @@ def _run_gpu_analysis(
                 "method_used": "gpu (wav2vec2)",
                 "method_results": [{"method": "gpu", "offset_seconds": result.offset_seconds, "confidence": result.confidence}],
                 "status": "completed",
+                "findings": findings,
+                "bars_tone_detected": result.bars_tone_detected,
+                "bars_tone_duration": result.bars_tone_duration,
+                "component_duration": comp_duration,
             })
             offsets.append(result.offset_seconds)
             logger.info(f"GPU: {comp['name']}: offset={result.offset_seconds:.3f}s, conf={result.confidence:.2%}")
@@ -781,21 +849,41 @@ def _run_gpu_analysis(
                 "confidence": 0.0,
                 "error": str(comp_err),
                 "status": "failed",
+                "findings": [f"❌ Analysis failed: {str(comp_err)[:50]}"],
             })
     
-    # STEP 2: Check if offsets are consistent
+    # STEP 2: Use SmartVerifier to check if verification is needed
     if len(offsets) > 1:
         offset_spread = max(offsets) - min(offsets)
-        consistency_threshold = 2.0  # seconds
-        offsets_consistent = offset_spread <= consistency_threshold
+        avg_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results)
         
-        logger.info(f"Step 2: Checking consistency - spread={offset_spread:.3f}s, threshold={consistency_threshold}s")
+        # Get duration info for SmartVerifier
+        comp_durations = [r.get('component_duration') for r in component_results if r.get('component_duration')]
+        avg_comp_duration = sum(comp_durations) / len(comp_durations) if comp_durations else None
         
-        if offsets_consistent:
-            logger.info(f"✅ Offsets are CONSISTENT (spread={offset_spread:.3f}s) - using GPU results directly")
+        # Use SmartVerifier to determine if verification is needed
+        verifier = SmartVerifier()
+        verify_result = verifier.check_indicators(
+            gpu_offset=offsets[0],  # Check first result
+            gpu_confidence=avg_confidence,
+            master_duration=master_duration,
+            dub_duration=avg_comp_duration,
+            other_component_offsets=offsets[1:] if len(offsets) > 1 else None,
+            is_first_in_batch=False
+        )
+        
+        logger.info(f"Step 2: SmartVerifier check - spread={offset_spread:.3f}s, avg_conf={avg_confidence:.1%}")
+        logger.info(f"   Severity: {verify_result.severity_score:.0%}, Indicators: {len(verify_result.triggered_indicators)}")
+        
+        needs_verification = verify_result.needs_verification
+        
+        if not needs_verification:
+            logger.info(f"✅ SmartVerifier: {verify_result.recommendation}")
         else:
-            # STEP 3: Offsets differ - verify with mix-and-analyze
-            logger.warning(f"⚠️ Offsets DIFFER (spread={offset_spread:.3f}s) - verifying with mix analysis...")
+            reason = verify_result.triggered_indicators[:3]  # Top 3 reasons
+            
+            # STEP 3: Verify with mix-and-analyze
+            logger.warning(f"⚠️ Verification needed ({', '.join(reason)}) - running mix analysis...")
             job_manager.update_progress(job_id, 70, "Offsets differ - verifying with mix analysis...")
             
             mixed_file = None
@@ -820,8 +908,10 @@ def _run_gpu_analysis(
                     inputs_str = ''.join([f'[{i}:a]' for i in range(total_comps)])
                     filter_complex = f'{inputs_str}amerge=inputs={total_comps},pan=stereo|c0<c0|c1<c1[out]'
                 
+                # Skip first 65s of components (potential bars/tone) and take 300s
                 cmd = [
                     'ffmpeg', '-y',
+                    '-ss', '65',  # Skip potential bars/tone in components
                     *inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[out]',
@@ -874,12 +964,90 @@ def _run_gpu_analysis(
                     
                     logger.info(f"🔍 Verification result: {verified_offset:.3f}s ({verify_method}, {verified_confidence:.1%} conf)")
                     
+                    # SANITY CHECK: Verified offset should be within reasonable range of GPU results
+                    # If verification result is wildly different, it's likely a false correlation
+                    median_gpu_offset = sorted(offsets)[len(offsets)//2]
+                    max_reasonable_deviation = max(offset_spread * 3, 30)  # At least 30s tolerance
+                    
+                    if abs(verified_offset - median_gpu_offset) > max_reasonable_deviation:
+                        # Verification found a false peak - try targeted MFCC on each component
+                        logger.warning(f"⚠️ Verification result ({verified_offset:.1f}s) too far from GPU results "
+                                     f"(median={median_gpu_offset:.1f}s) - trying targeted MFCC on components")
+                        
+                        # Find the most confident GPU result as fallback
+                        best_gpu = max(component_results, key=lambda x: x.get('confidence', 0))
+                        
+                        # REFINEMENT: Try MFCC on each component, find one that agrees with GPU cluster
+                        best_mfcc_offset = None
+                        best_mfcc_confidence = 0
+                        best_mfcc_component = None
+                        
+                        job_manager.update_progress(job_id, 85, "Refining offset with targeted MFCC...")
+                        
+                        all_mfcc_results = []  # Track all MFCC results for consensus
+                        
+                        for comp in components:
+                            try:
+                                logger.info(f"🎯 Trying MFCC on {comp['label']}...")
+                                refined_consensus, refined_results, _ = analyze(
+                                    Path(master_path),
+                                    Path(comp['path']),
+                                    methods=['mfcc']
+                                )
+                                
+                                if refined_results.get('mfcc') and refined_results['mfcc'].confidence >= 0.7:
+                                    mfcc_offset = refined_results['mfcc'].offset_seconds
+                                    mfcc_conf = refined_results['mfcc'].confidence
+                                    
+                                    all_mfcc_results.append((mfcc_offset, mfcc_conf, comp['label']))
+                                    
+                                    # Check if this MFCC result is near any GPU result (within 5s)
+                                    close_to_gpu = any(abs(mfcc_offset - off) < 5 for off in offsets)
+                                    
+                                    logger.info(f"   {comp['label']}: MFCC={mfcc_offset:.2f}s ({mfcc_conf:.1%}), "
+                                              f"near_GPU={close_to_gpu}")
+                                    
+                                    # Trust HIGH CONFIDENCE MFCC even if not near GPU
+                                    # GPU bars/tone detection can be wrong, but MFCC 100% is reliable
+                                    if mfcc_conf > best_mfcc_confidence:
+                                        best_mfcc_offset = mfcc_offset
+                                        best_mfcc_confidence = mfcc_conf
+                                        best_mfcc_component = comp['label']
+                            except Exception as e:
+                                logger.warning(f"   {comp['label']}: MFCC failed - {e}")
+                        
+                        # Check if multiple MFCC results agree (stronger validation)
+                        if len(all_mfcc_results) >= 2:
+                            offsets_mfcc = [r[0] for r in all_mfcc_results]
+                            mfcc_spread = max(offsets_mfcc) - min(offsets_mfcc)
+                            if mfcc_spread < 2.0:  # MFCC results agree within 2 seconds
+                                logger.info(f"✅ Multiple MFCC results agree (spread={mfcc_spread:.2f}s)")
+                                # Use the highest confidence MFCC result
+                                best_result = max(all_mfcc_results, key=lambda x: x[1])
+                                best_mfcc_offset = best_result[0]
+                                best_mfcc_confidence = best_result[1]
+                                best_mfcc_component = f"consensus ({len(all_mfcc_results)} components)"
+                        
+                        # Use best MFCC result if found, otherwise fall back to best GPU
+                        if best_mfcc_offset is not None:
+                            verified_offset = best_mfcc_offset
+                            verified_confidence = best_mfcc_confidence
+                            verify_method = f'mfcc_refined ({best_mfcc_component})'
+                            logger.info(f"✅ Using refined MFCC from {best_mfcc_component}: {verified_offset:.3f}s")
+                        else:
+                            verified_offset = best_gpu['offset_seconds']
+                            verified_confidence = best_gpu['confidence']
+                            verify_method = 'gpu_best'
+                            logger.warning(f"No valid MFCC refinement - using best GPU: {verified_offset:.3f}s")
+                        
+                        logger.info(f"📍 Final offset: {verified_offset:.3f}s ({verify_method})")
+                    
                     # STEP 4: Correct all component results with verified offset
                     job_manager.update_progress(job_id, 90, "Correcting offsets...")
                     
                     for comp_result in component_results:
                         original_offset = comp_result['offset_seconds']
-                        if abs(original_offset - verified_offset) > consistency_threshold:
+                        if abs(original_offset - verified_offset) > SmartVerifier.INDICATORS['component_disagreement']:
                             logger.info(f"🔧 Correcting {comp_result['component']}: {original_offset:.3f}s → {verified_offset:.3f}s")
                             comp_result['original_offset_seconds'] = original_offset
                             comp_result['offset_seconds'] = verified_offset
@@ -903,6 +1071,8 @@ def _run_gpu_analysis(
                         "original_spread": offset_spread,
                         "component_results": component_results,
                         "overall_offset": {"offset_seconds": verified_offset, "confidence": verified_confidence},
+                        "master_findings": master_findings,
+                        "master_duration": master_duration,
                     }
                     
             except Exception as e:
@@ -930,6 +1100,8 @@ def _run_gpu_analysis(
         "method_used": "gpu (wav2vec2)",
         "component_results": component_results,
         "overall_offset": {"offset_seconds": voted_offset, "confidence": overall_confidence},
+        "master_findings": master_findings,
+        "master_duration": master_duration,
     }
 
 

@@ -13,6 +13,16 @@ class SyncAnalyzerUI {
         this.currentBatchIndex = -1;
         this.detectedFrameRate = 23.976; // Default frame rate (industry standard)
         
+        // Unique client ID for tracking which browser made updates
+        this.clientId = localStorage.getItem('sync-analyzer-client-id') || this.generateClientId();
+        localStorage.setItem('sync-analyzer-client-id', this.clientId);
+        
+        // Start periodic sync for cross-browser updates (every 10 seconds)
+        this.startPeriodicSync();
+        
+        // Track last seen job timestamp for polling new API jobs
+        this.lastJobPollTime = new Date().toISOString();
+        
         // Parallel processing configuration
         this.maxConcurrentJobs = 1; // Number of jobs to process in parallel (start with 1 to avoid memory issues)
         this.activeJobs = new Map(); // Track currently running jobs by item ID
@@ -29,6 +39,8 @@ class SyncAnalyzerUI {
 
         this.initializeElements();
         this.initComponentizedOffsetMode();
+        this.initBrowserTabs();
+        this.initDefaultMethods();
         this.bindEvents();
         this.loadFileTree();
 
@@ -281,8 +293,13 @@ class SyncAnalyzerUI {
             addToBatch: document.getElementById('add-to-batch'),
             uploadCsvBatch: document.getElementById('upload-csv-batch'),
             csvFileInput: document.getElementById('csv-file-input'),
+            importCsvBtn: document.getElementById('import-csv-btn'),
             concurrentJobs: document.getElementById('concurrent-jobs'),
+            jobsDropdownBtn: document.getElementById('jobs-dropdown-btn'),
+            jobsDropdownMenu: document.getElementById('jobs-dropdown-menu'),
+            jobsLabel: document.getElementById('jobs-label'),
             processBatch: document.getElementById('process-batch'),
+            refreshBatchStatus: document.getElementById('refresh-batch-status'),
             repairAllBatch: document.getElementById('repair-all-batch'),
             exportDropdownBtn: document.getElementById('export-dropdown-btn'),
             exportDropdownMenu: document.getElementById('export-dropdown-menu'),
@@ -318,7 +335,27 @@ class SyncAnalyzerUI {
             componentCount: document.getElementById('component-count'),
             selectComponentsBtn: document.getElementById('select-components-btn'),
             analyzeComponentizedBtn: document.getElementById('analyze-componentized-btn'),
-            componentizedOffsetRadios: document.querySelectorAll('input[name="componentized-offset-mode"]')
+            componentizedOffsetRadios: document.querySelectorAll('input[name="componentized-offset-mode"]'),
+            // Maintenance elements
+            maintClearJobs: document.getElementById('maint-clear-jobs'),
+            maintClearWaveforms: document.getElementById('maint-clear-waveforms'),
+            maintRestartCelery: document.getElementById('maint-restart-celery'),
+            maintFlushRedis: document.getElementById('maint-flush-redis'),
+            maintHealthCheck: document.getElementById('maint-health-check'),
+            maintFactoryReset: document.getElementById('maint-factory-reset'),
+            maintenanceStatus: document.getElementById('maintenance-status'),
+            // Verbose logging toggle
+            verboseLogging: document.getElementById('verbose-logging'),
+            // Log viewer elements
+            logLevelFilter: document.getElementById('log-level-filter'),
+            toggleLogViewer: document.getElementById('toggle-log-viewer'),
+            refreshLogs: document.getElementById('refresh-logs'),
+            clearLogViewer: document.getElementById('clear-log-viewer'),
+            celeryLogViewer: document.getElementById('celery-log-viewer'),
+            logViewerStatus: document.getElementById('log-viewer-status'),
+            logAutoScroll: document.getElementById('log-auto-scroll'),
+            logLineCount: document.getElementById('log-line-count'),
+            logViewerContent: document.getElementById('log-viewer-content')
         };
         // Console status UI (optional)
         this.elements.logContainer = document.getElementById('log-container');
@@ -339,6 +376,63 @@ class SyncAnalyzerUI {
             this.toastContainer = document.getElementById('toast-container');
             // Operator mode toggle (optional)
             this.elements.operatorMode = document.getElementById('operator-mode');
+            // Browser tabs (Files/Config)
+            this.elements.browserTabs = document.querySelectorAll('.browser-tab');
+            this.elements.browserPanels = document.querySelectorAll('.browser-panel');
+            this.elements.pathBreadcrumb = document.getElementById('path-breadcrumb-container');
+    }
+    
+    /**
+     * Initialize browser tabs (Files/Config toggle in left panel)
+     */
+    initBrowserTabs() {
+        if (!this.elements.browserTabs) return;
+        
+        this.elements.browserTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetPanel = tab.dataset.panel;
+                
+                // Update tab states
+                this.elements.browserTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update panel visibility
+                this.elements.browserPanels.forEach(panel => {
+                    if (panel.id === targetPanel) {
+                        panel.classList.add('active');
+                        panel.style.display = 'flex';
+                    } else {
+                        panel.classList.remove('active');
+                        panel.style.display = 'none';
+                    }
+                });
+                
+                // Show/hide path breadcrumb based on active panel
+                if (this.elements.pathBreadcrumb) {
+                    this.elements.pathBreadcrumb.style.display = targetPanel === 'files-panel' ? 'block' : 'none';
+                }
+            });
+        });
+    }
+    
+    /**
+     * Initialize default detection methods (GPU by default)
+     */
+    initDefaultMethods() {
+        // Ensure GPU is selected by default
+        if (this.elements.methodGpu) {
+            this.elements.methodGpu.checked = true;
+            // Uncheck other methods since GPU is exclusive
+            if (this.elements.methodMfcc) this.elements.methodMfcc.checked = false;
+            if (this.elements.methodOnset) this.elements.methodOnset.checked = false;
+            if (this.elements.methodSpectral) this.elements.methodSpectral.checked = false;
+            if (this.elements.methodAi) this.elements.methodAi.checked = false;
+            if (this.elements.methodFingerprint) this.elements.methodFingerprint.checked = false;
+        }
+        
+        // Initialize the currentMethods array
+        this.currentMethods = ['gpu'];
+        this.addLog('info', '🚀 GPU Fast mode enabled by default');
     }
 
     initComponentizedOffsetMode() {
@@ -442,15 +536,32 @@ class SyncAnalyzerUI {
         this.elements.uploadCsvBatch.addEventListener('click', () => this.elements.csvFileInput.click());
         this.elements.csvFileInput.addEventListener('change', (e) => this.handleCsvUpload(e));
         
-        // Concurrent jobs selector
-        if (this.elements.concurrentJobs) {
-            this.elements.concurrentJobs.addEventListener('change', (e) => {
-                this.maxConcurrentJobs = parseInt(e.target.value, 10) || 1;
-                this.addLog('info', `Concurrent jobs set to ${this.maxConcurrentJobs}`);
+        // New Import CSV button (server-side validation)
+        if (this.elements.importCsvBtn) {
+            this.elements.importCsvBtn.addEventListener('click', () => this.elements.csvFileInput.click());
+        }
+        
+        // Jobs dropdown (custom dropdown style)
+        if (this.elements.jobsDropdownBtn) {
+            this.elements.jobsDropdownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleJobsDropdown();
+            });
+        }
+        if (this.elements.jobsDropdownMenu) {
+            this.elements.jobsDropdownMenu.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    const value = parseInt(item.dataset.value, 10);
+                    this.setJobsLimit(value);
+                    this.closeJobsDropdown();
+                });
             });
         }
         
         this.elements.processBatch.addEventListener('click', () => this.processBatchQueue());
+        if (this.elements.refreshBatchStatus) {
+            this.elements.refreshBatchStatus.addEventListener('click', () => this.refreshStaleJobs());
+        }
         this.elements.repairAllBatch.addEventListener('click', () => this.repairAllCompleted());
         // Export dropdown
         if (this.elements.exportDropdownBtn) {
@@ -494,6 +605,9 @@ class SyncAnalyzerUI {
             if (!e.target.closest('.export-dropdown')) {
                 this.closeExportDropdown();
             }
+            if (!e.target.closest('.jobs-dropdown')) {
+                this.closeJobsDropdown();
+            }
         });
         this.elements.clearBatch.addEventListener('click', () => this.clearBatchQueue());
         this.elements.closeDetails.addEventListener('click', () => this.closeBatchDetails());
@@ -512,39 +626,411 @@ class SyncAnalyzerUI {
         // New redesigned action button handlers (event delegation)
         this.setupActionButtonHandlers();
 
+        // Maintenance button handlers
+        this.setupMaintenanceHandlers();
+
+        // Log viewer handlers
+        this.setupLogViewerHandlers();
+
         // Initialize configuration
         this.initializeConfiguration();
     }
 
     /**
-     * Setup view selector tabs for Quadrant 2 (Configuration/Batch Details)
+     * Setup maintenance button handlers
+     */
+    setupMaintenanceHandlers() {
+        if (this.elements.maintClearJobs) {
+            this.elements.maintClearJobs.addEventListener('click', () => this.runMaintenance('clear-jobs', 'Clearing all jobs...'));
+        }
+        if (this.elements.maintClearWaveforms) {
+            this.elements.maintClearWaveforms.addEventListener('click', () => this.runMaintenance('clear-waveforms', 'Clearing waveform cache...'));
+        }
+        if (this.elements.maintRestartCelery) {
+            this.elements.maintRestartCelery.addEventListener('click', () => this.runMaintenance('restart-celery', 'Restarting Celery worker...'));
+        }
+        if (this.elements.maintFlushRedis) {
+            this.elements.maintFlushRedis.addEventListener('click', () => this.runMaintenance('flush-redis', 'Flushing Redis cache...'));
+        }
+        if (this.elements.maintHealthCheck) {
+            this.elements.maintHealthCheck.addEventListener('click', () => this.runHealthCheck());
+        }
+        if (this.elements.maintFactoryReset) {
+            this.elements.maintFactoryReset.addEventListener('click', () => this.runFactoryReset());
+        }
+    }
+
+    /**
+     * Setup log viewer handlers
+     */
+    setupLogViewerHandlers() {
+        // Toggle log viewer visibility
+        if (this.elements.toggleLogViewer) {
+            this.elements.toggleLogViewer.addEventListener('click', () => this.toggleLogViewer());
+        }
+        
+        // Refresh logs
+        if (this.elements.refreshLogs) {
+            this.elements.refreshLogs.addEventListener('click', () => this.fetchCeleryLogs());
+        }
+        
+        // Clear log viewer
+        if (this.elements.clearLogViewer) {
+            this.elements.clearLogViewer.addEventListener('click', () => this.clearLogViewer());
+        }
+        
+        // Log level filter change
+        if (this.elements.logLevelFilter) {
+            this.elements.logLevelFilter.addEventListener('change', () => this.fetchCeleryLogs());
+        }
+        
+        // Log viewer state
+        this.logViewerVisible = false;
+        this.logPollingInterval = null;
+        this.logAutoScrollEnabled = true;
+        
+        // Auto-scroll checkbox
+        if (this.elements.logAutoScroll) {
+            this.elements.logAutoScroll.addEventListener('change', (e) => {
+                this.logAutoScrollEnabled = e.target.checked;
+            });
+        }
+    }
+
+    /**
+     * Toggle log viewer visibility
+     */
+    toggleLogViewer() {
+        this.logViewerVisible = !this.logViewerVisible;
+        
+        if (this.elements.celeryLogViewer) {
+            this.elements.celeryLogViewer.style.display = this.logViewerVisible ? 'block' : 'none';
+        }
+        
+        if (this.elements.toggleLogViewer) {
+            this.elements.toggleLogViewer.classList.toggle('active', this.logViewerVisible);
+        }
+        
+        if (this.logViewerVisible) {
+            // Fetch initial logs
+            this.fetchCeleryLogs();
+            // Start polling for new logs
+            this.startLogPolling();
+        } else {
+            // Stop polling
+            this.stopLogPolling();
+        }
+    }
+
+    /**
+     * Fetch Celery logs from API
+     */
+    async fetchCeleryLogs() {
+        try {
+            const level = this.elements.logLevelFilter?.value || '';
+            const response = await fetch(`${this.FASTAPI_BASE}/logs/tail?lines=100&level=${level}`);
+            const data = await response.json();
+            
+            if (data.entries) {
+                this.renderLogEntries(data.entries);
+                this.updateLogStatus('live', `${data.entries.length} lines`);
+            }
+        } catch (error) {
+            console.error('Failed to fetch logs:', error);
+            this.updateLogStatus('error', 'Failed to fetch logs');
+        }
+    }
+
+    /**
+     * Start polling for new logs
+     */
+    startLogPolling() {
+        if (this.logPollingInterval) {
+            clearInterval(this.logPollingInterval);
+        }
+        
+        this.logPollingInterval = setInterval(async () => {
+            try {
+                const level = this.elements.logLevelFilter?.value || '';
+                const response = await fetch(`${this.FASTAPI_BASE}/logs/poll?level=${level}`);
+                const data = await response.json();
+                
+                if (data.entries && data.entries.length > 0) {
+                    this.appendLogEntries(data.entries);
+                }
+            } catch (error) {
+                // Silent fail for polling
+            }
+        }, 2000); // Poll every 2 seconds
+        
+        this.updateLogStatus('live', 'Polling...');
+    }
+
+    /**
+     * Stop polling for logs
+     */
+    stopLogPolling() {
+        if (this.logPollingInterval) {
+            clearInterval(this.logPollingInterval);
+            this.logPollingInterval = null;
+        }
+        this.updateLogStatus('paused', 'Paused');
+    }
+
+    /**
+     * Render log entries in the viewer
+     */
+    renderLogEntries(entries) {
+        if (!this.elements.logViewerContent) return;
+        
+        if (entries.length === 0) {
+            this.elements.logViewerContent.innerHTML = '<div class="log-empty-state">No log entries found</div>';
+            return;
+        }
+        
+        const html = entries.map(entry => this.formatLogEntry(entry)).join('');
+        this.elements.logViewerContent.innerHTML = html;
+        
+        if (this.logAutoScrollEnabled) {
+            this.elements.logViewerContent.scrollTop = this.elements.logViewerContent.scrollHeight;
+        }
+        
+        this.updateLineCount(entries.length);
+    }
+
+    /**
+     * Append new log entries
+     */
+    appendLogEntries(entries) {
+        if (!this.elements.logViewerContent || entries.length === 0) return;
+        
+        // Remove empty state if present
+        const emptyState = this.elements.logViewerContent.querySelector('.log-empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+        
+        const html = entries.map(entry => this.formatLogEntry(entry)).join('');
+        this.elements.logViewerContent.insertAdjacentHTML('beforeend', html);
+        
+        if (this.logAutoScrollEnabled) {
+            this.elements.logViewerContent.scrollTop = this.elements.logViewerContent.scrollHeight;
+        }
+        
+        // Update line count
+        const currentCount = this.elements.logViewerContent.querySelectorAll('.log-entry').length;
+        this.updateLineCount(currentCount);
+    }
+
+    /**
+     * Format a single log entry
+     */
+    formatLogEntry(entry) {
+        const time = entry.timestamp ? entry.timestamp.split(',')[0].split(' ')[1] || '' : '';
+        const level = entry.level || 'INFO';
+        const process = entry.process || '';
+        let message = entry.message || entry.raw || '';
+        
+        // Highlight certain patterns in the message
+        message = message
+            .replace(/offset[=:]\s*([\d.+-]+s?)/gi, '<span class="highlight-offset">$&</span>')
+            .replace(/(error|failed|exception)/gi, '<span class="highlight-error">$&</span>')
+            .replace(/(task\s+[\w-]+)/gi, '<span class="highlight-task">$&</span>');
+        
+        return `
+            <div class="log-entry">
+                <span class="log-time">${time}</span>
+                <span class="log-level ${level}">${level}</span>
+                ${process ? `<span class="log-process">[${process}]</span>` : ''}
+                <span class="log-message">${message}</span>
+            </div>
+        `;
+    }
+
+    /**
+     * Update log status indicator
+     */
+    updateLogStatus(status, text) {
+        if (this.elements.logViewerStatus) {
+            this.elements.logViewerStatus.textContent = text;
+            this.elements.logViewerStatus.className = 'log-status ' + (status === 'live' ? 'live' : '');
+        }
+    }
+
+    /**
+     * Update line count display
+     */
+    updateLineCount(count) {
+        if (this.elements.logLineCount) {
+            this.elements.logLineCount.textContent = `${count} lines`;
+        }
+    }
+
+    /**
+     * Clear log viewer
+     */
+    clearLogViewer() {
+        if (this.elements.logViewerContent) {
+            this.elements.logViewerContent.innerHTML = '<div class="log-empty-state">Logs cleared. Click refresh to reload.</div>';
+        }
+        this.updateLineCount(0);
+        
+        // Also clear the server-side buffer
+        fetch(`${this.FASTAPI_BASE}/logs/clear-buffer`, { method: 'POST' }).catch(() => {});
+    }
+
+    /**
+     * Run a maintenance command
+     */
+    async runMaintenance(action, statusMessage) {
+        const btn = document.getElementById(`maint-${action.replace('/', '-')}`);
+        const statusEl = this.elements.maintenanceStatus;
+        
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('loading');
+            const icon = btn.querySelector('i');
+            const origClass = icon?.className;
+            if (icon) icon.className = 'fas fa-spinner';
+        }
+        
+        this.showMaintenanceStatus('info', statusMessage);
+        
+        try {
+            const response = await fetch(`${this.FASTAPI_BASE}/maintenance/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMaintenanceStatus('success', `✓ ${result.message}`);
+                this.addLog('success', `Maintenance: ${result.message}`);
+                
+                // If jobs were cleared, also clear local state
+                if (action === 'clear-jobs' || action === 'flush-redis' || action === 'factory-reset') {
+                    this.batchQueue = [];
+                    this.renderBatchTable();
+                    this.updateBatchSummary();
+                    localStorage.removeItem('batchQueue');
+                }
+            } else {
+                this.showMaintenanceStatus('error', `✗ ${result.message || 'Operation failed'}`);
+                this.addLog('error', `Maintenance failed: ${result.message}`);
+            }
+        } catch (error) {
+            this.showMaintenanceStatus('error', `✗ Error: ${error.message}`);
+            this.addLog('error', `Maintenance error: ${error.message}`);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                const icon = btn.querySelector('i');
+                // Restore original icon based on action
+                const iconMap = {
+                    'clear-jobs': 'fa-trash-alt',
+                    'clear-waveforms': 'fa-wave-square',
+                    'restart-celery': 'fa-sync',
+                    'flush-redis': 'fa-database',
+                    'health': 'fa-heartbeat',
+                    'factory-reset': 'fa-exclamation-triangle'
+                };
+                if (icon) icon.className = `fas ${iconMap[action] || 'fa-cog'}`;
+            }
+        }
+    }
+
+    /**
+     * Run health check
+     */
+    async runHealthCheck() {
+        const btn = this.elements.maintHealthCheck;
+        const statusEl = this.elements.maintenanceStatus;
+        
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('loading');
+            const icon = btn.querySelector('i');
+            if (icon) icon.className = 'fas fa-spinner';
+        }
+        
+        this.showMaintenanceStatus('info', 'Running health check...');
+        
+        try {
+            const response = await fetch(`${this.FASTAPI_BASE}/maintenance/health`);
+            const result = await response.json();
+            
+            if (result.success) {
+                const details = result.details || {};
+                let healthReport = '✓ System Healthy\n';
+                healthReport += `• Redis: ${details.redis ? '✓' : '✗'}\n`;
+                healthReport += `• Celery: ${details.celery ? '✓' : '✗'}\n`;
+                healthReport += `• AI Model: ${details.ai_model ? '✓' : '✗'}\n`;
+                healthReport += `• Disk: ${details.disk_space || 'Unknown'}\n`;
+                healthReport += `• Cached Waveforms: ${details.waveform_cache || 0}`;
+                
+                this.showMaintenanceStatus('success', healthReport);
+                this.addLog('success', 'Health check passed');
+            } else {
+                this.showMaintenanceStatus('error', `⚠ Issues Found:\n${result.message}`);
+                this.addLog('warning', `Health check: ${result.message}`);
+            }
+        } catch (error) {
+            this.showMaintenanceStatus('error', `✗ Health check failed: ${error.message}`);
+            this.addLog('error', `Health check error: ${error.message}`);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                const icon = btn.querySelector('i');
+                if (icon) icon.className = 'fas fa-heartbeat';
+            }
+        }
+    }
+
+    /**
+     * Run factory reset with confirmation
+     */
+    async runFactoryReset() {
+        const confirmed = await this.showConfirmDialog(
+            'Factory Reset',
+            'This will clear ALL data including:\n• All jobs and queues\n• Waveform cache\n• Analysis reports\n• Log files\n\nThis action cannot be undone. Continue?',
+            'Reset Everything',
+            'Cancel'
+        );
+        
+        if (!confirmed) return;
+        
+        await this.runMaintenance('factory-reset', 'Performing factory reset...');
+    }
+
+    /**
+     * Show maintenance status message
+     */
+    showMaintenanceStatus(type, message) {
+        const statusEl = this.elements.maintenanceStatus;
+        if (!statusEl) return;
+        
+        statusEl.className = `maintenance-status ${type}`;
+        statusEl.textContent = message;
+        statusEl.style.display = 'block';
+        statusEl.style.whiteSpace = 'pre-line';
+        
+        // Auto-hide after 10 seconds for success/error
+        if (type !== 'info') {
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 10000);
+        }
+    }
+
+    /**
+     * Setup view selector tabs (legacy - now handled by browser tabs)
      */
     setupViewSelector() {
-        const viewTabs = document.querySelectorAll('.view-tab');
-        const configView = document.getElementById('config-view');
-        const detailsView = document.getElementById('batch-details-view');
-        const resetBtn = document.getElementById('reset-config-btn');
-        
-        viewTabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const view = tab.dataset.view;
-                
-                // Update active tab
-                viewTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
-                // Toggle views
-                if (view === 'config') {
-                    configView.style.display = 'block';
-                    detailsView.style.display = 'none';
-                    if (resetBtn) resetBtn.style.display = 'inline-flex';
-                } else {
-                    configView.style.display = 'none';
-                    detailsView.style.display = 'block';
-                    if (resetBtn) resetBtn.style.display = 'none';
-                }
-            });
-        });
+        // View selector is now integrated into browser tabs (Files/Config)
+        // This function is kept for backwards compatibility
     }
 
     setupBatchSplitter() {
@@ -716,13 +1202,359 @@ class SyncAnalyzerUI {
     }
 
     /**
-     * Switch to Batch Details view and show item details
+     * Switch to Batch Details view and show item details in the dedicated quadrant
      */
     showBatchDetailsInQuadrant(itemId) {
-        const detailsTab = document.querySelector('.view-tab[data-view="details"]');
-        if (detailsTab) {
-            detailsTab.click();
+        // Hide placeholder, show content
+        const placeholder = document.getElementById('batch-details-placeholder');
+        const content = document.getElementById('batch-details-content');
+        if (placeholder) placeholder.style.display = 'none';
+        if (content) content.style.display = 'block';
+    }
+    
+    /**
+     * Hide batch details and show placeholder
+     */
+    hideBatchDetailsInQuadrant() {
+        const placeholder = document.getElementById('batch-details-placeholder');
+        const content = document.getElementById('batch-details-content');
+        if (placeholder) placeholder.style.display = 'flex';
+        if (content) {
+            content.style.display = 'none';
+            content.innerHTML = '';
         }
+    }
+    
+    /**
+     * Show item details in the Batch Details quadrant (not dropdown)
+     */
+    showItemDetailsInQuadrant(item) {
+        const content = document.getElementById('batch-details-content');
+        const placeholder = document.getElementById('batch-details-placeholder');
+        
+        if (!content) return;
+        
+        // Hide placeholder, show content
+        if (placeholder) placeholder.style.display = 'none';
+        content.style.display = 'block';
+        
+        const isComponentized = item.type === 'componentized';
+        const hasResults = isComponentized 
+            ? (item.componentResults && item.componentResults.length > 0)
+            : !!item.result;
+        
+        // Build the details HTML
+        let detailsHtml = '';
+        
+        // Header with item info
+        detailsHtml += `
+            <div class="quadrant-details-header">
+                <h3><i class="fas ${isComponentized ? 'fa-layer-group' : 'fa-file-audio'}"></i> 
+                    ${item.master.name}
+                </h3>
+                <span class="status-badge ${item.status}">${item.status}</span>
+            </div>
+        `;
+        
+        if (!hasResults) {
+            // Show pending/processing state
+            detailsHtml += `
+                <div class="details-pending">
+                    <i class="fas ${item.status === 'processing' ? 'fa-spinner fa-spin' : 'fa-clock'}"></i>
+                    <p>${item.status === 'processing' ? 'Analysis in progress...' : 'Analysis pending'}</p>
+                    ${item.progress > 0 ? `<p class="progress-info">Progress: ${item.progress}%</p>` : ''}
+                    ${item.progressMessage ? `<p class="progress-message">${item.progressMessage}</p>` : ''}
+                </div>
+            `;
+        } else if (isComponentized) {
+            // Show componentized results
+            detailsHtml += this.generateComponentizedQuadrantDetails(item);
+        } else {
+            // Show standard results
+            detailsHtml += this.generateStandardQuadrantDetails(item);
+        }
+        
+        content.innerHTML = detailsHtml;
+    }
+    
+    /**
+     * Generate componentized item details for quadrant display
+     */
+    generateComponentizedQuadrantDetails(item) {
+        const fps = item.frameRate || this.detectedFrameRate;
+        const masterDuration = item.masterDuration || 0;
+        
+        let html = `<div class="quadrant-component-results">`;
+        
+        // Master findings if any
+        if (item.masterFindings && item.masterFindings.length > 0) {
+            html += `
+                <div class="master-findings-section">
+                    <h4><i class="fas fa-info-circle"></i> Master Findings</h4>
+                    <div class="findings-tags">
+                        ${item.masterFindings.map(f => `<span class="finding-tag info">${f}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Offset visualization section
+        html += `
+            <div class="offset-visualization-section">
+                <h4><i class="fas fa-align-left"></i> Offset Visualization</h4>
+                <div class="offset-timeline-container">
+                    ${this.generateOffsetVisualization(item, fps, masterDuration)}
+                </div>
+            </div>
+        `;
+        
+        // Component results table
+        html += `
+            <div class="component-results-section">
+                <h4><i class="fas fa-list"></i> Component Results</h4>
+                <table class="component-results-table">
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Offset</th>
+                            <th>Confidence</th>
+                            <th>Visual</th>
+                            <th>Findings</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        item.componentResults.forEach(result => {
+            if (!result) return; // Skip null/undefined results
+            const timecode = this.formatTimecode(result.offset_seconds ?? 0, fps);
+            const confidence = ((result.confidence ?? 0) * 100).toFixed(0);
+            const confClass = (result.confidence ?? 0) >= 0.8 ? 'high' : (result.confidence ?? 0) >= 0.5 ? 'medium' : 'low';
+            
+            html += `
+                <tr>
+                    <td><span class="comp-label">${result.component || 'Unknown'}</span></td>
+                    <td class="offset-cell">${timecode}</td>
+                    <td><span class="confidence-badge ${confClass}">${confidence}%</span></td>
+                    <td class="visual-cell">${this.generateMiniOffsetBar(result.offset_seconds ?? 0, fps)}</td>
+                    <td class="findings-cell">
+                        ${result.findings && result.findings.length > 0 
+                            ? result.findings.map(f => `<span class="finding-tag ${this.getFindingTagClass(f)}">${f}</span>`).join('')
+                            : '<span class="finding-tag neutral">-</span>'
+                        }
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+        
+        return html;
+    }
+    
+    /**
+     * Generate compact offset visualization showing all components relative to master
+     */
+    generateOffsetVisualization(item, fps, masterDuration) {
+        if (!item.componentResults || item.componentResults.length === 0) {
+            return '<div class="no-visualization">No results to visualize</div>';
+        }
+        
+        // Calculate the range of offsets (filter out null results)
+        const offsets = item.componentResults.filter(r => r != null).map(r => r.offset_seconds ?? 0);
+        const minOffset = Math.min(...offsets, 0);
+        const maxOffset = Math.max(...offsets, 0);
+        const range = Math.max(Math.abs(minOffset), Math.abs(maxOffset), 1);
+        
+        // Compact SVG visualization
+        const rowHeight = 16;
+        const height = 16 + (item.componentResults.length * rowHeight);
+        const centerX = 50;
+        const scale = 35 / range;
+        
+        let svg = `
+            <svg class="offset-viz-svg compact" viewBox="0 0 100 ${height}" preserveAspectRatio="xMidYMid meet">
+                <!-- Center line -->
+                <line x1="${centerX}" y1="0" x2="${centerX}" y2="${height}" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="2,2"/>
+                <!-- Scale labels -->
+                <text x="12" y="8" fill="#64748b" font-size="5">-${range.toFixed(1)}s</text>
+                <text x="${centerX}" y="8" text-anchor="middle" fill="#3b82f6" font-size="5" font-weight="600">0</text>
+                <text x="88" y="8" text-anchor="end" fill="#64748b" font-size="5">+${range.toFixed(1)}s</text>
+        `;
+        
+        item.componentResults.forEach((result, index) => {
+            if (!result) return; // Skip null/undefined results
+            const y = 14 + (index * rowHeight);
+            const offset = result.offset_seconds ?? 0;
+            const offsetX = centerX + (offset * scale);
+            const barStart = Math.min(centerX, offsetX);
+            const barEnd = Math.max(centerX, offsetX);
+            
+            const colors = { 'a0': '#22c55e', 'a1': '#3b82f6', 'a2': '#f59e0b', 'a3': '#8b5cf6' };
+            const color = colors[result.component?.toLowerCase()] || '#94a3b8';
+            const direction = offset < 0 ? 'delayed' : offset > 0 ? 'advanced' : 'sync';
+            const dirColor = direction === 'delayed' ? '#ef4444' : direction === 'advanced' ? '#3b82f6' : '#22c55e';
+            const shortLabel = result.component?.toUpperCase().replace('COMPONENT', 'C').replace(' ', '') || `C${index}`;
+            
+            svg += `
+                <g class="comp-row">
+                    <text x="2" y="${y + 3}" fill="${color}" font-size="6" font-weight="600">${shortLabel}</text>
+                    <rect x="12" y="${y - 3}" width="76" height="8" rx="2" fill="#1e293b"/>
+                    <line x1="${barStart}" y1="${y}" x2="${barEnd}" y2="${y}" stroke="${dirColor}" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="${offsetX}" cy="${y}" r="3" fill="${dirColor}" stroke="#fff" stroke-width="0.5"/>
+                    <text x="90" y="${y + 2}" fill="#94a3b8" font-size="5">${offset >= 0 ? '+' : ''}${offset.toFixed(1)}s</text>
+                </g>
+            `;
+        });
+        
+        svg += '</svg>';
+        return svg;
+    }
+    
+    /**
+     * Generate mini offset bar for table cell
+     */
+    generateMiniOffsetBar(offsetSeconds, fps) {
+        const maxRange = 2; // +/- 2 seconds for mini display
+        const clampedOffset = Math.max(-maxRange, Math.min(maxRange, offsetSeconds));
+        const percentage = ((clampedOffset / maxRange) * 50) + 50; // 0-100, 50 is center
+        
+        const direction = offsetSeconds < 0 ? 'delayed' : offsetSeconds > 0 ? 'advanced' : 'sync';
+        const barColor = direction === 'delayed' ? '#ef4444' : direction === 'advanced' ? '#3b82f6' : '#22c55e';
+        
+        return `
+            <div class="mini-offset-bar">
+                <div class="mini-offset-track">
+                    <div class="mini-offset-center"></div>
+                    <div class="mini-offset-marker" style="left: ${percentage}%; background: ${barColor};"></div>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * Generate standard item details for quadrant display
+     */
+    generateStandardQuadrantDetails(item) {
+        const result = item.result;
+        const fps = item.frameRate || this.detectedFrameRate;
+        const offsetSeconds = result.offset_seconds || 0;
+        const confidence = result.confidence || 0;
+        const confClass = confidence >= 0.8 ? 'high' : confidence >= 0.5 ? 'medium' : 'low';
+        
+        const offsetMs = (offsetSeconds * 1000).toFixed(2);
+        const offsetFrames = Math.round(offsetSeconds * fps);
+        const offsetDirection = offsetSeconds < 0 ? 'delayed' : offsetSeconds > 0 ? 'advanced' : 'sync';
+        
+        // Determine severity
+        const absOffset = Math.abs(offsetSeconds);
+        let severityClass = 'good';
+        let severityText = 'In Sync';
+        let severityIcon = 'fa-check-circle';
+        if (absOffset > 0.5) {
+            severityClass = 'critical';
+            severityText = 'Critical Offset';
+            severityIcon = 'fa-exclamation-triangle';
+        } else if (absOffset > 0.1) {
+            severityClass = 'warning';
+            severityText = 'Minor Offset';
+            severityIcon = 'fa-exclamation-circle';
+        } else if (absOffset > 0.04) {
+            severityClass = 'minor';
+            severityText = 'Slight Offset';
+            severityIcon = 'fa-info-circle';
+        }
+        
+        return `
+            <div class="quadrant-standard-results">
+                <!-- Severity Banner -->
+                <div class="severity-banner ${severityClass}">
+                    <i class="fas ${severityIcon}"></i>
+                    <span>${severityText}</span>
+                </div>
+                
+                <!-- Offset Visualization -->
+                <div class="standard-offset-viz">
+                    ${this.generateStandardOffsetVisualization(offsetSeconds, fps, item)}
+                </div>
+                
+                <!-- Metrics Grid -->
+                <div class="result-metrics">
+                    <div class="metric-card">
+                        <div class="metric-label"><i class="fas fa-clock"></i> Offset</div>
+                        <div class="metric-value ${offsetDirection}">${this.formatTimecode(offsetSeconds, fps)}</div>
+                        <div class="metric-sub">${offsetMs}ms | ${offsetFrames} frames</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label"><i class="fas fa-check-circle"></i> Confidence</div>
+                        <div class="metric-value confidence-${confClass}">${(confidence * 100).toFixed(0)}%</div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill ${confClass}" style="width: ${confidence * 100}%"></div>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label"><i class="fas fa-film"></i> Frame Rate</div>
+                        <div class="metric-value">${fps} fps</div>
+                        <div class="metric-sub">Detected</div>
+                    </div>
+                </div>
+                
+                <!-- Method info if available -->
+                ${result.method ? `
+                    <div class="method-info">
+                        <span class="method-badge"><i class="fas fa-microscope"></i> ${result.method.toUpperCase()}</span>
+                    </div>
+                ` : ''}
+                
+                <!-- File Info -->
+                <div class="result-files">
+                    <div class="file-row">
+                        <span class="file-label"><i class="fas fa-file-video"></i> Master:</span>
+                        <span class="file-name" title="${item.master.path}">${item.master.name}</span>
+                    </div>
+                    <div class="file-row">
+                        <span class="file-label"><i class="fas fa-file-audio"></i> Dub:</span>
+                        <span class="file-name" title="${item.dub.path}">${item.dub.name}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * Generate compact offset visualization for standard (non-componentized) items
+     */
+    generateStandardOffsetVisualization(offsetSeconds, fps, item) {
+        const maxRange = Math.max(Math.abs(offsetSeconds) * 1.5, 1);
+        const centerX = 50;
+        const scale = 35 / maxRange;
+        const offsetX = centerX + (offsetSeconds * scale);
+        
+        const direction = offsetSeconds < 0 ? 'delayed' : offsetSeconds > 0 ? 'advanced' : 'sync';
+        const dirColor = direction === 'delayed' ? '#ef4444' : direction === 'advanced' ? '#3b82f6' : '#22c55e';
+        const barStart = Math.min(centerX, offsetX);
+        const barWidth = Math.abs(offsetX - centerX);
+        
+        return `
+            <svg class="standard-offset-svg compact" viewBox="0 0 100 35" preserveAspectRatio="xMidYMid meet">
+                <rect x="10" y="14" width="80" height="8" rx="4" fill="#1e293b"/>
+                <line x1="${centerX}" y1="10" x2="${centerX}" y2="26" stroke="#3b82f6" stroke-width="1.5"/>
+                <rect x="${barStart}" y="15" width="${barWidth}" height="6" rx="3" fill="${dirColor}" opacity="0.6"/>
+                <circle cx="${offsetX}" cy="18" r="5" fill="${dirColor}" stroke="#fff" stroke-width="1.5"/>
+                <text x="${centerX}" y="8" text-anchor="middle" fill="#3b82f6" font-size="6" font-weight="600">MASTER</text>
+                <text x="${offsetX}" y="32" text-anchor="middle" fill="${dirColor}" font-size="6" font-weight="600">
+                    DUB ${offsetSeconds >= 0 ? '+' : ''}${offsetSeconds.toFixed(2)}s
+                </text>
+            </svg>
+            <div class="offset-direction-label compact ${direction}">
+                <i class="fas ${direction === 'delayed' ? 'fa-arrow-left' : direction === 'advanced' ? 'fa-arrow-right' : 'fa-check'}"></i>
+                <span>${direction === 'delayed' ? 'Dub BEHIND' : direction === 'advanced' ? 'Dub AHEAD' : 'Aligned'}</span>
+            </div>
+        `;
     }
 
     /**
@@ -839,6 +1671,12 @@ class SyncAnalyzerUI {
                 if (detailsBtn && !detailsBtn.disabled) {
                     this.handleActionButton('details', itemId, detailsBtn);
                 }
+            } else if (e.key === 't' || e.key === 'T') {
+                e.preventDefault();
+                const restartBtn = focusedRow.querySelector('.action-btn-v2.restart');
+                if (restartBtn && !restartBtn.disabled) {
+                    this.handleActionButton('restart', itemId, restartBtn);
+                }
             } else if (e.key === 'Delete') {
                 e.preventDefault();
                 this.handleActionButton('remove', itemId, null);
@@ -893,6 +1731,9 @@ class SyncAnalyzerUI {
                 break;
             case 'retry':
                 this.retryJob(itemId);
+                break;
+            case 'restart':
+                this.restartJob(itemId);
                 break;
             case 'remove':
                 this.confirmRemoveBatchItem(itemId);
@@ -2991,6 +3832,17 @@ class SyncAnalyzerUI {
             if (isComponentized) {
                 // Handle componentized CSV format
                 this.addLog('info', 'Detected componentized CSV format');
+                
+                // For AREF/Wild format, try API-based import first for better validation
+                if (hasArefWildFormat) {
+                    try {
+                        await this.importCsvViaApi(file);
+                        return;
+                    } catch (apiError) {
+                        this.addLog('warning', 'API import unavailable, using client-side parsing');
+                    }
+                }
+                
                 await this.handleComponentizedCsvUpload(text, lines, header);
                 return;
             }
@@ -3418,6 +4270,110 @@ class SyncAnalyzerUI {
         }
     }
 
+    /**
+     * Import CSV via server-side API for validation
+     * This provides file existence checks and better error handling
+     */
+    async importCsvViaApi(file) {
+        try {
+            this.addLog('info', `Importing CSV via API: ${file.name}`);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('auto_queue', 'true');
+            
+            const response = await fetch(`${this.FASTAPI_BASE}/csv/import`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                this.addLog('error', `CSV import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+                return;
+            }
+            
+            // Log any validation errors
+            if (result.errors && result.errors.length > 0) {
+                this.addLog('warning', `CSV import warnings (${result.errors.length}):`);
+                result.errors.slice(0, 5).forEach(err => this.addLog('warning', err));
+                if (result.errors.length > 5) {
+                    this.addLog('warning', `... and ${result.errors.length - 5} more`);
+                }
+            }
+            
+            // Add jobs from the API response to the batch queue
+            let addedCount = 0;
+            let skippedCount = 0;
+            
+            for (const job of result.jobs) {
+                // Check for duplicates
+                const isDuplicate = this.batchQueue.some(qi => {
+                    if (job.type === 'componentized') {
+                        return qi.type === 'componentized' && 
+                               qi.master.path === job.master.path &&
+                               JSON.stringify(qi.components?.map(c => c.path).sort()) ===
+                               JSON.stringify(job.components?.map(c => c.path).sort());
+                    } else {
+                        return qi.master.path === job.master.path &&
+                               qi.dub?.path === job.components[0]?.path;
+                    }
+                });
+                
+                if (isDuplicate) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                // Create batch item from API job
+                const batchItem = {
+                    id: Date.now() + addedCount,
+                    type: job.type,
+                    master: job.master,
+                    status: 'queued',
+                    progress: 0,
+                    error: null,
+                    timestamp: new Date().toISOString(),
+                    frameRate: this.detectedFrameRate,
+                    offsetMode: this.componentizedOffsetMode
+                };
+                
+                if (job.type === 'componentized') {
+                    batchItem.components = job.components;
+                    batchItem.componentResults = [];
+                } else {
+                    batchItem.dub = job.components[0];
+                }
+                
+                this.batchQueue.push(batchItem);
+                addedCount++;
+                
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+            
+            this.updateBatchTable();
+            this.updateBatchSummary();
+            await this.persistBatchQueue();
+            
+            this.addLog('success', `CSV imported: ${addedCount} jobs added (${result.standard_jobs} standard, ${result.componentized_jobs} componentized)`);
+            if (skippedCount > 0) {
+                this.addLog('info', `Skipped ${skippedCount} duplicate items`);
+            }
+            
+        } catch (error) {
+            this.addLog('error', `CSV API import failed: ${error.message}`);
+            console.error('CSV API import error:', error);
+            // Fall back to client-side parsing
+            this.addLog('info', 'Falling back to client-side parsing...');
+        }
+    }
+
     // Parse a CSV line handling quoted values
     parseCsvLine(line) {
         const values = [];
@@ -3549,47 +4505,96 @@ class SyncAnalyzerUI {
                     // Standard single dub analysis
                     const itemFrameRate = await this.detectFrameRate(item.master.path);
 
-                    // Progress updates for this item
-                    const progressInterval = setInterval(() => {
-                        if (item.progress < 90) {
-                            item.progress += 5;
-                            this.updateBatchTableRow(item);
-                        }
-                    }, 500);
-
                     // Build current configuration
                     const cfg = this.getAnalysisConfig();
 
-                    // Run analysis
-                    const response = await fetch('/api/v1/analysis/sync', {
+                    // Map UI method names to API method names
+                    // UI uses 'gpu' for GPU-accelerated AI, API uses 'ai'
+                    let methods = Array.isArray(cfg.methods) && cfg.methods.length ? cfg.methods : ['mfcc'];
+                    methods = methods.map(m => m === 'gpu' ? 'ai' : m);
+                    // Filter out invalid methods (fingerprint is handled separately)
+                    const validMethods = ['mfcc', 'onset', 'spectral', 'correlation', 'ai'];
+                    methods = methods.filter(m => validMethods.includes(m));
+                    if (methods.length === 0) methods = ['mfcc']; // fallback
+
+                    // Start analysis (async - returns immediately with analysis_id)
+                    const startResponse = await fetch('/api/v1/analysis/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            master_audio_path: item.master.path,
-                            dub_audio_path: item.dub.path,
-                            methods: Array.isArray(cfg.methods) && cfg.methods.length ? cfg.methods : ['mfcc'],
+                            master_file: item.master.path,
+                            dub_file: item.dub.path,
+                            methods: methods,
                             ai_model: cfg.aiModel || 'wav2vec2',
-                            enable_gpu: !!cfg.enableGpu,
+                            enable_ai: methods.includes('ai') || !!cfg.enableGpu,
                             channel_strategy: cfg.channelStrategy || 'mono_downmix',
-                            target_channels: cfg.targetChannels || [],
                             frame_rate: itemFrameRate
                         })
                     });
 
-                    clearInterval(progressInterval);
-                    item.progress = 100;
+                    const startResult = await startResponse.json();
+                    if (!startResponse.ok || !startResult.analysis_id) {
+                        throw new Error(startResult.detail || startResult.error || 'Failed to start analysis');
+                    }
 
-                    const result = await response.json();
+                    const analysisId = startResult.analysis_id;
+                    this.addLog('info', `🚀 Analysis started: ${analysisId}`);
+
+                    // Poll for progress until complete
+                    let result = null;
+                    let lastProgressMsg = '';
+                    const maxWaitMs = 600000; // 10 minute timeout
+                    const pollIntervalMs = 1000; // Poll every second
+                    const startTime = Date.now();
+
+                    while (Date.now() - startTime < maxWaitMs) {
+                        const statusResponse = await fetch(`/api/v1/analysis/${analysisId}`);
+                        const statusData = await statusResponse.json();
+
+                        if (statusData.progress !== undefined) {
+                            item.progress = Math.floor(statusData.progress);
+                            this.updateBatchTableRow(item);
+                        }
+
+                        // Log progress messages (de-dup)
+                        if (statusData.status_message && statusData.status_message !== lastProgressMsg) {
+                            lastProgressMsg = statusData.status_message;
+                            this.addLog('info', `📊 ${item.master.name.substring(0, 30)}... ${item.progress}% - ${lastProgressMsg}`);
+                        }
+
+                        const status = statusData.status?.value || statusData.status;
+                        if (status === 'completed') {
+                            result = { success: true, result: statusData.result, analysis_id: analysisId };
+                            break;
+                        } else if (status === 'failed') {
+                            throw new Error(statusData.error || 'Analysis failed');
+                        }
+
+                        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                    }
+
+                    if (!result) {
+                        throw new Error('Analysis timed out');
+                    }
+
+                    item.progress = 100;
 
                     if (result.success) {
                         item.status = 'completed';
-                        item.result = result.result;
+                        // Normalize the result to ensure offset_seconds is at top level
+                        item.result = this.normalizeAnalysisResult(result.result, result.analysis_id);
                         item.frameRate = itemFrameRate;
-                        this.addLog('success', `✓ Completed: ${item.master.name} → ${this.formatOffsetDisplay(result.result.offset_seconds, true, itemFrameRate)}`);
+                        const offsetSeconds = item.result?.offset_seconds ?? item.result?.consensus_offset?.offset_seconds ?? 0;
+                        this.addLog('success', `✓ Completed: ${item.master.name} → ${this.formatOffsetDisplay(offsetSeconds, true, itemFrameRate)}`);
                     } else {
                         item.status = 'failed';
-                        item.error = result.error;
-                        this.addLog('error', `✗ Failed: ${item.master.name} - ${result.error}`);
+                        // Handle error being an object or string
+                        let errorMsg = result.error || result.detail || 'Unknown error';
+                        if (typeof errorMsg === 'object') {
+                            errorMsg = errorMsg.message || errorMsg.detail || JSON.stringify(errorMsg);
+                        }
+                        item.error = errorMsg;
+                        this.addLog('error', `✗ Failed: ${item.master.name} - ${item.error}`);
                     }
                 }
 
@@ -3658,10 +4663,17 @@ class SyncAnalyzerUI {
             item.status = 'processing';
             item.progress = 0;
             this.updateBatchTableRow(item);
-            const offsetMode = (item.offsetMode || this.componentizedOffsetMode || 'mixdown').toLowerCase();
+            let offsetMode = (item.offsetMode || this.componentizedOffsetMode || 'channel_aware').toLowerCase();
+            
+            // Force valid mode - use channel_aware for any unrecognized mode
+            if (!['mixdown', 'anchor', 'channel_aware'].includes(offsetMode)) {
+                console.warn(`Unknown offset mode "${offsetMode}", defaulting to channel_aware`);
+                offsetMode = 'channel_aware';
+            }
             item.offsetMode = offsetMode;
 
-            if (offsetMode === 'mixdown' || offsetMode === 'anchor' || offsetMode === 'channel_aware') {
+            // All componentized items use background processing
+            if (true) { // Always use background job path for componentized
                 this.addLog('info', `Running ${offsetMode} alignment for componentized item (background processing)...`);
                 item.progress = 5;
                 this.updateBatchTableRow(item);
@@ -3682,6 +4694,9 @@ class SyncAnalyzerUI {
                     
                     console.log(`[processBatchQueue] GPU: ${gpuEnabled}, Fingerprint: ${fingerprintEnabled}, methods: ${methodsToUse}`);
                     
+                    // Check if verbose logging is enabled
+                    const verboseLogging = this.elements.verboseLogging?.checked || false;
+                    
                     const startResponse = await fetch('/api/v1/analysis/componentized/async', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3690,7 +4705,8 @@ class SyncAnalyzerUI {
                             components: item.components,
                             offset_mode: offsetMode,
                             methods: methodsToUse,
-                            frame_rate: itemFrameRate
+                            frame_rate: itemFrameRate,
+                            verbose: verboseLogging
                         })
                     });
 
@@ -3708,10 +4724,11 @@ class SyncAnalyzerUI {
                     item.jobId = jobId;
                     this.persistBatchQueue().catch(() => {}); // Save immediately
                     
-                    this.addLog('info', `Background job started: ${jobId}`);
+                    this.addLog('info', `🚀 Background job started: ${jobId.substring(0, 8)}...`);
+                    this.addLog('info', `⏳ Waiting for analysis to complete (polling every 1s)...`);
 
-                    // Poll for job completion with timeout
-                    const maxPollTime = 10 * 60 * 1000; // 10 minutes max
+                    // Poll for job completion with timeout (30 min for long files)
+                    const maxPollTime = 30 * 60 * 1000; // 30 minutes max
                     const pollInterval = 1000; // Poll every 1 second
                     const startTime = Date.now();
                     
@@ -3735,12 +4752,20 @@ class SyncAnalyzerUI {
                                         return;
                                     }
 
-                                    // Update progress
-                                    if (jobData.progress > 0) {
-                                        item.progress = jobData.progress;
+                                    // Update progress and show in console
+                                    if (jobData.progress > 0 || jobData.status_message) {
+                                        const oldProgress = item.progress || 0;
+                                        item.progress = jobData.progress || oldProgress;
                                         item.progressMessage = jobData.status_message;
                                         this.updateBatchTableRow(item);
                                         this.updateActiveJobsDisplay();
+                                        
+                                        // Log progress updates to console (throttled)
+                                        const progressDiff = item.progress - oldProgress;
+                                        if (progressDiff >= 5 || jobData.status_message !== item.lastStatusMessage) {
+                                            this.addLog('info', `⏳ ${item.master.name.substring(0, 30)}... ${item.progress}% - ${jobData.status_message || 'Processing...'}`);
+                                            item.lastStatusMessage = jobData.status_message;
+                                        }
                                     }
 
                                     // Check job status
@@ -3772,27 +4797,33 @@ class SyncAnalyzerUI {
                     const result = jobResult.result;
                     if (result) {
                         const componentResults = Array.isArray(result.component_results)
-                            ? result.component_results
+                            ? result.component_results.filter(r => r !== null && r !== undefined)
                             : [];
                         item.componentResults = componentResults.map((res, idx) => ({
-                            component: res.component || item.components[idx]?.label || `C${idx + 1}`,
-                            componentName: res.componentName || item.components[idx]?.name || `component_${idx + 1}`,
-                            channel_type: res.channel_type || null,
-                            optimal_methods: res.optimal_methods || null,
-                            offset_seconds: res.offset_seconds || 0,
-                            confidence: res.confidence || 0,
+                            component: res?.component || item.components[idx]?.label || `C${idx + 1}`,
+                            componentName: res?.componentName || item.components[idx]?.name || `component_${idx + 1}`,
+                            channel_type: res?.channel_type || null,
+                            optimal_methods: res?.optimal_methods || null,
+                            offset_seconds: res?.offset_seconds ?? 0,
+                            confidence: res?.confidence ?? 0,
                             frameRate: itemFrameRate,
-                            quality_score: res.quality_score || 0,
-                            method_used: res.method_used || null,
-                            method_results: res.method_results || [],
-                            analysis_id: res.analysis_id,
-                            status: res.status || 'completed'
+                            quality_score: res?.quality_score ?? 0,
+                            method_used: res?.method_used || null,
+                            method_results: res?.method_results || [],
+                            analysis_id: res?.analysis_id,
+                            status: res?.status || 'completed',
+                            findings: res?.findings || [],
+                            bars_tone_detected: res?.bars_tone_detected || false,
+                            bars_tone_duration: res?.bars_tone_duration || 0,
+                            component_duration: res?.component_duration || null,
                         }));
                         item.mixdownOffsetSeconds = result.mixdown_offset_seconds ?? null;
                         item.mixdownConfidence = result.mixdown_confidence ?? null;
                         item.votedOffsetSeconds = result.voted_offset_seconds ?? null;
                         item.voteAgreement = result.vote_agreement ?? null;
                         item.offsetMode = result.offset_mode || offsetMode;
+                        item.masterFindings = result.master_findings || [];
+                        item.masterDuration = result.master_duration || null;
 
                         // For channel_aware mode, use voted offset as summary
                         const summaryOffset = item.votedOffsetSeconds ?? item.mixdownOffsetSeconds ?? item.componentResults[0]?.offset_seconds ?? 0;
@@ -3837,18 +4868,23 @@ class SyncAnalyzerUI {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                master_audio_path: item.master.path,
-                                dub_audio_path: component.path,
+                                master_file: item.master.path,
+                                dub_file: component.path,
                                 methods: Array.isArray(cfg.methods) && cfg.methods.length ? cfg.methods : ['mfcc'],
                                 ai_model: cfg.aiModel || 'wav2vec2',
-                                enable_gpu: !!cfg.enableGpu,
-                                channel_strategy: cfg.channelStrategy || 'mono_downmix',
-                                target_channels: cfg.targetChannels || [],
+                                enable_ai: !!cfg.enableGpu,
+                                sample_rate: 22050,
                                 frame_rate: itemFrameRate
                             })
                         });
 
                         const result = await response.json();
+                        
+                        // Check for HTTP errors
+                        if (!response.ok) {
+                            const errorMsg = result.detail || result.error || result.message || `HTTP ${response.status}`;
+                            throw new Error(errorMsg);
+                        }
 
                         // Update completion progress
                         completedComponents++;
@@ -3856,30 +4892,31 @@ class SyncAnalyzerUI {
                         item.currentComponent = `${component.label} complete (${completedComponents}/${totalComponents})`;
                         this.updateBatchTableRow(item);
 
-                        if (result.success) {
-                            this.addLog('success', `✓ Component ${component.label} (${completedComponents}/${totalComponents}): ${this.formatOffsetDisplay(result.result.offset_seconds, true, itemFrameRate)}`);
+                        if (result.success && result.result) {
+                            this.addLog('success', `✓ Component ${component.label} (${completedComponents}/${totalComponents}): ${this.formatOffsetDisplay(result.result?.offset_seconds ?? 0, true, itemFrameRate)}`);
 
                             return {
                                 component: component.label,
                                 componentName: component.name,
-                                offset_seconds: result.result.offset_seconds,
-                                confidence: result.result.confidence,
+                                offset_seconds: result.result?.offset_seconds ?? 0,
+                                confidence: result.result?.confidence ?? 0,
                                 frameRate: itemFrameRate,
-                                quality_score: result.result.quality_score || 0,
-                                method_results: result.result.method_results || [],
-                                analysis_id: result.result.analysis_id,
+                                quality_score: result.result?.quality_score || 0,
+                                method_results: result.result?.method_results || [],
+                                analysis_id: result.result?.analysis_id,
                                 status: 'completed'
                             };
                         }
 
-                        this.addLog('error', `Component ${component.label} failed: ${result.error}`);
+                        const errorMsg = result.error || result.detail || result.message || 'Unknown error';
+                        this.addLog('error', `Component ${component.label} failed: ${errorMsg}`);
                         return {
                             component: component.label,
                             componentName: component.name,
                             offset_seconds: 0,
                             confidence: 0,
                             frameRate: itemFrameRate,
-                            error: result.error,
+                            error: errorMsg,
                             status: 'failed'
                         };
                     } catch (error) {
@@ -3930,18 +4967,52 @@ class SyncAnalyzerUI {
         }
     }
 
-    clearBatchQueue() {
+    async clearBatchQueue() {
         if (this.batchProcessing) {
             this.addLog('warning', 'Cannot clear queue while processing');
             return;
         }
-        
+
+        // Confirm before clearing
+        if (!confirm('Are you sure you want to clear the entire batch queue? This will remove all items.')) {
+            return;
+        }
+
+        // Clear local queue
         this.batchQueue = [];
         this.updateBatchTable();
         this.updateBatchSummary();
         this.closeBatchDetails();
-        this.addLog('info', 'Batch queue cleared');
-        this.persistBatchQueue().catch(() => {});
+
+        // Clear localStorage
+        localStorage.removeItem('sync-analyzer-batch-queue');
+
+        // Clear ALL server-side storage to prevent re-sync
+        const clearPromises = [];
+
+        // 1. Clear batch-queue (Redis)
+        clearPromises.push(
+            fetch(`${this.FASTAPI_BASE}/batch-queue`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            }).catch(e => console.warn('Failed to clear batch-queue:', e))
+        );
+
+        // 2. Clear job-registry (Redis) - this is what brings jobs back!
+        clearPromises.push(
+            fetch(`${this.FASTAPI_BASE}/job-registry`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            }).catch(e => console.warn('Failed to clear job-registry:', e))
+        );
+
+        try {
+            await Promise.all(clearPromises);
+            this.addLog('info', 'Batch queue cleared (local, server, and job registry)');
+        } catch (error) {
+            console.error('Failed to clear server storage:', error);
+            this.addLog('warning', 'Cleared locally, but some server data may persist');
+        }
     }
     
     /**
@@ -3962,6 +5033,52 @@ class SyncAnalyzerUI {
         if (dropdown) {
             dropdown.classList.remove('open');
         }
+    }
+    
+    /**
+     * Toggle jobs dropdown
+     */
+    toggleJobsDropdown() {
+        const dropdown = this.elements.jobsDropdownBtn?.closest('.jobs-dropdown');
+        if (dropdown) {
+            dropdown.classList.toggle('open');
+        }
+    }
+    
+    /**
+     * Close jobs dropdown
+     */
+    closeJobsDropdown() {
+        const dropdown = this.elements.jobsDropdownBtn?.closest('.jobs-dropdown');
+        if (dropdown) {
+            dropdown.classList.remove('open');
+        }
+    }
+    
+    /**
+     * Set jobs limit and update UI
+     */
+    setJobsLimit(value) {
+        this.maxConcurrentJobs = value;
+        // Update hidden input
+        if (this.elements.concurrentJobs) {
+            this.elements.concurrentJobs.value = value;
+        }
+        // Update label
+        if (this.elements.jobsLabel) {
+            this.elements.jobsLabel.textContent = value === 1 ? '1 Job' : `${value} Jobs`;
+        }
+        // Update selected state
+        if (this.elements.jobsDropdownMenu) {
+            this.elements.jobsDropdownMenu.querySelectorAll('.dropdown-item').forEach(item => {
+                if (parseInt(item.dataset.value, 10) === value) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+        this.addLog('info', `Concurrent jobs set to ${value}`);
     }
     
     /**
@@ -5882,9 +6999,10 @@ class SyncAnalyzerUI {
             offsetDisplay = this.renderComponentizedResultCell(item);
         } else {
             // Standard single offset display
-            if (item.result && item.result.offset_seconds !== undefined) {
+            const offsetSeconds = item.result?.offset_seconds ?? item.result?.consensus_offset?.offset_seconds;
+            if (offsetSeconds !== undefined) {
                 const fps = item.frameRate || this.detectedFrameRate;
-                offsetDisplay = this.formatOffsetDisplay(item.result.offset_seconds, true, fps);
+                offsetDisplay = this.formatOffsetDisplay(offsetSeconds, true, fps);
             }
         }
 
@@ -5978,6 +7096,16 @@ class SyncAnalyzerUI {
                             <span class="btn-label-short">Det</span>
                             <span class="shortcut-hint">D</span>
                         </button>
+                        <button class="action-btn-v2 restart"
+                                data-item-id="${item.id}"
+                                data-action="restart"
+                                title="Re-run Analysis (Keyboard: T)"
+                                aria-label="Re-run analysis for ${item.master.name}">
+                            <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                            <span class="btn-label-full">Restart</span>
+                            <span class="btn-label-short">Re</span>
+                            <span class="shortcut-hint">T</span>
+                        </button>
                     ` : ''}
                     ${(item.status === 'failed' || item.status === 'orphaned') ? `
                         <button class="action-btn-v2 retry"
@@ -6034,19 +7162,21 @@ class SyncAnalyzerUI {
             });
         }
 
-        // Row click/keyboard expands too (excluding action buttons)
-        const rowToggle = (e) => {
-            if (e && e.target && (e.target.closest && (e.target.closest('.action-buttons') || e.target.closest('.expand-btn')))) return;
-            if (hasResults) {
-                this.toggleBatchDetails(item);
-                try { row.setAttribute('aria-expanded', String(!(row.getAttribute('aria-expanded') === 'true'))); } catch {}
-            } else {
-                this.addLog('info', 'No results available yet - analysis must complete first');
-            }
+        // Row click shows details in the Batch Details quadrant (not dropdown)
+        const showInQuadrant = (e) => {
+            // Skip if clicking action buttons or expand button
+            if (e && e.target && e.target.closest && (e.target.closest('.action-buttons') || e.target.closest('.expand-btn'))) return;
+            
+            // Show details in the dedicated quadrant (regardless of results status)
+            this.showItemDetailsInQuadrant(item);
+            
+            // Highlight the selected row
+            document.querySelectorAll('.batch-row.selected').forEach(r => r.classList.remove('selected'));
+            row.classList.add('selected');
         };
-        row.addEventListener('click', rowToggle);
+        row.addEventListener('click', showInQuadrant);
         row.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); rowToggle(e); }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showInQuadrant(e); }
         });
         
         return row;
@@ -6362,6 +7492,16 @@ class SyncAnalyzerUI {
                     </div>
                 </div>
 
+                <!-- Master Findings Banner -->
+                ${item.masterFindings && item.masterFindings.length > 0 ? `
+                <div class="master-findings-banner">
+                    <i class="fas fa-info-circle"></i>
+                    <div class="findings-list">
+                        ${item.masterFindings.map(f => `<span class="finding-item">${f}</span>`).join('')}
+                    </div>
+                </div>
+                ` : ''}
+
                 <!-- Component Results Table -->
                 <div class="details-section expanded">
                     <div class="section-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -6379,6 +7519,7 @@ class SyncAnalyzerUI {
                                     <th>File Name</th>
                                     <th>Offset</th>
                                     <th>Confidence</th>
+                                    <th>Findings</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -6387,12 +7528,17 @@ class SyncAnalyzerUI {
                                     const component = item.components[index];
                                     const timecode = this.formatTimecodeWithSeconds(result.offset_seconds, result.frameRate || fps);
                                     const confidence = (result.confidence * 100).toFixed(1);
+                                    const findings = result.findings || [];
+                                    const findingsHtml = findings.length > 0 
+                                        ? findings.map(f => `<span class="finding-tag">${f}</span>`).join('')
+                                        : '<span class="no-findings">—</span>';
                                     return `
                                         <tr>
                                             <td><span class="comp-label">${result.component}</span></td>
                                             <td class="file-name-cell" title="${component.path}">${component.name}</td>
                                             <td class="offset-cell">${timecode}</td>
                                             <td class="confidence-cell">${confidence}%</td>
+                                            <td class="findings-cell">${findingsHtml}</td>
                                             <td class="actions-cell">
                                                 <button class="action-btn-mini" onclick="app.viewComponentDetails(${item.id}, ${index})" title="View details">
                                                     <i class="fas fa-eye"></i>
@@ -6402,7 +7548,7 @@ class SyncAnalyzerUI {
                                     `;
                                 }).join('') : `
                                     <tr>
-                                        <td colspan="5" style="text-align:center; color:#94a3b8; padding: 18px;">
+                                        <td colspan="6" style="text-align:center; color:#94a3b8; padding: 18px;">
                                             Results pending or unavailable for this componentized item.
                                         </td>
                                     </tr>
@@ -7421,8 +8567,55 @@ class SyncAnalyzerUI {
     }
 
     loadBatchQueue() {
+        // Load from server-side storage (Redis) for cross-browser sync
+        this.loadBatchQueueFromServer();
+    }
+    
+    /**
+     * Load batch queue from server (Redis) - ensures all browsers see same state
+     */
+    async loadBatchQueueFromServer() {
         try {
-            // Try loading from localStorage first (fastest)
+            const response = await fetch(`${this.FASTAPI_BASE}/batch-queue`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    // Server is authoritative - use its data even if empty
+                    this.batchQueue = data.items || [];
+                    this.batchQueue.forEach(item => {
+                        if (item.type === 'componentized' && !item.offsetMode) {
+                            item.offsetMode = this.componentizedOffsetMode || 'mixdown';
+                        }
+                    });
+                    this.updateBatchTable();
+                    this.updateBatchSummary();
+                    
+                    if (this.batchQueue.length > 0) {
+                        console.log(`Loaded ${this.batchQueue.length} batch item(s) from server`);
+                        this.addLog('info', `Synced ${this.batchQueue.length} job(s) from server`);
+                        // Auto-refresh stale "processing" jobs
+                        this.refreshStaleJobs();
+                    } else {
+                        console.log('Server returned empty batch queue');
+                        // Also clear localStorage to stay in sync
+                        try { localStorage.removeItem('sync-analyzer-batch-queue'); } catch {}
+                    }
+                    return;
+                }
+            }
+            // Fallback to localStorage only if server request FAILED
+            this.loadBatchQueueFromLocalStorage();
+        } catch (e) {
+            console.warn('Failed to load from server, falling back to localStorage:', e);
+            this.loadBatchQueueFromLocalStorage();
+        }
+    }
+    
+    /**
+     * Fallback: Load from localStorage
+     */
+    loadBatchQueueFromLocalStorage() {
+        try {
             const saved = localStorage.getItem('sync-analyzer-batch-queue');
             if (saved) {
                 const data = JSON.parse(saved);
@@ -7436,7 +8629,11 @@ class SyncAnalyzerUI {
                     });
                     this.updateBatchTable();
                     this.updateBatchSummary();
-                    console.log(`Restored ${items.length} batch item(s) from localStorage`);
+                    console.log(`Restored ${items.length} batch item(s) from localStorage (fallback)`);
+                    
+                    // Try to sync localStorage data to server
+                    this.persistBatchQueue();
+                    this.refreshStaleJobs();
                     return;
                 }
             }
@@ -7444,38 +8641,249 @@ class SyncAnalyzerUI {
             console.warn('Failed to load from localStorage:', e);
         }
     }
-
-    async initBatchQueue() {
-        // If localStorage already loaded valid data, don't overwrite with server data
-        // localStorage is the source of truth for recent results
-        if (this.batchQueue.length > 0) {
-            console.log('Using localStorage batch queue, skipping server fetch');
-            // Check for active jobs to reconnect to
-            this.reconnectToActiveJobs();
-            return;
-        }
-
-        // Only fetch from server if localStorage was empty
+    
+    /**
+     * Generate unique client ID
+     */
+    generateClientId() {
+        return 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    /**
+     * Start periodic sync for cross-browser updates
+     */
+    startPeriodicSync() {
+        // Sync every 10 seconds when not actively processing
+        this.syncInterval = setInterval(() => {
+            if (!this.batchProcessing) {
+                this.syncFromServer();
+                this.pollForNewApiJobs();
+            }
+        }, 10000);
+        
+        // Also sync when window gains focus
+        window.addEventListener('focus', () => {
+            if (!this.batchProcessing) {
+                this.syncFromServer();
+                this.pollForNewApiJobs();
+            }
+        });
+        
+        // Initial poll for API jobs
+        setTimeout(() => this.pollForNewApiJobs(), 2000);
+    }
+    
+    /**
+     * Poll for new jobs submitted via API (not through UI)
+     */
+    async pollForNewApiJobs() {
         try {
-            const resp = await fetch(`${this.FASTAPI_BASE}/ui/state/batch-queue`);
-            if (resp.ok) {
-                const j = await resp.json();
-                const items = (j && j.state && Array.isArray(j.state.items)) ? j.state.items : [];
-                if (items.length) {
-                    this.batchQueue = items;
-                    this.batchQueue.forEach(item => {
-                        if (item.type === 'componentized' && !item.offsetMode) {
-                            item.offsetMode = this.componentizedOffsetMode || 'mixdown';
+            const response = await fetch(`${this.FASTAPI_BASE}/job-registry?since_hours=24`);
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            if (!data.success || !data.jobs) return;
+            
+            // Check for jobs not in our batch queue
+            const existingJobIds = new Set(
+                this.batchQueue
+                    .filter(item => item.analysisId)
+                    .map(item => item.analysisId)
+            );
+            
+            let addedCount = 0;
+            
+            for (const job of data.jobs) {
+                // Skip if already in queue
+                if (existingJobIds.has(job.job_id)) {
+                    // Update status if changed
+                    const existing = this.batchQueue.find(item => item.analysisId === job.job_id);
+                    if (existing && job.status !== existing.status) {
+                        existing.status = job.status === 'completed' ? 'completed' : 
+                                         job.status === 'failed' ? 'failed' : existing.status;
+                        existing.progress = job.progress || existing.progress;
+                        if (job.result) {
+                            existing.result = job.result;
+                            existing.componentResults = job.result.component_results || [];
                         }
-                    });
-                    this.updateBatchTable();
-                    this.updateBatchSummary();
-                    this.addLog('info', `Restored ${items.length} batch item(s) from server`);
+                        if (job.error) existing.error = job.error;
+                        this.updateBatchTableRow(existing);
+                    }
+                    continue;
                 }
+                
+                // Create new batch item from API job
+                const newItem = {
+                    id: Date.now() + Math.random(),
+                    type: job.type || 'componentized',
+                    status: job.status === 'completed' ? 'completed' : 
+                           job.status === 'failed' ? 'failed' : 
+                           job.status === 'processing' ? 'processing' : 'queued',
+                    progress: job.progress || 0,
+                    master: {
+                        path: job.master_file,
+                        name: job.master_name || job.master_file.split('/').pop()
+                    },
+                    components: (job.components || []).map((c, i) => ({
+                        path: c.path || c,
+                        label: c.label || `a${i}`,
+                        name: c.name || (c.path || c).split('/').pop()
+                    })),
+                    componentResults: job.result?.component_results || [],
+                    result: job.result,
+                    error: job.error,
+                    analysisId: job.job_id,
+                    offsetMode: job.offset_mode || 'channel_aware',
+                    createdAt: job.created_at,
+                    source: 'api'  // Mark as API-submitted
+                };
+                
+                this.batchQueue.push(newItem);
+                addedCount++;
+            }
+            
+            if (addedCount > 0) {
+                this.updateBatchTable();
+                this.updateBatchSummary();
+                await this.persistBatchQueue();
+                this.addLog('info', `📡 Discovered ${addedCount} job(s) from API`);
             }
         } catch (e) {
-            console.warn('Failed to load persisted batch queue:', e);
+            // Silent fail - polling is optional
+            console.debug('API job poll failed:', e);
         }
+    }
+    
+    /**
+     * Sync batch queue from server (pull updates from other browsers)
+     */
+    async syncFromServer() {
+        try {
+            const response = await fetch(`${this.FASTAPI_BASE}/batch-queue`);
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            if (!data.success || !data.items) return;
+            
+            // Check if server has newer data
+            const serverItems = data.items;
+            const localItemIds = new Set(this.batchQueue.map(i => i.id));
+            const serverItemIds = new Set(serverItems.map(i => i.id));
+            
+            // Check for changes
+            let hasChanges = false;
+            
+            // Check for status updates on existing items
+            for (const serverItem of serverItems) {
+                const localItem = this.batchQueue.find(i => i.id === serverItem.id);
+                if (localItem) {
+                    // Update status if server has newer status
+                    if (serverItem.status !== localItem.status || 
+                        serverItem.progress !== localItem.progress) {
+                        Object.assign(localItem, serverItem);
+                        hasChanges = true;
+                    }
+                } else if (!localItemIds.has(serverItem.id)) {
+                    // New item from another browser
+                    this.batchQueue.push(serverItem);
+                    hasChanges = true;
+                }
+            }
+            
+            // Check for items deleted in other browsers
+            for (const localItem of [...this.batchQueue]) {
+                if (!serverItemIds.has(localItem.id)) {
+                    this.batchQueue = this.batchQueue.filter(i => i.id !== localItem.id);
+                    hasChanges = true;
+                }
+            }
+            
+            if (hasChanges) {
+                console.log('Synced batch queue from server');
+                this.updateBatchTable();
+                this.updateBatchSummary();
+            }
+        } catch (e) {
+            // Silent fail - sync is optional
+        }
+    }
+    
+    /**
+     * Refresh status of jobs that are stuck in "processing" state
+     */
+    async refreshStaleJobs() {
+        const processingJobs = this.batchQueue.filter(item => 
+            item.status === 'processing' && item.analysisId
+        );
+        
+        if (processingJobs.length === 0) return;
+        
+        this.addLog('info', `Checking status of ${processingJobs.length} processing job(s)...`);
+        
+        for (const item of processingJobs) {
+            try {
+                const response = await fetch(`${this.FASTAPI_BASE}/analysis/${item.analysisId}`);
+                if (!response.ok) {
+                    // Job not found - mark as failed/orphaned
+                    item.status = 'failed';
+                    item.error = 'Job not found on server (may have been cleared)';
+                    this.updateBatchTableRow(item);
+                    continue;
+                }
+                
+                const jobData = await response.json();
+                
+                if (jobData.status === 'completed' || jobData.result) {
+                    // Job completed - update status and results
+                    item.status = 'completed';
+                    item.progress = 100;
+                    
+                    if (jobData.result) {
+                        const result = jobData.result;
+                        if (item.type === 'componentized' && result.component_results) {
+                            item.componentResults = result.component_results.map(cr => ({
+                                component: cr.component_label || cr.component,
+                                offset_seconds: cr.offset_seconds,
+                                confidence: cr.confidence,
+                                timecode: cr.timecode,
+                                findings: cr.findings || []
+                            }));
+                        } else {
+                            item.result = {
+                                offset_seconds: result.offset_seconds,
+                                confidence: result.confidence,
+                                method: result.method,
+                                timecode: result.timecode
+                            };
+                        }
+                    }
+                    
+                    this.addLog('success', `Job "${item.master?.name}" completed (refreshed)`);
+                } else if (jobData.status === 'failed') {
+                    item.status = 'failed';
+                    let errorMsg = jobData.error || 'Job failed';
+                    if (typeof errorMsg === 'object') {
+                        errorMsg = errorMsg.message || errorMsg.detail || JSON.stringify(errorMsg);
+                    }
+                    item.error = errorMsg;
+                    this.addLog('error', `Job "${item.master?.name}" failed: ${item.error}`);
+                }
+                // If still processing, leave it - it might actually be running
+                
+                this.updateBatchTableRow(item);
+            } catch (err) {
+                console.warn(`Failed to refresh job ${item.analysisId}:`, err);
+            }
+        }
+        
+        await this.persistBatchQueue();
+        this.updateBatchSummary();
+    }
+
+    async initBatchQueue() {
+        // Batch queue is already loaded by loadBatchQueue() -> loadBatchQueueFromServer()
+        // This function just reconnects to any active/processing jobs
+        console.log(`initBatchQueue: ${this.batchQueue.length} items in queue`);
         
         // Check for active jobs to reconnect to
         this.reconnectToActiveJobs();
@@ -8013,24 +9421,80 @@ class SyncAnalyzerUI {
         }
     }
 
+    /**
+     * Restart a completed job - re-run analysis from scratch
+     */
+    async restartJob(itemId) {
+        const item = this.batchQueue.find(i => i.id.toString() === itemId);
+        if (!item) {
+            this.addLog('error', 'Cannot restart: item not found');
+            return;
+        }
+
+        if (item.status !== 'completed') {
+            this.addLog('warning', `Cannot restart: item status is "${item.status}", not "completed"`);
+            return;
+        }
+
+        try {
+            this.addLog('info', `Restarting completed ${item.type === 'componentized' ? 'componentized' : 'batch'} item: ${item.master.name}`);
+
+            // Store previous result for reference (optional - could display "previous" vs "new")
+            item.previousResult = item.result;
+            if (item.type === 'componentized') {
+                item.previousComponentResults = item.componentResults;
+            }
+
+            // Reset item state
+            item.status = 'queued';
+            item.progress = 0;
+            item.error = null;
+            item.result = null;
+            if (item.type === 'componentized') {
+                item.componentResults = [];
+                item.currentComponent = null;
+            }
+            delete item.analysisId;
+
+            this.updateBatchTableRow(item);
+            this.updateBatchSummary();
+            await this.persistBatchQueue();
+
+            this.addLog('success', `Item reset to queued: ${item.master.name}. Click "Process Batch" to re-run analysis.`);
+
+        } catch (err) {
+            this.addLog('error', `Restart failed: ${err.message}`);
+        }
+    }
+
     async persistBatchQueue() {
         try {
-            const payload = { items: this.batchQueue, updated_at: new Date().toISOString() };
+            const payload = { 
+                items: this.batchQueue, 
+                lastUpdated: new Date().toISOString(),
+                clientId: this.clientId || 'unknown'
+            };
 
-            // Save to localStorage as primary storage (faster, always available)
+            // Save to server as PRIMARY storage (for cross-browser sync)
+            try {
+                const resp = await fetch(`${this.FASTAPI_BASE}/batch-queue`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (resp.ok) {
+                    console.log('Batch queue synced to server');
+                }
+            } catch (serverErr) {
+                console.warn('Server sync failed:', serverErr);
+            }
+
+            // Also save to localStorage as BACKUP (for offline/fallback)
             try {
                 localStorage.setItem('sync-analyzer-batch-queue', JSON.stringify(payload));
             } catch (storageErr) {
                 console.warn('localStorage save failed:', storageErr);
             }
-
-            // Also save to server (backup)
-            const resp = await fetch(`${this.FASTAPI_BASE}/ui/state/batch-queue`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         } catch (e) {
             console.warn('Persist batch queue error:', e);
         }
@@ -9109,7 +10573,7 @@ class SyncAnalyzerUI {
     }
 
     /**
-     * Open componentized QC interface showing all components
+     * Open componentized QC interface showing ALL components in multi-track view
      */
     async openComponentizedQCInterface(item) {
         console.log('Opening componentized QC interface for item:', item);
@@ -9120,52 +10584,47 @@ class SyncAnalyzerUI {
                 return;
             }
 
-            // Create a component selector dialog
-            const componentOptions = item.componentResults.map((result, index) => {
+            // Build component data array with all tracks
+            const fps = item.frameRate || this.detectedFrameRate || 23.976;
+            const components = item.componentResults.map((result, index) => {
                 const component = item.components[index];
-                const fps = result.frameRate || item.frameRate || this.detectedFrameRate;
-                const timecode = this.formatTimecode(result.offset_seconds, fps);
-
                 return {
-                    label: result.component,
-                    name: component.name,
-                    path: component.path,
-                    offset: result.offset_seconds,
+                    name: component?.name || result.component || `Component ${index + 1}`,
+                    dubFile: component?.path || result.dub_path,
+                    dubUrl: this.getAudioUrlForFile(component?.path || result.dub_path, 'dub'),
+                    detectedOffset: result.offset_seconds,
                     confidence: result.confidence,
-                    timecode: timecode,
-                    result: result
+                    timeline: result.timeline || [],
+                    operatorTimeline: result.operator_timeline || null
                 };
             });
 
-            // Show component selector with waveform visualization
-            const selectedComponent = await this.showComponentSelector(componentOptions, 'Select Component for QC', item);
-
-            if (!selectedComponent) {
-                return; // User cancelled
-            }
-
-            // Open QC interface for the selected component
-            const fps = selectedComponent.result.frameRate || item.frameRate || this.detectedFrameRate;
+            // Open QC interface with ALL components
             const syncData = {
-                masterFile: item.master.name,
-                dubFile: selectedComponent.name,
-                detectedOffset: selectedComponent.offset,
-                confidence: selectedComponent.confidence,
-                masterUrl: this.getAudioUrlForFile(item.master.path, 'master'),
-                dubUrl: this.getAudioUrlForFile(selectedComponent.path, 'dub'),
-                timeline: selectedComponent.result.timeline || [],
-                operatorTimeline: selectedComponent.result.operator_timeline || null,
-                frameRate: fps
+                analysisId: item.id || item.job_id,
+                masterFile: item.master?.name || item.master_file,
+                masterUrl: this.getAudioUrlForFile(item.master?.path || item.master_path, 'master'),
+                // Pass first component as primary dub for backward compatibility
+                dubFile: components[0]?.name,
+                dubUrl: components[0]?.dubUrl,
+                detectedOffset: components[0]?.detectedOffset || 0,
+                confidence: components[0]?.confidence || 0,
+                frameRate: fps,
+                // Pass all components for multi-track view
+                components: components,
+                componentResults: item.componentResults,
+                isComponentized: true
             };
 
-            console.log('Opening QC interface with componentized data:', syncData);
+            console.log('Opening QC interface with ALL components:', syncData);
+            console.log('Component count:', components.length);
 
             if (!this.qcInterface) {
                 throw new Error('QC Interface not initialized');
             }
 
             await this.qcInterface.open(syncData);
-            console.log('Componentized QC interface opened successfully');
+            console.log('Componentized QC interface opened with', components.length, 'tracks');
 
         } catch (error) {
             console.error('Failed to open componentized QC interface:', error);
@@ -9262,7 +10721,7 @@ class SyncAnalyzerUI {
                 animation: fadeIn 0.2s ease;
             `;
 
-            // Create modal dialog
+            // Create modal dialog - wider to fit content
             const dialog = document.createElement('div');
             dialog.className = 'component-selector-dialog';
             dialog.style.cssText = `
@@ -9270,29 +10729,32 @@ class SyncAnalyzerUI {
                 border: 1px solid rgba(255, 107, 66, 0.3);
                 border-radius: 12px;
                 padding: 24px;
-                min-width: 500px;
-                max-width: 700px;
+                width: 90%;
+                max-width: 900px;
+                max-height: 90vh;
+                overflow-y: auto;
                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
                 animation: slideIn 0.3s ease;
             `;
 
-            // Get master file name from item
+            // Get master file name from item - truncate if too long
             const masterFileName = item?.master?.name || 'Master File';
+            const truncatedMaster = masterFileName.length > 60 ? masterFileName.substring(0, 57) + '...' : masterFileName;
             const totalComponents = componentOptions.length;
 
             dialog.innerHTML = `
                 <!-- Header Section -->
-                <div style="margin-bottom: 24px; border-bottom: 1px solid rgba(255, 107, 66, 0.2); padding-bottom: 20px;">
-                    <h3 style="margin: 0 0 12px 0; color: #ff6b42; font-size: 22px; display: flex; align-items: center; gap: 12px; font-weight: 600;">
+                <div style="margin-bottom: 20px; border-bottom: 1px solid rgba(255, 107, 66, 0.2); padding-bottom: 16px;">
+                    <h3 style="margin: 0 0 10px 0; color: #ff6b42; font-size: 18px; display: flex; align-items: center; gap: 10px; font-weight: 600;">
                         <i class="fas fa-layer-group"></i>
                         ${title}
                     </h3>
-                    <div style="display: flex; align-items: center; gap: 20px; font-size: 13px; color: #94a3b8;">
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <i class="fas fa-file-audio" style="color: #60a5fa;"></i>
-                            <span>${masterFileName}</span>
+                    <div style="display: flex; align-items: center; gap: 16px; font-size: 12px; color: #94a3b8; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden;" title="${masterFileName}">
+                            <i class="fas fa-file-audio" style="color: #60a5fa; flex-shrink: 0;"></i>
+                            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${truncatedMaster}</span>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                             <i class="fas fa-th-list"></i>
                             <span>${totalComponents} component${totalComponents !== 1 ? 's' : ''}</span>
                         </div>
@@ -9322,34 +10784,32 @@ class SyncAnalyzerUI {
                     </div>
                 </div>
 
-                <!-- Stacked Waveforms Preview -->
-                <div id="selector-waveforms" style="margin-bottom: 20px; background: rgba(15, 23, 42, 0.5); border-radius: 8px; padding: 16px; border: 1px solid rgba(255, 107, 66, 0.2);">
-                    <div style="font-size: 13px; color: #94a3b8; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                        <i class="fas fa-waveform-lines"></i>
-                        <span style="font-weight: 500;">Offset Visualization</span>
-                    </div>
-                    <div class="waveform-loading" style="text-align: center; padding: 20px; color: #64748b;">
+                <!-- Stacked Waveforms Preview - Compact -->
+                <div id="selector-waveforms" style="margin-bottom: 14px; background: rgba(15, 23, 42, 0.5); border-radius: 6px; padding: 10px; border: 1px solid rgba(255, 107, 66, 0.2);">
+                    <div class="waveform-loading" style="text-align: center; padding: 12px; color: #64748b; font-size: 12px;">
                         <i class="fas fa-spinner fa-spin"></i>
-                        <span style="margin-left: 8px;">Loading waveforms...</span>
+                        <span style="margin-left: 6px;">Loading waveforms...</span>
                     </div>
                 </div>
 
                 <!-- Component Grid -->
-                <div class="component-options" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; max-height: 350px; overflow-y: auto; padding-right: 8px;">
+                <div class="component-options" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; max-height: 300px; overflow-y: auto; padding-right: 8px;">
                     ${componentOptions.map((comp, index) => {
                         const confidencePercent = (comp.confidence * 100).toFixed(0);
                         const confidenceColor = comp.confidence >= 0.8 ? '#22c55e' : comp.confidence >= 0.5 ? '#f59e0b' : '#ef4444';
                         const offsetSeconds = Math.abs(comp.offset).toFixed(3);
                         const offsetSign = comp.offset >= 0 ? '+' : '-';
+                        // Truncate long file names
+                        const truncatedName = comp.name.length > 50 ? comp.name.substring(0, 47) + '...' : comp.name;
 
                         return `
                         <button class="component-option-btn" data-index="${index}" data-name="${comp.name.toLowerCase()}" data-label="${comp.label.toLowerCase()}" style="
                             display: flex;
                             flex-direction: column;
-                            padding: 16px;
+                            padding: 12px;
                             background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 100%);
                             border: 2px solid rgba(255, 107, 66, 0.2);
-                            border-radius: 10px;
+                            border-radius: 8px;
                             color: #e2e8f0;
                             cursor: pointer;
                             transition: all 0.2s ease;
@@ -9358,53 +10818,53 @@ class SyncAnalyzerUI {
                             overflow: hidden;
                         ">
                             <!-- Component Label Badge -->
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                                 <span style="
                                     display: inline-flex;
                                     align-items: center;
                                     justify-content: center;
-                                    padding: 6px 12px;
+                                    padding: 4px 10px;
                                     background: linear-gradient(135deg, #ff6b42, #dc143c);
                                     color: white;
-                                    border-radius: 6px;
+                                    border-radius: 5px;
                                     font-weight: 700;
-                                    font-size: 14px;
+                                    font-size: 12px;
                                     box-shadow: 0 2px 8px rgba(255, 107, 66, 0.3);
                                 ">${comp.label}</span>
-                                <i class="fas fa-chevron-right" style="color: #ff6b42; opacity: 0.4; font-size: 16px;"></i>
+                                <i class="fas fa-chevron-right" style="color: #ff6b42; opacity: 0.4; font-size: 14px;"></i>
                             </div>
 
-                            <!-- File Name -->
-                            <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
-                                <div style="color: #cbd5e1; font-size: 13px; word-break: break-word; line-height: 1.4;">
-                                    ${comp.name}
+                            <!-- File Name - Truncated -->
+                            <div style="margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.2);" title="${comp.name}">
+                                <div style="color: #cbd5e1; font-size: 11px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    ${truncatedName}
                                 </div>
                             </div>
 
-                            <!-- Metrics Grid -->
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <!-- Metrics Grid - Compact -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                 <!-- Offset -->
-                                <div style="background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid rgba(255, 107, 66, 0.2);">
-                                    <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 5px; border: 1px solid rgba(255, 107, 66, 0.2);">
+                                    <div style="font-size: 9px; color: #94a3b8; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.3px;">
                                         <i class="fas fa-clock"></i> Offset
                                     </div>
-                                    <div style="font-size: 14px; font-weight: 600; color: #ff6b42;">
+                                    <div style="font-size: 12px; font-weight: 600; color: #ff6b42;">
                                         ${comp.timecode}
                                     </div>
-                                    <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+                                    <div style="font-size: 9px; color: #64748b; margin-top: 1px;">
                                         ${offsetSign}${offsetSeconds}s
                                     </div>
                                 </div>
 
                                 <!-- Confidence -->
-                                <div style="background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid ${confidenceColor}33;">
-                                    <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 5px; border: 1px solid ${confidenceColor}33;">
+                                    <div style="font-size: 9px; color: #94a3b8; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.3px;">
                                         <i class="fas fa-check-circle"></i> Quality
                                     </div>
-                                    <div style="font-size: 14px; font-weight: 600; color: ${confidenceColor};">
+                                    <div style="font-size: 12px; font-weight: 600; color: ${confidenceColor};">
                                         ${confidencePercent}%
                                     </div>
-                                    <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+                                    <div style="font-size: 9px; color: #64748b; margin-top: 1px;">
                                         ${comp.confidence >= 0.8 ? 'Excellent' : comp.confidence >= 0.5 ? 'Good' : 'Fair'}
                                     </div>
                                 </div>
@@ -9414,18 +10874,18 @@ class SyncAnalyzerUI {
                     }).join('')}
                 </div>
 
-                <!-- Footer Actions -->
-                <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.2);">
+                <!-- Footer Actions - Compact -->
+                <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid rgba(148, 163, 184, 0.2);">
                     <button class="cancel-btn" style="
-                        padding: 12px 24px;
+                        padding: 10px 20px;
                         background: rgba(100, 116, 139, 0.2);
                         border: 1px solid rgba(100, 116, 139, 0.3);
-                        border-radius: 8px;
+                        border-radius: 6px;
                         color: #94a3b8;
                         cursor: pointer;
                         transition: all 0.2s ease;
                         font-weight: 500;
-                        font-size: 14px;
+                        font-size: 13px;
                     ">
                         <i class="fas fa-times"></i> Cancel
                     </button>
@@ -9920,3 +11380,4 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global helper for non-UI modules
     window.showToast = (level, msg, title) => window.app?.showToast(level, msg, title);
 });
+

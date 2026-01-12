@@ -31,6 +31,7 @@ def run_componentized_analysis_task(
     refine_window_seconds: float = 8.0,
     refine_pad_seconds: float = 2.0,
     frame_rate: float = 23.976,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """
     Run componentized sync analysis as a background Celery task.
@@ -49,6 +50,12 @@ def run_componentized_analysis_task(
     """
     task_id = self.request.id
     logger.info(f"Starting componentized analysis task {task_id}")
+    
+    # Set logging level based on verbose flag
+    if verbose:
+        logging.getLogger("sync_analyzer").setLevel(logging.DEBUG)
+        logging.getLogger("app").setLevel(logging.DEBUG)
+        logger.info(f"Verbose logging enabled for task {task_id}")
     
     try:
         self.update_progress(5, "Initializing analysis...")
@@ -79,16 +86,45 @@ def run_componentized_analysis_task(
             refine_pad_seconds=refine_pad_seconds,
             frame_rate=frame_rate,
             job_id=task_id,  # Use Celery task_id for progress tracking
+            verbose=verbose,
         )
-        
+
+        # Generate waveforms for QC interface (background, non-blocking)
+        try:
+            from sync_analyzer.utils.waveform_generator import generate_componentized_waveforms
+            component_paths = [comp["path"] for comp in components]
+            generate_componentized_waveforms(
+                master_path=master_path,
+                component_paths=component_paths,
+                analysis_id=task_id
+            )
+            logger.info(f"Generated waveforms for task {task_id}")
+        except Exception as wf_err:
+            logger.warning(f"Waveform generation failed (non-critical): {wf_err}")
+
         self.update_progress(100, "Analysis complete!")
         logger.info(f"Componentized analysis task {task_id} completed successfully")
+        
+        # Update job registry with completion
+        try:
+            from app.api.v1.endpoints.job_registry import update_job_status
+            update_job_status(task_id, "completed", progress=100, result=_json_safe(result))
+        except Exception as reg_err:
+            logger.warning(f"Failed to update job registry: {reg_err}")
         
         return _json_safe(result)
     
     except Exception as e:
         logger.error(f"Componentized analysis task {task_id} failed: {e}")
         self.update_progress(0, f"Failed: {str(e)}")
+        
+        # Update job registry with failure
+        try:
+            from app.api.v1.endpoints.job_registry import update_job_status
+            update_job_status(task_id, "failed", error=str(e))
+        except Exception as reg_err:
+            logger.warning(f"Failed to update job registry: {reg_err}")
+        
         raise
 
 

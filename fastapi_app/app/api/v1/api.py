@@ -6,7 +6,7 @@ Main API router for the Professional Audio Sync Analyzer.
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, BackgroundTasks
 from typing import List, Optional
 
-from app.api.v1.endpoints import analysis, files, reports, ai, health, batch, repair, analyze_and_repair, ui_state, jobs, componentized, proxy, dashboard
+from app.api.v1.endpoints import analysis, files, reports, ai, health, batch, repair, analyze_and_repair, ui_state, jobs, componentized, proxy, dashboard, batch_queue, job_registry, csv_import, waveforms, maintenance, channel_detect, logs
 
 # Create main API router
 api_router = APIRouter()
@@ -88,4 +88,46 @@ api_router.include_router(
     dashboard.router,
     prefix="/dashboard",
     tags=["dashboard"]
+)
+
+api_router.include_router(
+    batch_queue.router,
+    prefix="/batch-queue",
+    tags=["batch-queue"]
+)
+
+api_router.include_router(
+    job_registry.router,
+    prefix="/job-registry",
+    tags=["job-registry"]
+)
+
+api_router.include_router(
+    csv_import.router,
+    prefix="/csv",
+    tags=["csv-import"]
+)
+
+api_router.include_router(
+    waveforms.router,
+    prefix="/waveforms",
+    tags=["waveforms"]
+)
+
+api_router.include_router(
+    maintenance.router,
+    prefix="/maintenance",
+    tags=["maintenance"]
+)
+
+api_router.include_router(
+    channel_detect.router,
+    prefix="/channels",
+    tags=["channel-detection"]
+)
+
+api_router.include_router(
+    logs.router,
+    prefix="/logs",
+    tags=["logs"]
 )

@@ -47,6 +47,7 @@ class ComponentizedAnalysisRequest(BaseModel):
     refine_pad_seconds: float = Field(default=2.0)
     frameRate: float = Field(default=23.976, alias="frame_rate")
     job_id: Optional[str] = None
+    verbose: bool = Field(default=False, description="Enable verbose/debug logging")
 
     class Config:
         populate_by_name = True
@@ -146,6 +147,12 @@ async def analyze_componentized_sync(request: ComponentizedAnalysisRequest):
         
         job_id = request.job_id or str(uuid.uuid4())
         
+        # Set logging level based on verbose flag
+        if request.verbose:
+            logging.getLogger("sync_analyzer").setLevel(logging.DEBUG)
+            logging.getLogger("fastapi_app").setLevel(logging.DEBUG)
+            logger.info("Verbose logging enabled for this analysis")
+        
         result = run_componentized_analysis(
             master_path=request.master,
             components=components,
@@ -157,8 +164,22 @@ async def analyze_componentized_sync(request: ComponentizedAnalysisRequest):
             refine_pad_seconds=request.refine_pad_seconds,
             frame_rate=request.frameRate,
             job_id=job_id,
+            verbose=request.verbose,
         )
-        
+
+        # Generate waveforms for QC interface (non-blocking)
+        try:
+            from ....utils.waveform_generator import generate_componentized_waveforms
+            component_paths = [comp["path"] for comp in components]
+            generate_componentized_waveforms(
+                master_path=request.master,
+                component_paths=component_paths,
+                analysis_id=job_id
+            )
+            logger.info(f"Generated waveforms for analysis {job_id}")
+        except Exception as wf_err:
+            logger.warning(f"Waveform generation failed (non-critical): {wf_err}")
+
         return ComponentizedAnalysisResponse(
             success=True,
             result=_json_safe(result),
@@ -195,7 +216,7 @@ async def analyze_componentized_async(request: ComponentizedAnalysisRequest):
         from ....tasks.analysis_tasks import run_componentized_analysis_task
         
         # Dispatch task to Celery
-        logger.info(f"🚀 API: methods={request.methods}, offset_mode={request.offset_mode}")
+        logger.info(f"🚀 API: methods={request.methods}, offset_mode={request.offset_mode}, verbose={request.verbose}")
         task = run_componentized_analysis_task.delay(
             master_path=request.master,
             components=components,
@@ -206,10 +227,30 @@ async def analyze_componentized_async(request: ComponentizedAnalysisRequest):
             refine_window_seconds=request.refine_window_seconds,
             refine_pad_seconds=request.refine_pad_seconds,
             frame_rate=request.frameRate,
+            verbose=request.verbose,
         )
         
         task_id = task.id
         logger.info(f"Dispatched componentized analysis task: {task_id}")
+        
+        # Register job in global registry for UI discovery
+        try:
+            from .job_registry import register_job
+            import os
+            register_job(task_id, {
+                "type": "componentized",
+                "status": "queued",
+                "master_file": request.master,
+                "master_name": os.path.basename(request.master),
+                "components": components,
+                "component_count": len(components),
+                "progress": 0,
+                "source": "api",
+                "methods": request.methods,
+                "offset_mode": request.offset_mode,
+            })
+        except Exception as reg_err:
+            logger.warning(f"Failed to register job in registry: {reg_err}")
         
         return AsyncJobResponse(
             success=True,

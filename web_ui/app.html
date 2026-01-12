@@ -7,11 +7,11 @@
     <title>Professional Audio Sync Analyzer</title>
     <link rel="stylesheet" href="style.css?v=20250913-2">
     <link rel="stylesheet" href="waveform-styles.css?v=20250828-0100">
-    <link rel="stylesheet" href="qc-styles.css?v=20250829-1">
+    <link rel="stylesheet" href="qc-styles.css?v=20260109-1">
     <link rel="stylesheet" href="repair-qc-styles.css?v=20250902-1">
     <link rel="stylesheet" href="repair-preview-styles.css?v=20250912-1">
     <link rel="stylesheet" href="operator-console.css?v=20250115-1">
-    <link rel="stylesheet" href="styles/redesign.css?v=20251222-2">
+    <link rel="stylesheet" href="styles/redesign.css?v=20260110-1">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,15 +74,24 @@
     </div>
     
     <div class="main-container">
-        <!-- Left Quadrant: File System Browser -->
+        <!-- Left Quadrant: File System Browser + Configuration (Tabbed) -->
         <div class="quadrant file-browser">
             <div class="quadrant-header">
-                <h2><i class="fas fa-folder-tree"></i> File System</h2>
-                <div class="path-breadcrumb">
+                <div class="browser-tabs">
+                    <button class="browser-tab active" data-panel="files-panel" title="File Browser">
+                        <i class="fas fa-folder-tree"></i> <span>Files</span>
+                    </button>
+                    <button class="browser-tab" data-panel="config-panel" title="Analysis Configuration">
+                        <i class="fas fa-cogs"></i> <span>Config</span>
+                    </button>
+                </div>
+                <div class="path-breadcrumb" id="path-breadcrumb-container">
                     <span id="current-path">/mnt/data</span>
                 </div>
             </div>
             <div class="quadrant-content">
+                <!-- Files Panel (default shown) -->
+                <div class="browser-panel active" id="files-panel">
                 <!-- File Search Bar -->
                 <div class="file-search-container">
                     <div class="search-input-wrapper">
@@ -201,39 +210,15 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-        
-        <!-- Top Right Quadrants -->
-        <div class="quadrant configuration" id="quadrant-2">
-            <div class="quadrant-header">
-                <div class="view-selector">
-                    <button class="view-tab active" data-view="config" title="Analysis Configuration">
-                        <i class="fas fa-cogs"></i> <span class="tab-label">Configuration</span>
-                    </button>
-                    <button class="view-tab" data-view="details" title="Batch Item Details">
-                        <i class="fas fa-info-circle"></i> <span class="tab-label">Batch Details</span>
-                    </button>
-                </div>
-                <button class="reset-config-btn" id="reset-config-btn" title="Reset to defaults">
-                    <i class="fas fa-undo"></i> Reset
-                </button>
-            </div>
-            <div class="quadrant-content">
-                <!-- Batch Details View (hidden by default) -->
-                <div class="view-panel" id="batch-details-view" style="display: none;">
-                    <div class="batch-details-placeholder" id="batch-details-placeholder">
-                        <div class="placeholder-icon">
-                            <i class="fas fa-mouse-pointer"></i>
-                        </div>
-                        <p>Select a batch item to view details</p>
+                </div><!-- end files-panel -->
+                
+                <!-- Configuration Panel (hidden by default) -->
+                <div class="browser-panel" id="config-panel" style="display: none;">
+                    <div class="config-panel-header">
+                        <button class="reset-config-btn" id="reset-config-btn" title="Reset to defaults">
+                            <i class="fas fa-undo"></i> Reset Defaults
+                        </button>
                     </div>
-                    <div class="batch-details-content" id="batch-details-content" style="display: none;">
-                        <!-- Dynamic content loaded here -->
-                    </div>
-                </div>
-                <!-- Configuration View (shown by default) -->
-                <div class="view-panel" id="config-view">
                 <!-- Analysis Methods -->
                 <div class="config-section" id="detection-methods-section">
                     <div class="config-header">
@@ -278,7 +263,7 @@
                                 <div class="method-header">
                                     <span class="method-name">🚀 GPU Fast</span>
                                     <div class="toggle-switch">
-                                        <input type="checkbox" id="method-gpu" value="gpu">
+                                        <input type="checkbox" id="method-gpu" value="gpu" checked>
                                         <label for="method-gpu" class="toggle-slider gpu-toggle"></label>
                                     </div>
                                 </div>
@@ -446,7 +431,92 @@
                     </div>
                 </div>
                 -->
-                </div><!-- end config-view -->
+                
+                <!-- Maintenance Section -->
+                <div class="config-section maintenance-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-tools"></i> Maintenance</h3>
+                    </div>
+                    <div class="maintenance-buttons">
+                        <button class="maintenance-btn" id="maint-clear-jobs" title="Clear all jobs and orphaned tasks">
+                            <i class="fas fa-trash-alt"></i> Clear All Jobs
+                        </button>
+                        <button class="maintenance-btn" id="maint-clear-waveforms" title="Clear cached waveform data">
+                            <i class="fas fa-wave-square"></i> Clear Waveforms
+                        </button>
+                        <button class="maintenance-btn" id="maint-restart-celery" title="Restart Celery worker">
+                            <i class="fas fa-sync"></i> Restart Celery
+                        </button>
+                        <button class="maintenance-btn" id="maint-flush-redis" title="Flush Redis cache">
+                            <i class="fas fa-database"></i> Flush Redis
+                        </button>
+                        <button class="maintenance-btn" id="maint-health-check" title="Check system health">
+                            <i class="fas fa-heartbeat"></i> Health Check
+                        </button>
+                        <button class="maintenance-btn danger" id="maint-factory-reset" title="Reset everything to defaults">
+                            <i class="fas fa-exclamation-triangle"></i> Factory Reset
+                        </button>
+                    </div>
+                    <div class="maintenance-status" id="maintenance-status"></div>
+                </div>
+                
+                <!-- Real-Time Celery Logs Section -->
+                <div class="config-section logs-section">
+                    <div class="config-header">
+                        <h3><i class="fas fa-scroll"></i> Celery Logs</h3>
+                        <div class="log-controls">
+                            <select id="log-level-filter" class="log-filter-select">
+                                <option value="">All Levels</option>
+                                <option value="DEBUG">DEBUG</option>
+                                <option value="INFO" selected>INFO+</option>
+                                <option value="WARNING">WARNING+</option>
+                                <option value="ERROR">ERROR</option>
+                            </select>
+                            <button class="log-control-btn" id="toggle-log-viewer" title="Show/Hide Log Viewer">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="log-control-btn" id="refresh-logs" title="Refresh Logs">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="log-control-btn" id="clear-log-viewer" title="Clear Log Display">
+                                <i class="fas fa-eraser"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="celery-log-viewer" id="celery-log-viewer" style="display: none;">
+                        <div class="log-viewer-toolbar">
+                            <span class="log-status" id="log-viewer-status">Paused</span>
+                            <label class="auto-scroll-toggle">
+                                <input type="checkbox" id="log-auto-scroll" checked>
+                                <span>Auto-scroll</span>
+                            </label>
+                            <span class="log-line-count" id="log-line-count">0 lines</span>
+                        </div>
+                        <div class="log-viewer-content" id="log-viewer-content">
+                            <div class="log-empty-state">Click refresh to load logs...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                </div><!-- end config-panel -->
+            </div>
+        </div>
+
+        <!-- Top Right: Batch Details -->
+        <div class="quadrant batch-details-quadrant" id="quadrant-2">
+            <div class="quadrant-header">
+                <h2><i class="fas fa-info-circle"></i> Batch Details</h2>
+            </div>
+            <div class="quadrant-content">
+                <div class="batch-details-placeholder" id="batch-details-placeholder">
+                    <div class="placeholder-icon">
+                        <i class="fas fa-mouse-pointer"></i>
+                    </div>
+                    <p>Click a batch item to view details</p>
+                </div>
+                <div class="batch-details-content" id="batch-details-content" style="display: none;">
+                    <!-- Dynamic content loaded here -->
+                </div>
             </div>
         </div>
 
@@ -492,18 +562,34 @@
                         <i class="fas fa-file-csv"></i> Upload CSV
                     </button>
                     <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
-                    <div class="concurrent-jobs-control" title="Number of parallel jobs to process">
-                        <label for="concurrent-jobs"><i class="fas fa-layer-group"></i></label>
-                        <select id="concurrent-jobs">
-                            <option value="1" selected>1 Job</option>
-                            <option value="2">2 Jobs</option>
-                            <option value="4">4 Jobs</option>
-                            <option value="6">6 Jobs</option>
-                            <option value="8">8 Jobs</option>
-                        </select>
+                    <div class="jobs-dropdown" title="Number of parallel jobs to process">
+                        <button id="jobs-dropdown-btn" class="dropdown-trigger">
+                            <i class="fas fa-layer-group"></i> <span id="jobs-label">1 Job</span> <i class="fas fa-caret-down"></i>
+                        </button>
+                        <div class="dropdown-menu" id="jobs-dropdown-menu">
+                            <button class="dropdown-item" data-value="1">
+                                <i class="fas fa-user"></i> 1 Job
+                            </button>
+                            <button class="dropdown-item" data-value="2">
+                                <i class="fas fa-user-friends"></i> 2 Jobs
+                            </button>
+                            <button class="dropdown-item" data-value="4">
+                                <i class="fas fa-users"></i> 4 Jobs
+                            </button>
+                            <button class="dropdown-item" data-value="6">
+                                <i class="fas fa-users"></i> 6 Jobs
+                            </button>
+                            <button class="dropdown-item" data-value="8">
+                                <i class="fas fa-users-cog"></i> 8 Jobs
+                            </button>
+                        </div>
+                        <input type="hidden" id="concurrent-jobs" value="1">
                     </div>
                     <button id="process-batch" title="Process all files in batch">
                         <i class="fas fa-play"></i> Process Batch
+                    </button>
+                    <button id="refresh-batch-status" title="Refresh status of processing jobs">
+                        <i class="fas fa-sync-alt"></i>
                     </button>
                     <button id="repair-all-batch" title="Repair all completed analyses">
                         <i class="fas fa-wrench"></i> Repair All
@@ -623,12 +709,15 @@
     <script src="core-audio-engine.js?v=20250902-1"></script>
     <script src="waveform-visualizer.js?v=20250902-1"></script>
     <script src="enhanced-waveform.js?v=20250902-1"></script>
-    <script src="qc-interface.js?v=20260108-1"></script>
+    <script src="qc-player.js?v=20260109-1"></script>
+    <script src="multi-track-player.js?v=20260109-3"></script>
+    <script src="native-audio-player.js?v=20260109-2"></script>
+    <script src="qc-interface.js?v=20260110-5"></script>
     <script src="repair-qc-interface.js?v=20260108-1"></script>
     <script src="smart-playback-engine.js?v=20250912-1"></script>
     <script src="repair-preview-interface.js?v=20250912-1"></script>
     <script src="operator-console.js?v=20250115-1"></script>
-    <script src="app.js?v=20260108-2"></script>
+    <script src="app.js?v=20260110-3"></script>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>
