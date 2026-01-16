@@ -176,14 +176,14 @@ class SimpleGPUSyncDetector:
         return audio.squeeze(0), sr
     
     @torch.no_grad()
-    def _extract_embeddings(self, audio: torch.Tensor, max_duration: float = 120.0) -> torch.Tensor:
+    def _extract_embeddings(self, audio: torch.Tensor, max_duration: float = 300.0) -> torch.Tensor:
         """
         Extract Wav2Vec2 embeddings from audio.
-        
+
         Args:
             audio: Audio tensor (1D)
-            max_duration: Maximum duration to process (for speed)
-            
+            max_duration: Maximum duration to process (seconds) - matches MFCC/Onset limit
+
         Returns:
             Embeddings tensor (frames x features)
         """

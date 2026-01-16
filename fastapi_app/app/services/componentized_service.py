@@ -856,11 +856,11 @@ def _run_gpu_analysis(
     if len(offsets) > 1:
         offset_spread = max(offsets) - min(offsets)
         avg_confidence = sum(r.get('confidence', 0) for r in component_results) / len(component_results)
-        
+
         # Get duration info for SmartVerifier
         comp_durations = [r.get('component_duration') for r in component_results if r.get('component_duration')]
         avg_comp_duration = sum(comp_durations) / len(comp_durations) if comp_durations else None
-        
+
         # Use SmartVerifier to determine if verification is needed
         verifier = SmartVerifier()
         verify_result = verifier.check_indicators(
@@ -871,10 +871,10 @@ def _run_gpu_analysis(
             other_component_offsets=offsets[1:] if len(offsets) > 1 else None,
             is_first_in_batch=False
         )
-        
+
         logger.info(f"Step 2: SmartVerifier check - spread={offset_spread:.3f}s, avg_conf={avg_confidence:.1%}")
         logger.info(f"   Severity: {verify_result.severity_score:.0%}, Indicators: {len(verify_result.triggered_indicators)}")
-        
+
         needs_verification = verify_result.needs_verification
         
         if not needs_verification:
