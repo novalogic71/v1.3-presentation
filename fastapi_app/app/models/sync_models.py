@@ -119,7 +119,7 @@ class SyncAnalysisRequest(BaseModel):
     master_file: str = Field(..., description="Path to master audio/video file")
     dub_file: str = Field(..., description="Path to dub audio/video file")
     methods: List[AnalysisMethod] = Field(
-        default=[AnalysisMethod.MFCC],
+        default=[AnalysisMethod.MFCC, AnalysisMethod.ONSET, AnalysisMethod.SPECTRAL],
         description="Analysis methods to use"
     )
     enable_ai: bool = Field(default=False, description="Enable AI-based detection")
@@ -627,7 +627,7 @@ class BatchItem(BaseModel):
     item_id: str = Field(..., description="Unique item identifier")
     master_file: str = Field(..., description="Path to master file")
     dub_file: str = Field(..., description="Path to dub file")
-    methods: List[AnalysisMethod] = Field(default=[AnalysisMethod.MFCC], description="Analysis methods")
+    methods: List[AnalysisMethod] = Field(default=[AnalysisMethod.MFCC, AnalysisMethod.ONSET, AnalysisMethod.SPECTRAL], description="Analysis methods")
     ai_model: Optional[AIModel] = None
     description: Optional[str] = None
     tags: List[str] = Field(default_factory=list)

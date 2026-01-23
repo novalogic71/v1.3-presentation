@@ -455,23 +455,22 @@ class SyncAnalyzerUI {
     }
     
     /**
-     * Initialize default detection methods (GPU by default)
+     * Initialize default detection methods (MFCC, Onset, Spectral by default)
      */
     initDefaultMethods() {
-        // Ensure GPU is selected by default
-        if (this.elements.methodGpu) {
-            this.elements.methodGpu.checked = true;
-            // Uncheck other methods since GPU is exclusive
-            if (this.elements.methodMfcc) this.elements.methodMfcc.checked = false;
-            if (this.elements.methodOnset) this.elements.methodOnset.checked = false;
-            if (this.elements.methodSpectral) this.elements.methodSpectral.checked = false;
-            if (this.elements.methodAi) this.elements.methodAi.checked = false;
-            if (this.elements.methodFingerprint) this.elements.methodFingerprint.checked = false;
-        }
+        // Select MFCC, Onset, and Spectral as default methods (more accurate than GPU)
+        if (this.elements.methodMfcc) this.elements.methodMfcc.checked = true;
+        if (this.elements.methodOnset) this.elements.methodOnset.checked = true;
+        if (this.elements.methodSpectral) this.elements.methodSpectral.checked = true;
+        
+        // Uncheck other methods
+        if (this.elements.methodGpu) this.elements.methodGpu.checked = false;
+        if (this.elements.methodAi) this.elements.methodAi.checked = false;
+        if (this.elements.methodFingerprint) this.elements.methodFingerprint.checked = false;
         
         // Initialize the currentMethods array
-        this.currentMethods = ['gpu'];
-        this.addLog('info', '🚀 GPU Fast mode enabled by default');
+        this.currentMethods = ['mfcc', 'onset', 'spectral'];
+        this.addLog('info', '🎯 Multi-method analysis enabled by default (MFCC + Onset + Spectral)');
     }
 
     initComponentizedOffsetMode() {
@@ -10179,13 +10178,17 @@ class SyncAnalyzerUI {
                 [this.elements.methodMfcc, this.elements.methodOnset, this.elements.methodSpectral, this.elements.methodAi, this.elements.methodGpu, this.elements.methodFingerprint].forEach(cb => {
                     if (cb) cb.disabled = false;
                 });
-                // Restore at least one method if none selected (and exclusive modes aren't checked)
+                // Restore default methods if none selected (and exclusive modes aren't checked)
                 const gpuChecked = this.elements.methodGpu && this.elements.methodGpu.checked;
-                const exclusiveModeOn = gpuChecked;
+                const fingerprintChecked = this.elements.methodFingerprint && this.elements.methodFingerprint.checked;
+                const exclusiveModeOn = gpuChecked || fingerprintChecked;
                 if (!exclusiveModeOn && !this.elements.methodMfcc.checked && !this.elements.methodOnset.checked &&
                     !this.elements.methodSpectral.checked && (!this.elements.methodAi || !this.elements.methodAi.checked)) {
+                    // Restore default multi-method selection
+                    this.elements.methodMfcc.checked = true;
                     this.elements.methodOnset.checked = true;
                     this.elements.methodSpectral.checked = true;
+                    this.updateToggleVisualFeedback(this.elements.methodMfcc);
                     this.updateToggleVisualFeedback(this.elements.methodOnset);
                     this.updateToggleVisualFeedback(this.elements.methodSpectral);
                 }
