@@ -6,10 +6,9 @@
 class QCInterface {
     constructor() {
         this.audioEngine = null;
-        this.qcPlayer = null;
         this.nativePlayer = null;
         this.multiTrackPlayer = null;
-        // NOTE: WaveSurfer experiments removed; QC uses QCPlayer + canvas again.
+        // NOTE: WaveSurfer experiments removed; QC uses WaveformQCPlayer only.
         this.wavesurferPlayer = null;
         this.currentData = null;
         this.isVisible = false;
@@ -101,7 +100,10 @@ class QCInterface {
                         </div>
                         
                         <div class="qc-waveform-display" style="position:relative;">
-                            <canvas id="qc-waveform-canvas" width="900" height="320"></canvas>
+                            <!-- Waveform Playlist Container (new robust player) -->
+                            <div id="waveform-playlist-container" style="width:100%; min-height:220px; background:#1a1a2e; border-radius:8px;"></div>
+                            <!-- Legacy canvas (hidden by default, fallback) -->
+                            <canvas id="qc-waveform-canvas" width="900" height="320" style="display:none;"></canvas>
                             <div class="qc-waveform-overlay" style="position:absolute;left:0;top:0;right:0;bottom:0;z-index:5;pointer-events:none;">
                                 <div class="qc-scene-bands" id="qc-scene-bands" style="position:absolute;left:0;top:0;right:0;bottom:0;display:flex;gap:2px;z-index:6;"></div>
                                 <div class="qc-drift-markers" id="qc-drift-markers" style="position:absolute;left:0;bottom:0;right:0;height:100%;z-index:6;"></div>
@@ -246,7 +248,7 @@ class QCInterface {
 
     initializeAudioEngine() {
         try {
-            // Core waveform extraction (canvas rendering)
+            // Core waveform extraction (fallback canvas rendering)
             this.audioEngine = new CoreAudioEngine();
             this.audioEngine.onProgress = (message, percentage) => {
                 this.updateStatus(`${message} (${percentage}%)`);
@@ -256,37 +258,48 @@ class QCInterface {
                 this.updateStatus(`Audio Error: ${error}`, 'error');
             };
             this.audioEngine.onAudioLoaded = () => {
-                this.updateWaveform();
+                // Update canvas for componentized analyses (multi-track view)
+                // WaveformQCPlayer handles simple 2-track visualization
+                const isComponentized = this.trackWaveforms.length > 2;
+                if (isComponentized) {
+                    this.updateWaveform();
+                }
                 this.renderDriftMarkers();
                 this.renderSceneBands();
             };
 
-            // Primary playback: QCPlayer (simple, reliable)
-            if (typeof QCPlayer !== 'undefined') {
-                this.qcPlayer = new QCPlayer();
-                this.qcPlayer.onTimeUpdate = (info) => this.updatePlayheadFromPlayer(info);
-                this.qcPlayer.onStatusChange = (msg, type) => this.updateStatus(msg, type);
+            // WaveformQCPlayer (waveform-playlist library - robust multi-track)
+            console.log('QC Interface: Preparing WaveformQCPlayer');
+            const container = document.getElementById('waveform-playlist-container');
+            if (!container) {
+                console.error('waveform-playlist container not found!');
+                this.updateStatus('Waveform player container not found', 'error');
+                return;
             }
+            
+            this.waveformPlayer = new WaveformQCPlayer({ container });
+            this.waveformPlayer.onTimeUpdate = (info) => this.updatePlayheadFromWaveformPlayer(info);
+            this.waveformPlayer.onStatusChange = (msg, type) => this.updateStatus(msg, type);
+            this.waveformPlayer.onReady = () => {
+                console.log('WaveformQCPlayer ready');
+                this.updateStatus('Audio ready');
+            };
+            this.waveformPlayer.onError = (err) => {
+                console.error('WaveformQCPlayer error:', err);
+                this.updateStatus(`Player error: ${err}`, 'error');
+            };
 
-            // Optional fallback players (kept for other modes/features in this file)
-            if (typeof NativeAudioPlayer !== 'undefined') {
-                this.nativePlayer = new NativeAudioPlayer();
-                this.nativePlayer.onTimeUpdate = (info) => this.updatePlayheadFromNativePlayer(info);
-                this.nativePlayer.onStatusChange = (msg, type) => this.updateStatus(msg, type);
-            }
+            // Clear legacy player references
+            this.nativePlayer = null;
+            this.multiTrackPlayer = null;
 
-            if (typeof MultiTrackPlayer !== 'undefined') {
-                this.multiTrackPlayer = new MultiTrackPlayer({ container: document.body });
-                this.multiTrackPlayer.onTimeUpdate = (info) => this.updatePlayheadFromMultiTrackPlayer(info);
-                this.multiTrackPlayer.onTrackLoaded = () => this.updateTrackMixerUI();
-            }
-
-            console.log('QC Interface: Audio engine initialized (QCPlayer + canvas)');
+            console.log('QC Interface: Audio engine initialized');
         } catch (error) {
             console.error('Failed to initialize QC audio engine:', error);
             this.updateStatus('Audio engine initialization failed', 'error');
         }
     }
+
     
     /**
      * Update playhead from WaveSurfer
@@ -335,6 +348,35 @@ class QCInterface {
         if (canvas) canvas.style.display = 'none';
     }
     
+    /**
+     * Update timeline slider from WaveformQCPlayer (waveform-playlist)
+     */
+    updatePlayheadFromWaveformPlayer(info) {
+        const duration = info.duration || this.getDurationFromTracks();
+        if (duration <= 0) return;
+
+        // Update progress ratio for overlay
+        this.currentProgress = info.currentTime / duration;
+
+        // Update the timeline slider
+        const slider = document.getElementById('qc-timeline-slider');
+        if (slider && !this.isSeeking) {
+            slider.value = (info.currentTime / duration) * 1000;
+        }
+
+        // Update time display
+        const currentTimeEl = document.getElementById('qc-current-time');
+        const totalTimeEl = document.getElementById('qc-total-time');
+        if (currentTimeEl) currentTimeEl.textContent = this.formatTime(info.currentTime);
+        if (totalTimeEl) totalTimeEl.textContent = this.formatTime(duration);
+
+        // Update playback status
+        const statusEl = document.getElementById('qc-playback-status');
+        if (statusEl) {
+            statusEl.textContent = info.isPlaying ? 'Playing' : 'Ready';
+        }
+    }
+
     /**
      * Update timeline slider from NativeAudioPlayer
      */
@@ -544,86 +586,6 @@ class QCInterface {
         });
     }
     
-    updatePlayheadFromPlayer(info) {
-        // Get duration from all available sources
-        let duration = Math.max(info.masterDuration || 0, info.dubDuration || 0);
-        if (this.trackWaveforms.length > 0) {
-            duration = Math.max(duration, ...this.trackWaveforms.map(t => t.waveformData?.duration || 0));
-        }
-        if (duration <= 0) return;
-        
-        // Update timeline slider (native range input - no jumping!)
-        const slider = document.getElementById('qc-timeline-slider');
-        if (slider && !this.isSeeking) {
-            slider.value = (info.masterTime / duration) * 1000;
-        }
-        
-        // Update time display
-        const currentTimeEl = document.getElementById('qc-current-time');
-        const totalTimeEl = document.getElementById('qc-total-time');
-        if (currentTimeEl) currentTimeEl.textContent = this.formatTime(info.masterTime);
-        if (totalTimeEl) totalTimeEl.textContent = this.formatTime(duration);
-    }
-
-    /**
-     * Start smooth playhead animation using requestAnimationFrame
-     */
-    startPlayheadAnimation() {
-        this.stopPlayheadAnimation();
-        
-        const animate = () => {
-            // Check which player is playing
-            const nativePlaying = this.nativePlayer?.isPlaying;
-            const multiTrackPlaying = this.multiTrackPlayer?.isPlaying;
-            const qcPlaying = this.qcPlayer?.isPlaying;
-            
-            if (!nativePlaying && !multiTrackPlaying && !qcPlaying) {
-                this.playheadAnimationId = null;
-                return;
-            }
-            
-            // Use NativeAudioPlayer (preferred)
-            if (nativePlaying && this.nativePlayer) {
-                const status = this.nativePlayer.getStatus();
-                this.updatePlayheadFromNativePlayer({
-                    currentTime: status.currentTime,
-                    duration: status.duration,
-                    isPlaying: status.isPlaying
-                });
-            } else if (multiTrackPlaying && this.multiTrackPlayer) {
-                const status = this.multiTrackPlayer.getStatus();
-                this.updatePlayheadFromMultiTrackPlayer({
-                    masterTime: status.masterTime,
-                    duration: status.duration,
-                    tracks: status.tracks
-                });
-            } else if (qcPlaying && this.qcPlayer) {
-                const status = this.qcPlayer.getStatus?.();
-                if (status) {
-                    this.updatePlayheadFromPlayer({
-                        masterTime: status.masterTime,
-                        dubTime: status.dubTime,
-                        masterDuration: status.masterDuration,
-                        dubDuration: status.dubDuration
-                    });
-                }
-            }
-            
-            this.playheadAnimationId = requestAnimationFrame(animate);
-        };
-        
-        this.playheadAnimationId = requestAnimationFrame(animate);
-    }
-
-    /**
-     * Stop playhead animation
-     */
-    stopPlayheadAnimation() {
-        if (this.playheadAnimationId) {
-            cancelAnimationFrame(this.playheadAnimationId);
-            this.playheadAnimationId = null;
-        }
-    }
     
     formatTime(seconds) {
         const mins = Math.floor(seconds / 60);
@@ -731,22 +693,20 @@ class QCInterface {
             }
         });
 
-        // Volume controls (QCPlayer + fallbacks)
+        // Volume controls (WaveformQCPlayer)
         document.addEventListener('input', (e) => {
             if (e.target.classList.contains('qc-volume-slider')) {
                 const track = e.target.dataset.track;
                 const value = parseFloat(e.target.value);
-                console.log(`[QC Volume] track=${track}, value=${value}, qcPlayer=${!!this.qcPlayer}, nativePlayer=${!!this.nativePlayer}`);
+                console.log(`[QC Volume] track=${track}, value=${value}`);
 
-                if (this.qcPlayer) {
-                    console.log('[QC Volume] Calling qcPlayer method...');
-                    if (track === 'master') this.qcPlayer.setMasterVolume(value);
-                    if (track === 'dub') this.qcPlayer.setDubVolume(value);
+                // Use WaveformQCPlayer
+                if (this.waveformPlayer) {
+                    if (track === 'master') this.waveformPlayer.setMasterVolume(value);
+                    if (track === 'dub') this.waveformPlayer.setDubVolume(value);
                 } else {
-                    console.warn('[QC Volume] qcPlayer not available!');
+                    console.warn('[QC Volume] No player available!');
                 }
-                if (this.nativePlayer) this.nativePlayer.setVolume(track, value);
-                if (this.multiTrackPlayer) this.multiTrackPlayer.setTrackVolume(track, value);
 
                 // Update display
                 const valueSpan = e.target.nextElementSibling;
@@ -755,7 +715,7 @@ class QCInterface {
                 }
             } else if (e.target.classList.contains('qc-balance-slider')) {
                 const value = parseFloat(e.target.value);
-                this.audioEngine?.setBalance(value);
+                // Balance not directly supported by waveform-playlist, use individual volumes
                 const label = value < -0.1 ? 'Left' : value > 0.1 ? 'Right' : 'Center';
                 const valueSpan = e.target.nextElementSibling;
                 if (valueSpan) {
@@ -764,22 +724,20 @@ class QCInterface {
             }
         });
 
-        // Mute toggles (QCPlayer + fallbacks)
+        // Mute toggles (WaveformQCPlayer)
         document.addEventListener('change', (e) => {
             if (e.target.classList.contains('qc-mute-toggle')) {
                 const track = e.target.dataset.track;
                 const muted = e.target.checked;
-                console.log(`[QC Mute] track=${track}, muted=${muted}, qcPlayer=${!!this.qcPlayer}`);
+                console.log(`[QC Mute] track=${track}, muted=${muted}`);
 
-                if (this.qcPlayer) {
-                    console.log('[QC Mute] Calling qcPlayer method...');
-                    if (track === 'master') this.qcPlayer.setMasterMuted(muted);
-                    if (track === 'dub') this.qcPlayer.setDubMuted(muted);
+                // Use WaveformQCPlayer
+                if (this.waveformPlayer) {
+                    if (track === 'master') this.waveformPlayer.setMasterMuted(muted);
+                    if (track === 'dub') this.waveformPlayer.setDubMuted(muted);
                 } else {
-                    console.warn('[QC Mute] qcPlayer not available!');
+                    console.warn('[QC Mute] No player available!');
                 }
-                if (this.nativePlayer) this.nativePlayer.setMuted(track, muted);
-                if (this.multiTrackPlayer) this.multiTrackPlayer.setTrackMuted(track, muted);
                 
                 // Visual feedback
                 const label = e.target.closest('.qc-mute-label');
@@ -795,7 +753,7 @@ class QCInterface {
             if (e.target.id === 'qc-timeline-slider') {
                 this.isSeeking = true;
                 const slider = e.target;
-                const duration = this.qcPlayer?.getDuration?.() || this.nativePlayer?.getDuration() || this.getDurationFromTracks() || 0;
+                const duration = this.waveformPlayer?.getDuration?.() || this.getDurationFromTracks() || 0;
                 if (Number.isFinite(duration) && duration > 0) {
                     const seekTime = (slider.value / 1000) * duration;
                     if (Number.isFinite(seekTime)) {
@@ -808,17 +766,13 @@ class QCInterface {
         document.addEventListener('change', (e) => {
             if (e.target.id === 'qc-timeline-slider') {
                 const slider = e.target;
-                const duration = this.qcPlayer?.getDuration?.() || this.nativePlayer?.getDuration() || this.getDurationFromTracks() || 0;
+                const duration = this.waveformPlayer?.getDuration?.() || this.getDurationFromTracks() || 0;
                 if (Number.isFinite(duration) && duration > 0) {
                     const seekTime = (slider.value / 1000) * duration;
                     if (Number.isFinite(seekTime)) {
                         this.lastSeekTime = seekTime;
-                        // Seek on all available players
-                        if (this.qcPlayer) this.qcPlayer.seek(seekTime);
-                        if (this.nativePlayer) {
-                            this.nativePlayer.seek(seekTime);
-                        }
-                        if (this.multiTrackPlayer) this.multiTrackPlayer.seek(seekTime);
+                        // Seek using WaveformQCPlayer
+                        if (this.waveformPlayer) this.waveformPlayer.seek(seekTime);
                     }
                 }
                 this.isSeeking = false;
@@ -924,9 +878,27 @@ class QCInterface {
 
     async open(syncData) {
         console.log('QC Interface opening with data:', syncData);
+        
+        // Clean up any existing state from previous session
+        this.stopPlayback();
+        
+        // Dispose existing WaveformQCPlayer to prevent duplicate audio
+        if (this.waveformPlayer) {
+            try { this.waveformPlayer.dispose(); } catch (e) {}
+        }
+        
+        // Clear container content
+        const playlistContainer = document.getElementById('waveform-playlist-container');
+        if (playlistContainer) playlistContainer.innerHTML = '';
+        
+        // Reset state
         this.currentData = syncData;
         this.isVisible = true;
-        this.trackWaveforms = []; // Reset tracks
+        this.trackWaveforms = [];
+        this.lastSeekTime = 0;
+        
+        // Reinitialize players (creates fresh instances)
+        this.initializeAudioEngine();
         
         // Show modal immediately
         document.getElementById('qc-modal').style.display = 'flex';
@@ -948,6 +920,8 @@ class QCInterface {
             if (loaded) {
                 console.log('QC Interface: Using pre-generated waveforms');
                 this.updateWaveform();
+                // IMPORTANT: Still need to initialize WaveformQCPlayer for audio playback!
+                await this.initializeWaveformPlayerOnly(syncData);
             } else if (isComponentized) {
                 console.log('QC Interface: Loading componentized audio files');
                 await this.loadComponentizedAudioFiles(syncData, components);
@@ -978,6 +952,17 @@ class QCInterface {
         const startTime = performance.now();
         this.updateStatus('Loading componentized audio tracks...');
         this.trackWaveforms = [];
+        
+        // For componentized analyses, show canvas for multi-track visualization
+        // WaveformQCPlayer will be used for audio playback (master + first component)
+        const playlistContainer = document.getElementById('waveform-playlist-container');
+        const canvas = document.getElementById('qc-waveform-canvas');
+        if (playlistContainer) {
+            playlistContainer.style.display = 'none'; // Hide playlist container for componentized
+        }
+        if (canvas) {
+            canvas.style.display = 'block'; // Show canvas for multi-track visualization
+        }
         
         // Assign colors - blue for master, greens for components
         const componentColors = ['#4ade80', '#22c55e', '#86efac', '#34d399', '#10b981', '#059669', '#6ee7b7', '#a7f3d0'];
@@ -1108,17 +1093,22 @@ class QCInterface {
         
         // Update track mixer UI
         this.updateTrackMixerUI();
-        
-        // Initialize NativeAudioPlayer for playback
-        if (this.nativePlayer && syncData.masterUrl) {
+
+        // Initialize WaveformQCPlayer for audio playback
+        if (syncData.masterUrl && this.waveformPlayer) {
             const firstComponent = components[0];
             const dubUrl = firstComponent?.dubUrl || firstComponent?.dub_url || syncData.dubUrl;
             const offset = firstComponent?.detectedOffset || firstComponent?.detected_offset || syncData.detectedOffset || 0;
-            
+
             if (dubUrl) {
-                this.nativePlayer.loadPair(syncData.masterUrl, dubUrl, offset).catch(err => {
-                    console.warn('NativeAudioPlayer load failed:', err);
-                });
+                try {
+                    const ok = await this.waveformPlayer.loadTracks(syncData.masterUrl, dubUrl, offset);
+                    if (!ok) {
+                        console.warn('WaveformQCPlayer load failed for componentized audio');
+                    }
+                } catch (err) {
+                    console.warn('WaveformQCPlayer load error:', err);
+                }
             }
         }
     }
@@ -1330,15 +1320,34 @@ class QCInterface {
     close() {
         this.isVisible = false;
         this.stopPlayback();
-        this.stopPlayheadAnimation();
         
-        // Clear all players
+        // Dispose WaveformQCPlayer (waveform-playlist)
+        if (this.waveformPlayer) {
+            try {
+                this.waveformPlayer.dispose();
+            } catch (e) {
+                console.warn('WaveformQCPlayer dispose error:', e);
+            }
+        }
+        
+        // Clear legacy players
         if (this.nativePlayer) {
             this.nativePlayer.clear();
         }
         if (this.multiTrackPlayer) {
             this.multiTrackPlayer.clearTracks();
         }
+        
+        // Clear waveform-playlist-container content to prevent duplicates
+        const playlistContainer = document.getElementById('waveform-playlist-container');
+        if (playlistContainer) {
+            playlistContainer.innerHTML = '';
+        }
+        
+        // Reset container visibility states
+        const canvas = document.getElementById('qc-waveform-canvas');
+        if (canvas) canvas.style.display = 'none';
+        if (playlistContainer) playlistContainer.style.display = '';
         
         const modal = document.getElementById('qc-modal');
         if (modal) {
@@ -1433,48 +1442,78 @@ class QCInterface {
         try {
             this.updateStatus('Loading audio for QC...');
 
-            // Load waveforms (for canvas visualization)
-            if (this.audioEngine) {
-                const usingProxy =
-                    syncData.masterUrl?.includes('proxy-audio') ||
-                    syncData.dubUrl?.includes('proxy-audio');
-                const timeoutMs = usingProxy ? 60000 : 30000;
-
-                const loadWithTimeout = (url, type) => {
-                    const loadPromise = this.audioEngine.loadAudioUrl(url, type);
-                    const timeoutPromise = new Promise((_, reject) =>
-                        setTimeout(
-                            () => reject(new Error(`${type} loading timeout after ${timeoutMs / 1000}s`)),
-                            timeoutMs
-                        )
-                    );
-                    return Promise.race([loadPromise, timeoutPromise]);
-                };
-
-                await Promise.allSettled([
-                    loadWithTimeout(syncData.masterUrl, 'master'),
-                    loadWithTimeout(syncData.dubUrl, 'dub'),
-                ]);
-            }
-
-            // Initialize QCPlayer for playback (Before/After uses offset)
-            if (this.qcPlayer) {
-                const ok = await this.qcPlayer.initialize(syncData.masterUrl, syncData.dubUrl, offset);
-                if (!ok) {
-                    this.updateStatus('Audio loaded (waveform ok) but playback init failed', 'warning');
+            // Use WaveformQCPlayer
+            if (this.waveformPlayer) {
+                console.log('QC: Loading with WaveformQCPlayer');
+                const ok = await this.waveformPlayer.loadTracks(syncData.masterUrl, syncData.dubUrl, offset);
+                if (ok) {
+                    const canvas = document.getElementById('qc-waveform-canvas');
+                    const playlistContainer = document.getElementById('waveform-playlist-container');
+                    if (canvas) canvas.style.display = 'none';
+                    if (playlistContainer) playlistContainer.style.display = '';
+                    this.updateStatus('Audio ready for playback');
+                    this.renderDriftMarkers();
+                    this.renderSceneBands();
+                    return;
+                } else {
+                    console.error('WaveformQCPlayer load failed');
+                    this.updateStatus('Audio loading failed', 'error');
+                    return;
                 }
-            } else if (this.nativePlayer) {
-                // Fallback: NativeAudioPlayer
-                await this.nativePlayer.loadPair(syncData.masterUrl, syncData.dubUrl, offset);
+            } else {
+                console.error('WaveformQCPlayer not initialized');
+                this.updateStatus('Audio player not initialized', 'error');
             }
-
-            this.updateWaveform();
-            this.renderDriftMarkers();
-            this.renderSceneBands();
-            this.updateStatus('Ready');
         } catch (error) {
             console.error('QC: Audio loading error:', error);
             this.updateStatus(`Audio loading failed: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Initialize WaveformQCPlayer for playback only (when waveforms are pre-generated)
+     * This is called when we have pre-rendered waveforms but still need audio playback
+     */
+    async initializeWaveformPlayerOnly(syncData) {
+        if (!syncData.masterUrl || !syncData.dubUrl) {
+            console.warn('QC: Cannot initialize player - missing audio URLs');
+            this.updateStatus('Audio playback unavailable (no URLs)', 'warning');
+            return false;
+        }
+
+        const offset = this.currentData?.detectedOffset || syncData.detectedOffset || 0;
+        console.log('QC: Initializing WaveformQCPlayer for playback', {
+            masterUrl: syncData.masterUrl,
+            dubUrl: syncData.dubUrl,
+            offset
+        });
+
+        try {
+            // Use WaveformQCPlayer
+            if (this.waveformPlayer) {
+                console.log('QC: Loading tracks with WaveformQCPlayer');
+                const ok = await this.waveformPlayer.loadTracks(syncData.masterUrl, syncData.dubUrl, offset);
+                if (ok) {
+                    const canvas = document.getElementById('qc-waveform-canvas');
+                    const playlistContainer = document.getElementById('waveform-playlist-container');
+                    if (canvas) canvas.style.display = 'none';
+                    if (playlistContainer) playlistContainer.style.display = '';
+                    this.updateStatus('Ready for playback');
+                    return true;
+                } else {
+                    console.error('WaveformQCPlayer load failed');
+                    this.updateStatus('Audio playback init failed', 'error');
+                    return false;
+                }
+            } else {
+                console.error('QC: WaveformQCPlayer not initialized');
+                this.updateStatus('Audio player not initialized', 'error');
+                return false;
+            }
+        } catch (error) {
+            console.error('QC: Player initialization error:', error);
+            this.updateStatus(`Playback init failed: ${error.message}`, 'error');
+            return false;
         }
     }
 
@@ -2010,7 +2049,7 @@ class QCInterface {
     }
 
     playComparison(corrected = false) {
-        console.log('[QC playComparison] corrected:', corrected);
+        console.log('[QC playComparison] corrected:', corrected, 'waveformPlayer:', !!this.waveformPlayer);
 
         try {
             const startAt = this.lastSeekTime || 0;
@@ -2020,27 +2059,18 @@ class QCInterface {
             document.getElementById('qc-play-before')?.classList.toggle('active', !corrected);
             document.getElementById('qc-play-after')?.classList.toggle('active', corrected);
 
-            // Preferred: QCPlayer
-            if (this.qcPlayer) {
-                if (corrected) this.qcPlayer.playAfter(startAt);
-                else this.qcPlayer.playBefore(startAt);
-                return;
+            // Use WaveformQCPlayer
+            if (this.waveformPlayer) {
+                console.log('[QC playComparison] Using WaveformQCPlayer');
+                if (corrected) {
+                    this.waveformPlayer.playAfter(startAt);
+                } else {
+                    this.waveformPlayer.playBefore(startAt);
+                }
+            } else {
+                console.error('[QC playComparison] No audio player available!');
+                this.updateStatus('No audio player available', 'error');
             }
-
-            // Fallback: NativeAudioPlayer
-            if (this.nativePlayer) {
-                this.nativePlayer.play(corrected, startAt);
-                return;
-            }
-
-            // Fallback: MultiTrackPlayer
-            if (this.multiTrackPlayer) {
-                if (corrected) this.multiTrackPlayer.playAfter(startAt);
-                else this.multiTrackPlayer.playBefore(startAt);
-                return;
-            }
-
-            this.updateStatus('No audio player available', 'error');
         } catch (error) {
             console.error('Playback error:', error);
             this.updateStatus(`Playback error: ${error.message}`, 'error');
@@ -2050,18 +2080,13 @@ class QCInterface {
     stopPlayback() {
         console.log('[QC] stopPlayback called');
 
+        // Stop WaveformQCPlayer
         try {
-            this.qcPlayer?.stop();
-        } catch {}
-        try {
-            this.nativePlayer?.stop();
-        } catch {}
-        try {
-            this.multiTrackPlayer?.stop();
+            this.waveformPlayer?.stop();
         } catch {}
 
         this.updateStatus('Stopped');
-        
+
         // Update button states
         document.getElementById('qc-play-before')?.classList.remove('active');
         document.getElementById('qc-play-after')?.classList.remove('active');
@@ -2122,28 +2147,16 @@ class QCInterface {
                 return;
             }
 
-            // Seek using all available players
-            if (this.nativePlayer) {
-                this.nativePlayer.seek(time);
-            }
-
-            if (this.multiTrackPlayer) {
-                this.multiTrackPlayer.seek(time);
-            }
-
-            if (this.audioEngine) {
-                this.audioEngine.seekTo?.(time);
-            }
-
-            if (this.qcPlayer) {
-                this.qcPlayer.seek?.(time);
+            // Seek using WaveformQCPlayer
+            if (this.waveformPlayer) {
+                this.waveformPlayer.seek(time);
             }
 
             // Store for playback resume
             this.lastSeekTime = time;
 
             // Update timeline slider
-            const duration = this.nativePlayer?.getDuration() || this.getDurationFromTracks() || 0;
+            const duration = this.waveformPlayer?.getDuration?.() || this.getDurationFromTracks() || 0;
             if (duration > 0) {
                 const slider = document.getElementById('qc-timeline-slider');
                 if (slider) {
@@ -2161,7 +2174,8 @@ class QCInterface {
     }
 
     togglePlayback() {
-        const isPlaying = this.nativePlayer?.isPlaying || this.multiTrackPlayer?.isPlaying || this.qcPlayer?.isPlaying;
+        // Check playback state from WaveformQCPlayer
+        const isPlaying = this.waveformPlayer?.isPlaying;
         if (isPlaying) {
             this.stopPlayback();
         } else {

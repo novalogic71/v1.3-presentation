@@ -4,6 +4,7 @@
 FROM python:3.10-slim
 
 # Set environment variables
+ARG BUILD_ID=dev
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
@@ -11,8 +12,9 @@ ENV MOUNT_PATH=/mnt/data
 ENV PORT_API=8000
 ENV PORT_UI=3002
 ENV PYTHONPATH=/app
+ENV BUILD_ID=${BUILD_ID}
 
-# Install system dependencies
+# Install system dependencies (including Node.js for React build)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
@@ -22,6 +24,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
@@ -38,6 +42,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code
 COPY . .
+
+# Build React QC Interface (optional in dev - volumes will override anyway)
+# Set SKIP_REACT_BUILD=1 to skip this step for faster dev builds
+ARG SKIP_REACT_BUILD=0
+RUN if [ "$SKIP_REACT_BUILD" != "1" ] && [ -d "web_ui/react-qc" ]; then \
+    cd web_ui/react-qc && \
+    npm ci --production=false && \
+    npm run build && \
+    cd ../..; \
+    fi || echo "Skipping React build (set SKIP_REACT_BUILD=1 to skip)"
 
 # Create necessary directories
 RUN mkdir -p \

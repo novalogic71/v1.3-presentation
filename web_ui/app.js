@@ -3,6 +3,9 @@ class SyncAnalyzerUI {
         // Use relative URL since UI is served from the same FastAPI server
         // This avoids CORS issues and protocol/port mismatches
         this.FASTAPI_BASE = '/api/v1';
+
+        // Bind the URL normalizer for use throughout the app
+        this.normalizeUrl = this.normalizeUrl.bind(this);
         this.currentPath = '/mnt/data';
         this.selectedMaster = null;
         this.selectedDub = null;
@@ -43,6 +46,7 @@ class SyncAnalyzerUI {
         this.initDefaultMethods();
         this.bindEvents();
         this.loadFileTree();
+        this.loadBuildInfo();
 
         // Load saved batch queue from localStorage
         this.loadBatchQueue();
@@ -149,6 +153,41 @@ class SyncAnalyzerUI {
         setTimeout(() => {
             this.addLog('info', 'Sync Analyzer UI ready');
         }, 500);
+    }
+
+    async loadBuildInfo() {
+        const el = document.getElementById('build-id');
+        if (!el) return;
+
+        const applyBuild = (data) => {
+            const buildId = data?.build_id || data?.buildId || data?.build || null;
+            const version = data?.version || null;
+            if (buildId) {
+                el.textContent = buildId;
+                if (version) el.title = `Version ${version}`;
+            } else if (version) {
+                el.textContent = version;
+            } else {
+                el.textContent = 'unknown';
+            }
+        };
+
+        try {
+            const r = await fetch('/health');
+            if (r.ok) {
+                const data = await r.json();
+                applyBuild(data);
+                return;
+            }
+        } catch {}
+
+        try {
+            const r = await fetch(`${this.FASTAPI_BASE}/health/status`);
+            if (r.ok) {
+                const data = await r.json();
+                applyBuild(data);
+            }
+        } catch {}
     }
 
     setupGlobalAudioControls() {
@@ -2436,6 +2475,7 @@ class SyncAnalyzerUI {
             newItem.progress = 0;
             this.updateBatchTableRow(newItem);
             this.updateBatchSummary();
+            await this.persistBatchQueue().catch(() => {});
             
             // Progress now updated from FastAPI polling
             
@@ -2446,6 +2486,17 @@ class SyncAnalyzerUI {
             // Get current configuration
             const config = this.getAnalysisConfig();
 
+            // Normalize methods for API (map UI-only methods to API-supported values)
+            const validMethods = ['mfcc', 'onset', 'spectral', 'correlation', 'ai'];
+            let methods = Array.isArray(config.methods) ? [...config.methods] : [];
+            methods = methods.map(m => (m === 'gpu' ? 'ai' : m));
+            methods = methods.filter(m => validMethods.includes(m));
+            if (methods.length === 0) methods = ['mfcc'];
+            const enableAi = methods.includes('ai') || !!config.aiModel || !!config.enableGpu;
+            if (!enableAi) {
+                methods = methods.filter(m => m !== 'ai');
+            }
+
             // Start job
             const startResp = await fetch(`${this.FASTAPI_BASE}/analysis/sync`, {
                 method: 'POST',
@@ -2453,8 +2504,8 @@ class SyncAnalyzerUI {
                 body: JSON.stringify({
                     master_file: newItem.master.path,
                     dub_file: newItem.dub.path,
-                    methods: (config.methods || []).filter(m => m !== 'ai'),
-                    enable_ai: !!config.aiModel,
+                    methods: methods,
+                    enable_ai: enableAi,
                     ai_model: config.aiModel || 'wav2vec2',
                     sample_rate: config.sampleRate,
                     window_size: config.windowSize,
@@ -2632,13 +2683,14 @@ class SyncAnalyzerUI {
                     if (prepResp.ok) {
                         const prep = await prepResp.json();
                         if (prep.success) {
-                            newItem.masterProxyUrl = prep.master_url;
-                            newItem.dubProxyUrl = prep.dub_url;
+                            // Normalize URLs to relative paths to avoid CORS issues
+                            newItem.masterProxyUrl = this.normalizeUrl(prep.master_url);
+                            newItem.dubProxyUrl = this.normalizeUrl(prep.dub_url);
                             this.addLog('success', 'Audio proxies ready for playback');
                             if (this.waveformVisualizer && this.waveformVisualizer.loadAudioUrl) {
                                 await Promise.all([
-                                    this.waveformVisualizer.loadAudioUrl(prep.master_url, 'master'),
-                                    this.waveformVisualizer.loadAudioUrl(prep.dub_url, 'dub')
+                                    this.waveformVisualizer.loadAudioUrl(newItem.masterProxyUrl, 'master'),
+                                    this.waveformVisualizer.loadAudioUrl(newItem.dubProxyUrl, 'dub')
                                 ]);
                                 this.addLog('info', 'Proxies loaded into waveform engine');
                             }
@@ -2700,6 +2752,7 @@ class SyncAnalyzerUI {
             newItem.error = error.message;
             newItem.progress = 0;
             this.updateBatchTableRow(newItem);
+            await this.persistBatchQueue().catch(() => {});
         }
         
         this.analysisInProgress = false;
@@ -4538,6 +4591,10 @@ class SyncAnalyzerUI {
                     }
 
                     const analysisId = startResult.analysis_id;
+                    // Track the analysis ID so polling doesn't re-add this job from the registry
+                    item.analysisId = analysisId;
+                    item.jobId = analysisId;
+                    this.persistBatchQueue().catch(() => {});
                     this.addLog('info', `🚀 Analysis started: ${analysisId}`);
 
                     // Poll for progress until complete
@@ -4840,6 +4897,11 @@ class SyncAnalyzerUI {
                                 `Componentized ${item.offsetMode} completed: ${this.formatOffsetDisplay(summaryOffset, true, itemFrameRate)}`
                             );
                         }
+
+                        item.status = 'completed';
+                        item.progress = 100;
+                        this.updateBatchTableRow(item);
+                        this.updateBatchSummary();
                     } else {
                         throw new Error('No result data from completed job');
                     }
@@ -7843,7 +7905,7 @@ class SyncAnalyzerUI {
             `;
 
             // Render master waveform (blue - AREF)
-            const masterCanvas = container.querySelector(`#master-waveform-${item.id}`);
+            const masterCanvas = document.getElementById(`master-waveform-${item.id}`);
             if (masterCanvas && masterWaveformData) {
                 this.drawRealWaveform(masterCanvas, masterWaveformData, {
                     color: 'rgba(248, 250, 252, 0.98)',
@@ -7862,7 +7924,7 @@ class SyncAnalyzerUI {
 
             // Render component waveforms (green - OUTPUT)
             componentWaveformData.forEach((compData, index) => {
-                const compCanvas = container.querySelector(`#component-waveform-${item.id}-${index}`);
+                const compCanvas = document.getElementById(`component-waveform-${item.id}-${index}`);
                 if (compCanvas && compData.waveformData) {
                     this.drawRealWaveform(compCanvas, compData.waveformData, {
                         color: 'rgba(248, 250, 252, 0.96)',
@@ -8028,7 +8090,7 @@ class SyncAnalyzerUI {
             `;
 
             // Render master waveform (blue - AREF)
-            const masterCanvas = container.querySelector(`#master-waveform-${item.id}`);
+            const masterCanvas = document.getElementById(`master-waveform-${item.id}`);
             if (masterCanvas && masterWaveformData) {
                 this.drawRealWaveform(masterCanvas, masterWaveformData, {
                     color: 'rgba(248, 250, 252, 0.98)',
@@ -8046,7 +8108,7 @@ class SyncAnalyzerUI {
             }
 
             // Render dub waveform (green - OUTPUT)
-            const dubCanvas = container.querySelector(`#dub-waveform-${item.id}`);
+            const dubCanvas = document.getElementById(`dub-waveform-${item.id}`);
             if (dubCanvas && dubWaveformData) {
                 this.drawRealWaveform(dubCanvas, dubWaveformData, {
                     color: 'rgba(248, 250, 252, 0.96)',
@@ -8745,6 +8807,29 @@ class SyncAnalyzerUI {
         const index = this.batchQueue.findIndex(item => item.id.toString() === itemId);
         if (index !== -1) {
             const item = this.batchQueue[index];
+
+            // Best-effort cleanup on server to prevent re-adding via job registry polling
+            try {
+                const itemIdNum = Number(item.id);
+                if (Number.isFinite(itemIdNum)) {
+                    fetch(`${this.FASTAPI_BASE}/batch-queue/item/${itemIdNum}`, { method: 'DELETE' })
+                        .catch(e => console.warn('Failed to delete batch item on server:', e));
+                }
+            } catch (e) {
+                console.warn('Batch item server delete failed:', e);
+            }
+
+            if (item.analysisId) {
+                // Cancel active job if possible
+                if (['queued', 'pending', 'processing'].includes(item.status)) {
+                    fetch(`${this.FASTAPI_BASE}/jobs/${encodeURIComponent(item.analysisId)}`, { method: 'DELETE' })
+                        .catch(e => console.warn('Failed to cancel job:', e));
+                }
+                // Remove from registry so it doesn't reappear
+                fetch(`${this.FASTAPI_BASE}/job-registry/${encodeURIComponent(item.analysisId)}`, { method: 'DELETE' })
+                    .catch(e => console.warn('Failed to delete job registry entry:', e));
+            }
+
             this.batchQueue.splice(index, 1);
             this.updateBatchTable();
             this.updateBatchSummary();
@@ -8836,6 +8921,60 @@ class SyncAnalyzerUI {
     generateClientId() {
         return 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
+
+    /**
+     * Normalize URL to relative path to avoid CORS issues
+     * Converts absolute URLs like http://10.124.201.10:8000/api/v1/... to /api/v1/...
+     * @param {string} url - The URL to normalize
+     * @returns {string} - Relative URL path
+     */
+    normalizeUrl(url) {
+        if (!url) return url;
+
+        // If already relative, return as-is
+        if (url.startsWith('/')) return url;
+
+        try {
+            const parsed = new URL(url);
+            // Return just the path + search + hash (relative URL)
+            return parsed.pathname + parsed.search + parsed.hash;
+        } catch (e) {
+            // Not a valid URL, return as-is
+            return url;
+        }
+    }
+
+    getStatusRank(status) {
+        const s = (status || '').toString().toLowerCase();
+        if (['completed', 'failed', 'cancelled', 'orphaned', 'error'].includes(s)) return 3;
+        if (['processing', 'running', 'in_progress'].includes(s)) return 2;
+        if (['queued', 'pending'].includes(s)) return 1;
+        return 0;
+    }
+
+    shouldApplyServerUpdate(localItem, serverItem) {
+        if (!localItem) return true;
+        const localRank = this.getStatusRank(localItem.status);
+        const serverRank = this.getStatusRank(serverItem.status);
+        const localProgress = typeof localItem.progress === 'number' ? localItem.progress : null;
+        const serverProgress = typeof serverItem.progress === 'number' ? serverItem.progress : null;
+        const localHasResult = !!(localItem.result || (Array.isArray(localItem.componentResults) && localItem.componentResults.length));
+        const serverHasResult = !!(serverItem.result || (Array.isArray(serverItem.componentResults) && serverItem.componentResults.length));
+
+        if (serverRank > localRank) return true;
+        if (serverRank < localRank) return false;
+
+        if (serverHasResult && !localHasResult) return true;
+        if (!localItem.analysisId && serverItem.analysisId) return true;
+        if (!localItem.error && serverItem.error) return true;
+
+        if (serverProgress !== null && localProgress !== null) {
+            return serverProgress > localProgress + 1;
+        }
+        if (serverProgress !== null && localProgress === null) return true;
+
+        return false;
+    }
     
     /**
      * Start periodic sync for cross-browser updates
@@ -8843,7 +8982,7 @@ class SyncAnalyzerUI {
     startPeriodicSync() {
         // Sync every 10 seconds when not actively processing
         this.syncInterval = setInterval(() => {
-            if (!this.batchProcessing) {
+            if (!this.batchProcessing && !this.analysisInProgress) {
                 this.syncFromServer();
                 this.pollForNewApiJobs();
             }
@@ -8851,7 +8990,7 @@ class SyncAnalyzerUI {
         
         // Also sync when window gains focus
         window.addEventListener('focus', () => {
-            if (!this.batchProcessing) {
+            if (!this.batchProcessing && !this.analysisInProgress) {
                 this.syncFromServer();
                 this.pollForNewApiJobs();
             }
@@ -8878,6 +9017,33 @@ class SyncAnalyzerUI {
                     .filter(item => item.analysisId)
                     .map(item => item.analysisId)
             );
+
+            const normalizeComponentPaths = (components) => {
+                if (!Array.isArray(components)) return [];
+                return components
+                    .map(c => (typeof c === 'string' ? c : (c.path || c)))
+                    .filter(Boolean)
+                    .sort();
+            };
+
+            const isDuplicateByFiles = (job) => {
+                const jobMaster = job.master_file;
+                const jobDub = job.dub_file;
+                const jobComponentPaths = normalizeComponentPaths(job.components);
+                const isComponentizedJob = job.type === 'componentized' || jobComponentPaths.length > 0;
+
+                return this.batchQueue.some(item => {
+                    if (!item || !item.master) return false;
+                    if (isComponentizedJob) {
+                        if (item.type !== 'componentized') return false;
+                        if (item.master.path !== jobMaster) return false;
+                        const itemComponentPaths = normalizeComponentPaths(item.components);
+                        return JSON.stringify(itemComponentPaths) === JSON.stringify(jobComponentPaths);
+                    }
+                    if (item.type === 'componentized') return false;
+                    return item.master.path === jobMaster && item.dub?.path === jobDub;
+                });
+            };
             
             let addedCount = 0;
             
@@ -8897,6 +9063,11 @@ class SyncAnalyzerUI {
                         if (job.error) existing.error = job.error;
                         this.updateBatchTableRow(existing);
                     }
+                    continue;
+                }
+
+                // Skip if this job matches an existing item by file signature
+                if (isDuplicateByFiles(job)) {
                     continue;
                 }
                 
@@ -8968,6 +9139,9 @@ class SyncAnalyzerUI {
                     // Update status if server has newer status
                     if (serverItem.status !== localItem.status || 
                         serverItem.progress !== localItem.progress) {
+                        if (!this.shouldApplyServerUpdate(localItem, serverItem)) {
+                            continue;
+                        }
                         Object.assign(localItem, serverItem);
                         hasChanges = true;
                     }
@@ -10288,8 +10462,9 @@ class SyncAnalyzerUI {
                         body: JSON.stringify({ master: item.master.path, dub: item.dub.path })
                     }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)));
                     if (prep && prep.success) {
-                        masterUrl = prep.master_url;
-                        dubUrl = prep.dub_url;
+                        // Normalize URLs to relative paths to avoid CORS issues
+                        masterUrl = this.normalizeUrl(prep.master_url);
+                        dubUrl = this.normalizeUrl(prep.dub_url);
                         this.addLog('success', 'Proxies prepared for finished job');
                     }
                 } catch (e) {
@@ -10311,7 +10486,7 @@ class SyncAnalyzerUI {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ master: item.master.path, dub: item.repairedFile })
                         }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)));
-                        if (p && p.success) repairedUrl = p.dub_url;
+                        if (p && p.success) repairedUrl = this.normalizeUrl(p.dub_url);
                     } catch {}
                     if (!repairedUrl) {
                         const enc = encodeURIComponent;
@@ -10583,9 +10758,27 @@ class SyncAnalyzerUI {
     }
 
     initializeQCInterface() {
-        this.qcInterface = new QCInterface();
+        // React QC Interface is initialized automatically via dist-qc/qc-react.js
+        // Use window.openQCInterface() instead of this.qcInterface.open()
+        this.qcInterface = {
+            open: (syncData) => {
+                if (window.openQCInterface) {
+                    window.openQCInterface(syncData);
+                } else {
+                    console.error('React QC Interface not loaded. Falling back to legacy QCInterface.');
+                    // Fallback to legacy if React not loaded
+                    if (typeof QCInterface !== 'undefined') {
+                        if (!this._legacyQCInterface) {
+                            this._legacyQCInterface = new QCInterface();
+                        }
+                        return this._legacyQCInterface.open(syncData);
+                    }
+                }
+            }
+        };
         
-        // Set up QC interface callbacks
+        // Set up QC interface callbacks (React component handles these internally)
+        // These are kept for compatibility but may not be called by React component
         this.qcInterface.onApprove = (data) => {
             console.log('Sync approved:', data);
             this.showToast('success', 'Sync analysis approved', 'QC Review');
@@ -10612,14 +10805,33 @@ class SyncAnalyzerUI {
     }
 
     initializeRepairQCInterface() {
-        this.repairQC = new RepairQCInterface({ apiBase: this.FASTAPI_BASE });
+        // React Repair Interface is initialized automatically via dist-qc/qc-react.js
+        // Use window.openRepairInterface() for the new DAW-style editor
+        this.repairQC = {
+            open: (syncData) => {
+                if (window.openRepairInterface) {
+                    window.openRepairInterface(syncData);
+                } else {
+                    console.error('React Repair Interface not loaded. Falling back to legacy RepairQCInterface.');
+                    // Fallback to legacy if React not loaded
+                    if (typeof RepairQCInterface !== 'undefined') {
+                        if (!this._legacyRepairQCInterface) {
+                            this._legacyRepairQCInterface = new RepairQCInterface({ apiBase: this.FASTAPI_BASE });
+                        }
+                        this._legacyRepairQCInterface.open(syncData, { apiBase: this.FASTAPI_BASE });
+                    } else {
+                        console.error('No Repair QC Interface available');
+                    }
+                }
+            }
+        };
         // Open handler
         document.addEventListener('click', (e) => {
             const btn = e.target.closest('.repair-qc-open-btn');
             if (!btn) return;
             this.openRepairQCInterface(btn);
         });
-        console.log('Repair QC Interface initialized');
+        console.log('Repair QC Interface initialized (React)');
     }
 
     async openRepairQCInterface(button) {
@@ -10653,12 +10865,18 @@ class SyncAnalyzerUI {
                 frameRate: itemFps
             };
 
-            await this.repairQC.open(syncData, { apiBase: this.FASTAPI_BASE });
+            // Use new React Repair Interface
+            if (typeof window.openRepairInterface === 'function') {
+                window.openRepairInterface(syncData);
+            } else {
+                console.error('React Repair Interface not available');
+                this.showToast('error', 'Repair Interface not loaded. Please refresh the page.', 'Repair Editor');
+            }
         } catch (e) {
-            this.showToast('error', `Failed to open Repair QC: ${e.message}`, 'Repair QC');
+            this.showToast('error', `Failed to open Repair Editor: ${e.message}`, 'Repair Editor');
         } finally {
             button.disabled = false;
-            button.innerHTML = '<i class="fas fa-toolbox"></i> Repair QC';
+            button.innerHTML = '<i class="fas fa-toolbox"></i> Repair';
         }
     }
 
@@ -10874,16 +11092,18 @@ class SyncAnalyzerUI {
 
             console.log('Opening repair interface with componentized data:', syncData);
 
-            if (!this.repairQC) {
-                throw new Error('Repair Interface not initialized');
+            // Use new React Repair Interface
+            if (typeof window.openRepairInterface === 'function') {
+                window.openRepairInterface(syncData);
+                console.log('Componentized repair interface opened successfully');
+            } else {
+                console.error('React Repair Interface not available');
+                throw new Error('Repair Interface not loaded. Please refresh the page.');
             }
-
-            await this.repairQC.open(syncData, { apiBase: this.FASTAPI_BASE });
-            console.log('Componentized repair interface opened successfully');
 
         } catch (error) {
             console.error('Failed to open componentized repair interface:', error);
-            this.showToast('error', `Failed to open componentized repair: ${error.message}`, 'Componentized Repair');
+            this.showToast('error', `Failed to open componentized repair editor: ${error.message}`, 'Repair Editor');
         }
     }
 
@@ -11568,4 +11788,3 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global helper for non-UI modules
     window.showToast = (level, msg, title) => window.app?.showToast(level, msg, title);
 });
-

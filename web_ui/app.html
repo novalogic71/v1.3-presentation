@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="waveform-styles.css?v=20250828-0100">
     <link rel="stylesheet" href="qc-styles.css?v=20260109-1">
     <link rel="stylesheet" href="repair-qc-styles.css?v=20250902-1">
+    <!-- React QC Interface -->
+    <link rel="stylesheet" href="dist-qc/qc-react-index.css?v=20260122-1">
     <link rel="stylesheet" href="repair-preview-styles.css?v=20250912-1">
     <link rel="stylesheet" href="operator-console.css?v=20250115-1">
     <link rel="stylesheet" href="styles/redesign.css?v=20260110-1">
@@ -62,6 +64,9 @@
         .details-actions #toggle-fullscreen-btn .fa-expand { display: inline-block; }
         .details-actions #toggle-fullscreen-btn.fs-active .fa-expand { display: none; }
         .details-actions #toggle-fullscreen-btn.fs-active::before { content: '\f066'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 6px; }
+        .build-indicator { display:flex; align-items:center; gap:6px; color:#94a3b8; font-size:12px; }
+        .build-indicator .build-label { font-weight:600; letter-spacing:0.3px; text-transform:uppercase; color:#64748b; }
+        .build-indicator #build-id { font-family: 'JetBrains Mono', monospace; color:#cbd5e1; }
     </style>
 </head>
 <body>
@@ -70,6 +75,10 @@
         <div class="status-indicator">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Ready</span>
+        </div>
+        <div class="build-indicator" title="Build identifier from /health">
+            <span class="build-label">Build</span>
+            <span id="build-id">unknown</span>
         </div>
     </div>
     
@@ -705,14 +714,25 @@
     
     <!-- Repair Preview Interface Container -->
     <div id="repair-preview-container" style="display: none;"></div>
-    
+
+    <!-- React Interface Containers -->
+    <div id="qc-react-root" style="display: none;"></div>
+    <div id="repair-react-root" style="display: none;"></div>
+
+    <!-- Waveform Playlist Library (v4 - local) -->
+    <script src="vendor/waveform-playlist.var.js?v=20260122-1"></script>
+    <link rel="stylesheet" href="waveform-playlist.css?v=20260121-1">
+
     <script src="core-audio-engine.js?v=20250902-1"></script>
     <script src="waveform-visualizer.js?v=20250902-1"></script>
     <script src="enhanced-waveform.js?v=20250902-1"></script>
-    <script src="qc-player.js?v=20260109-1"></script>
+    <script src="qc-player.js?v=20260121-1"></script>
+    <script src="waveform-qc-player.js?v=20260122-2"></script>
     <script src="multi-track-player.js?v=20260109-3"></script>
     <script src="native-audio-player.js?v=20260109-2"></script>
-    <script src="qc-interface.js?v=20260110-5"></script>
+    <!-- React QC Interface (replaces qc-interface.js) -->
+    <script src="dist-qc/qc-react.js?v=20260122-1"></script>
+    <script src="qc-interface.js?v=20260122-2"></script>
     <script src="repair-qc-interface.js?v=20260108-1"></script>
     <script src="smart-playback-engine.js?v=20250912-1"></script>
     <script src="repair-preview-interface.js?v=20250912-1"></script>

@@ -20,7 +20,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class StandardRepairRequest(BaseModel):
+    """Request model for standard single-offset repair."""
+    file_path: str = Field(..., description="Absolute path to dub file under mount")
+    offset_seconds: float = Field(..., description="Offset to apply in seconds (positive=delay, negative=trim)")
+    output_path: Optional[str] = Field(None, description="Absolute output path; if omitted, writes next to source")
+    keep_duration: bool = Field(default=True, description="Pad/trim to keep original duration")
+
+
 class PerChannelRepairRequest(BaseModel):
+    """Request model for per-channel repair (componentized)."""
     file_path: str = Field(..., description="Absolute path to dub file under mount")
     per_channel_results: Dict[str, Dict] = Field(..., description="Per-channel offsets: { role: {offset_seconds: float} }")
     output_path: Optional[str] = Field(None, description="Absolute output path; if omitted, writes next to source")
@@ -34,7 +43,101 @@ def _is_safe_path(path: str) -> bool:
         return False
 
 
-@router.post("/repair/per-channel")
+def _probe_duration(file_path: str) -> float:
+    """Probe file duration using ffprobe."""
+    import subprocess
+    pr = subprocess.run(
+        ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', file_path],
+        capture_output=True, text=True
+    )
+    if pr.returncode == 0:
+        try:
+            data = json.loads(pr.stdout)
+            return float(data.get('format', {}).get('duration') or 0.0)
+        except Exception:
+            return 0.0
+    return 0.0
+
+
+@router.post("/standard")
+async def repair_standard(req: StandardRepairRequest):
+    """Apply a single offset correction to all audio streams in the file.
+
+    This is used for standard (non-componentized) analysis where a single
+    offset is applied uniformly to all audio channels.
+
+    - Positive offset: adds silence/delay at the start (adelay filter)
+    - Negative offset: trims from the start (atrim filter)
+    
+    Video is copied; audio re-encoded to PCM 48kHz.
+    """
+    import subprocess
+    
+    try:
+        src = req.file_path
+        if not _is_safe_path(src) or not os.path.exists(src) or not os.path.isfile(src):
+            raise HTTPException(status_code=400, detail="Invalid or missing file_path")
+
+        out_path = req.output_path
+        if not out_path:
+            p = Path(src)
+            out_path = str(p.with_name(p.stem + "_repaired" + p.suffix))
+
+        # Get original duration for padding
+        orig_dur = _probe_duration(src)
+        offset = req.offset_seconds
+
+        # Build FFmpeg filter
+        if abs(offset) < 1e-6:
+            # No offset needed - just copy
+            filter_expr = "anull"
+        elif offset > 0:
+            # Positive offset: add delay
+            ms = int(round(offset * 1000))
+            filter_expr = f"adelay={ms}|{ms}"
+        else:
+            # Negative offset: trim from start
+            sec = abs(offset)
+            filter_expr = f"atrim=start={sec},asetpts=PTS-STARTPTS"
+
+        # Add padding to maintain duration if requested
+        if req.keep_duration and orig_dur > 0:
+            filter_expr = f"{filter_expr},apad=whole_dur=1,atrim=duration={orig_dur}"
+
+        # Build FFmpeg command
+        args = [
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+            '-i', src,
+            '-af', filter_expr,
+            '-map', '0:v:0?',  # Optional video
+            '-map', '0:a',      # All audio streams
+            '-c:v', 'copy',
+            '-c:a', 'pcm_s16le', '-ar', '48000',
+            out_path
+        ]
+
+        logger.info(f"Running standard repair: {' '.join(args)}")
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=1800)
+        
+        if proc.returncode != 0:
+            raise HTTPException(status_code=500, detail=proc.stderr.strip() or 'ffmpeg failed')
+
+        size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+        return JSONResponse({
+            'success': True,
+            'output_file': out_path,
+            'output_size': size,
+            'offset_applied': offset,
+            'keep_duration': req.keep_duration
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Standard repair error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/per-channel")
 async def repair_per_channel(req: PerChannelRepairRequest):
     """Apply per-channel offsets to the input dub file using FFmpeg.
 
