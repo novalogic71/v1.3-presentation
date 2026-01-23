@@ -1,0 +1,1185 @@
+/* Repair Modal Styles - DAW Editing Interface */
+
+/* ===== Modal Base ===== */
+.repair-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  backdrop-filter: blur(8px);
+}
+
+.repair-modal-content {
+  background: #161b22;
+  border: 1px solid #373e47;
+  border-radius: 12px;
+  width: 98%;
+  max-width: 1600px;
+  max-height: 95vh;
+  overflow: hidden;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Header ===== */
+.repair-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: #22272e;
+  border-bottom: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-header h3 {
+  color: #f0f6fc;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.repair-header h3 i {
+  color: #f97316;
+}
+
+.repair-close-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.repair-close-btn:hover {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.1);
+}
+
+/* ===== File Info Section ===== */
+.repair-file-info {
+  padding: 16px 24px;
+  background: #22272e;
+  border-bottom: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-file-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.repair-file-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.repair-file-item label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.repair-file-item span {
+  color: #adbac7;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: #1c2128;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #373e47;
+  word-break: break-all;
+}
+
+.repair-file-item.master-file span {
+  border-left: 3px solid #f97316;
+}
+
+.repair-file-item.dub-file span {
+  border-left: 3px solid #a855f7;
+}
+
+.repair-sync-info {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 32px;
+  align-items: end;
+}
+
+.repair-offset-display,
+.repair-confidence-display {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.repair-offset-display label,
+.repair-confidence-display label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.repair-offset-display span {
+  color: #f97316;
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: -0.5px;
+}
+
+.repair-confidence-display span {
+  color: #3fb950;
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ===== Editing Toolbar ===== */
+.repair-editing-toolbar {
+  padding: 12px 24px;
+  background: linear-gradient(180deg, #2d333b 0%, #22272e 100%);
+  border-bottom: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-editing-toolbar h4 {
+  color: #adbac7;
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-editing-toolbar h4 i {
+  color: #f97316;
+}
+
+.repair-toolbar-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.repair-toolbar-btn {
+  background: #2d333b;
+  border: 1px solid #444c56;
+  color: #adbac7;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repair-toolbar-btn:hover:not(:disabled) {
+  background: #373e47;
+  border-color: #58a6ff;
+  color: #f0f6fc;
+}
+
+.repair-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.repair-toolbar-btn.export-btn {
+  background: #238636;
+  border-color: #238636;
+  color: #ffffff;
+}
+
+.repair-toolbar-btn.export-btn:hover:not(:disabled) {
+  background: #2ea043;
+  border-color: #2ea043;
+}
+
+.repair-toolbar-separator {
+  width: 1px;
+  height: 24px;
+  background: #444c56;
+  margin: 0 8px;
+}
+
+.repair-toolbar-hints {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.repair-toolbar-hints span {
+  color: #768390;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repair-toolbar-hints kbd {
+  background: #373e47;
+  color: #adbac7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  border: 1px solid #444c56;
+}
+
+/* ===== Waveform Container ===== */
+.repair-waveform-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #161b22;
+  overflow: hidden;
+}
+
+.repair-waveform-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: #22272e;
+  border-bottom: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-waveform-header h4 {
+  color: #c9d1d9;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-waveform-header h4 i {
+  color: #58a6ff;
+}
+
+.repair-view-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Zoom Controls */
+.repair-zoom-controls {
+  display: flex;
+  gap: 4px;
+  background: #2d333b;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.repair-zoom-btn {
+  background: transparent;
+  border: none;
+  color: #adbac7;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.repair-zoom-btn:hover:not(:disabled) {
+  background: #373e47;
+  color: #f0f6fc;
+}
+
+.repair-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Waveform Display Area */
+.repair-waveform-display {
+  flex: 1;
+  position: relative;
+  background: #1c2128;
+  overflow: auto;
+  min-height: 400px;
+  border-radius: 6px;
+  margin: 12px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.repair-waveform-display > * {
+  min-height: 100%;
+}
+
+.repair-loading,
+.repair-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  color: #768390;
+  font-size: 14px;
+}
+
+.repair-loading {
+  gap: 16px;
+}
+
+.repair-loading::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border: 3px solid #373e47;
+  border-top-color: #f97316;
+  border-radius: 50%;
+  animation: repair-spin 1s linear infinite;
+}
+
+@keyframes repair-spin {
+  to { transform: rotate(360deg); }
+}
+
+.repair-error {
+  color: #f85149;
+  gap: 12px;
+}
+
+.repair-error-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.repair-error-message {
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 500px;
+  text-align: center;
+  color: #f85149;
+}
+
+.repair-error-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+/* ===== Track Controls Panel (Inline with Waveform) ===== */
+.repair-track-controls-panel {
+  padding: 12px;
+  background: #22272e;
+  border-right: 1px solid #373e47;
+  min-width: 200px;
+  max-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repair-track-label {
+  color: #f0f6fc;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 6px 10px;
+  background: #2d333b;
+  border-radius: 4px;
+  border-left: 3px solid #58a6ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Master track - Red/Coral accent */
+.repair-track-label.master-track {
+  border-left-color: #ef4444;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.2) 0%, #2d333b 50%);
+}
+
+.repair-track-controls-panel.master-track {
+  border-left: 3px solid #ef4444;
+}
+
+/* Dub track - Blue accent */
+.repair-track-label.dub-track {
+  border-left-color: #58a6ff;
+  background: linear-gradient(90deg, rgba(88, 166, 255, 0.2) 0%, #2d333b 50%);
+}
+
+.repair-track-controls-panel.dub-track {
+  border-left: 3px solid #58a6ff;
+}
+
+.repair-track-controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* M/S Buttons Row */
+.repair-track-buttons-row {
+  display: flex;
+  gap: 4px;
+}
+
+.repair-track-btn {
+  width: 32px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.repair-mute-btn {
+  background: #2d333b;
+  color: #768390;
+}
+
+.repair-mute-btn:hover {
+  background: #373e47;
+  color: #adbac7;
+}
+
+.repair-mute-btn.active {
+  background: #f85149;
+  color: #ffffff;
+}
+
+.repair-solo-btn {
+  background: #2d333b;
+  color: #768390;
+  margin-left: 4px;
+}
+
+.repair-solo-btn:hover {
+  background: #373e47;
+  color: #adbac7;
+}
+
+.repair-solo-btn.active {
+  background: #d29922;
+  color: #0d1117;
+}
+
+/* Track Control Groups (Volume) */
+.repair-track-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.repair-track-control-group label {
+  color: #768390;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.repair-track-control-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #373e47;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.repair-track-control-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #58a6ff;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.repair-track-control-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.repair-track-control-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #58a6ff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.repair-track-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-track-slider-row .repair-track-control-slider {
+  flex: 1;
+}
+
+.repair-track-control-value {
+  color: #adbac7;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ===== Transport Controls ===== */
+.repair-transport-controls {
+  padding: 16px 24px;
+  background: #22272e;
+  border-top: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-transport-controls h4 {
+  color: #adbac7;
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-transport-controls h4 i {
+  color: #58a6ff;
+}
+
+.repair-transport-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.repair-transport-buttons {
+  display: flex;
+  gap: 4px;
+  background: #2d333b;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.repair-transport-btn {
+  background: transparent;
+  border: none;
+  color: #adbac7;
+  padding: 8px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+}
+
+.repair-transport-btn:hover {
+  background: #373e47;
+  color: #f0f6fc;
+}
+
+.repair-transport-btn-primary {
+  background: #f97316;
+  color: #ffffff;
+}
+
+.repair-transport-btn-primary:hover {
+  background: #fb923c;
+}
+
+/* Playback Info */
+.repair-playback-info {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 16px;
+}
+
+.repair-time-display {
+  color: #f97316;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.3px;
+}
+
+.repair-playback-status {
+  color: #768390;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  background: #2d333b;
+  border-radius: 4px;
+}
+
+/* ===== Master Volume ===== */
+.repair-master-volume {
+  padding: 16px 24px;
+  background: #22272e;
+  border-top: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-master-volume h4 {
+  color: #adbac7;
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-master-volume h4 i {
+  color: #58a6ff;
+}
+
+.repair-master-volume-control {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.repair-volume-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #373e47;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.repair-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #f97316;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.repair-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.repair-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #f97316;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.repair-volume-value {
+  color: #adbac7;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  min-width: 50px;
+  text-align: right;
+}
+
+/* ===== Action Buttons ===== */
+.repair-actions {
+  padding: 16px 24px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  background: #22272e;
+  border-top: 1px solid #373e47;
+  flex-shrink: 0;
+}
+
+.repair-action-btn {
+  background: #2d333b;
+  border: 1px solid #373e47;
+  color: #adbac7;
+  padding: 10px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-action-btn:hover:not(:disabled) {
+  background: #373e47;
+  border-color: #444c56;
+}
+
+.repair-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.repair-action-btn.success {
+  background: #238636;
+  border-color: #238636;
+  color: #ffffff;
+}
+
+.repair-action-btn.success:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+.repair-action-btn.warning {
+  background: #9e6a03;
+  border-color: #9e6a03;
+  color: #ffffff;
+}
+
+.repair-action-btn.warning:hover:not(:disabled) {
+  background: #bb8009;
+}
+
+.repair-action-btn.danger {
+  background: #da3633;
+  border-color: #da3633;
+  color: #ffffff;
+}
+
+.repair-action-btn.danger:hover:not(:disabled) {
+  background: #f85149;
+}
+
+/* ===== Interactive Clip Styles ===== */
+/* Clip headers with drag indicators */
+[data-clip-id] {
+  cursor: grab;
+}
+
+[data-clip-id]:active {
+  cursor: grabbing;
+}
+
+/* Clip edge drag handles */
+[data-boundary-edge] {
+  cursor: ew-resize;
+}
+
+[data-boundary-edge="left"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  background: transparent;
+}
+
+[data-boundary-edge="right"] {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  background: transparent;
+}
+
+[data-boundary-edge]:hover {
+  background: rgba(249, 115, 22, 0.4);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+  .repair-file-pair {
+    grid-template-columns: 1fr;
+  }
+  
+  .repair-sync-info {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .repair-toolbar-buttons {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .repair-modal-content {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  
+  .repair-transport-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .repair-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .repair-toolbar-hints {
+    justify-content: center;
+  }
+}
+
+/* ===== FFmpeg Repair Dialog ===== */
+.repair-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100001;
+  backdrop-filter: blur(4px);
+}
+
+.repair-dialog {
+  background: #22272e;
+  border: 1px solid #373e47;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 600px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  animation: dialogSlideIn 0.2s ease-out;
+}
+
+@keyframes dialogSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.repair-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #2d333b;
+  border-bottom: 1px solid #373e47;
+  border-radius: 12px 12px 0 0;
+}
+
+.repair-dialog-header h4 {
+  color: #f0f6fc;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-dialog-header h4 i {
+  color: #58a6ff;
+}
+
+.repair-dialog-close {
+  background: none;
+  border: none;
+  color: #768390;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.repair-dialog-close:hover {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.repair-dialog-content {
+  padding: 20px;
+}
+
+.repair-dialog-info {
+  background: #161b22;
+  border: 1px solid #373e47;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.repair-dialog-info p {
+  color: #adbac7;
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.repair-dialog-info p:last-child {
+  margin-bottom: 0;
+}
+
+.repair-dialog-info p strong {
+  color: #f0f6fc;
+}
+
+.repair-dialog-hint {
+  color: #768390 !important;
+  font-size: 13px !important;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px !important;
+  padding-top: 12px;
+  border-top: 1px solid #373e47;
+}
+
+.repair-dialog-hint i {
+  color: #58a6ff;
+  margin-top: 2px;
+}
+
+.repair-dialog-field {
+  margin-bottom: 16px;
+}
+
+.repair-dialog-field label {
+  display: block;
+  color: #adbac7;
+  font-size: 14px;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.repair-dialog-field input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  background: #161b22;
+  border: 1px solid #373e47;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  transition: border-color 0.2s ease;
+}
+
+.repair-dialog-field input[type="text"]:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.repair-dialog-field input[type="text"]::placeholder {
+  color: #636e7b;
+}
+
+.repair-dialog-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: #adbac7;
+  font-size: 14px;
+}
+
+.repair-dialog-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #3fb950;
+  cursor: pointer;
+}
+
+.repair-dialog-progress {
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 6px;
+  padding: 12px 16px;
+  color: #58a6ff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.repair-dialog-progress i {
+  font-size: 16px;
+}
+
+.repair-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #2d333b;
+  border-top: 1px solid #373e47;
+  border-radius: 0 0 12px 12px;
+}
+
+.repair-dialog-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repair-dialog-btn.cancel {
+  background: transparent;
+  border: 1px solid #373e47;
+  color: #adbac7;
+}
+
+.repair-dialog-btn.cancel:hover:not(:disabled) {
+  background: #373e47;
+  color: #f0f6fc;
+}
+
+.repair-dialog-btn.primary {
+  background: linear-gradient(135deg, #3fb950, #2ea043);
+  border: none;
+  color: #fff;
+}
+
+.repair-dialog-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #46c958, #35b34a);
+  box-shadow: 0 4px 12px rgba(63, 185, 80, 0.3);
+}
+
+.repair-dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== Repair Status Bar ===== */
+.repair-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  margin: 0 16px 16px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  animation: statusSlideIn 0.3s ease-out;
+}
+
+@keyframes statusSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.repair-status.success {
+  background: rgba(63, 185, 80, 0.15);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  color: #3fb950;
+}
+
+.repair-status.success i:first-child {
+  color: #3fb950;
+}
+
+.repair-status.error {
+  background: rgba(248, 81, 73, 0.15);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  color: #f85149;
+}
+
+.repair-status.error i:first-child {
+  color: #f85149;
+}
+
+.repair-status span {
+  flex: 1;
+  color: #adbac7;
+}
+
+.repair-status-close {
+  background: none;
+  border: none;
+  color: #768390;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.repair-status-close:hover {
+  color: #f0f6fc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Primary action button style */
+.repair-action-btn.primary {
+  background: linear-gradient(135deg, #58a6ff, #388bfd);
+  border-color: #58a6ff;
+  color: #fff;
+}
+
+.repair-action-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #79c0ff, #58a6ff);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+  transform: translateY(-1px);
+}

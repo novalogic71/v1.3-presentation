@@ -1,0 +1,168 @@
+/* Global styles for QC React Interface - Waveform Playlist Style */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#qc-react-root {
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== Waveform Playlist Component Overrides ===== */
+
+/* Main container styling */
+#qc-react-root [class*="playlist-container"],
+#qc-react-root [class*="waveform-playlist"] {
+  background: #1c2128 !important;
+  color: #c9d1d9 !important;
+}
+
+/* Track rows */
+#qc-react-root [class*="track"],
+#qc-react-root [class*="Track"] {
+  background: #22272e !important;
+  border-bottom: 1px solid #30363d !important;
+}
+
+/* Waveform colors */
+#qc-react-root canvas {
+  background: #22272e !important;
+}
+
+/* Timeline/Timescale */
+#qc-react-root [class*="timescale"],
+#qc-react-root [class*="Timescale"],
+#qc-react-root [class*="timeline"],
+#qc-react-root [class*="Timeline"] {
+  background: #161b22 !important;
+  border-bottom: 1px solid #30363d !important;
+  color: #8b949e !important;
+}
+
+/* Playhead */
+#qc-react-root [class*="playhead"],
+#qc-react-root [class*="Playhead"] {
+  background: #f85149 !important;
+  width: 2px !important;
+}
+
+/* Selection */
+#qc-react-root [class*="selection"],
+#qc-react-root [class*="Selection"] {
+  background: rgba(88, 166, 255, 0.2) !important;
+  border: 1px solid rgba(88, 166, 255, 0.5) !important;
+}
+
+/* Cursor */
+#qc-react-root [class*="cursor"],
+#qc-react-root [class*="Cursor"] {
+  background: #58a6ff !important;
+}
+
+/* Scrollbars - Modern dark style */
+#qc-react-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+#qc-react-root ::-webkit-scrollbar-track {
+  background: #1c2128;
+  border-radius: 5px;
+}
+
+#qc-react-root ::-webkit-scrollbar-thumb {
+  background: #373e47;
+  border-radius: 5px;
+  border: 2px solid #1c2128;
+}
+
+#qc-react-root ::-webkit-scrollbar-thumb:hover {
+  background: #444c56;
+}
+
+#qc-react-root ::-webkit-scrollbar-corner {
+  background: #1c2128;
+}
+
+/* Override any default waveform-playlist buttons */
+#qc-react-root button[class*="playlist"],
+#qc-react-root button[class*="waveform"],
+#qc-react-root button[class*="Button"] {
+  background: #2d333b !important;
+  border: 1px solid #373e47 !important;
+  color: #adbac7 !important;
+  border-radius: 6px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease !important;
+}
+
+#qc-react-root button[class*="playlist"]:hover,
+#qc-react-root button[class*="waveform"]:hover,
+#qc-react-root button[class*="Button"]:hover {
+  background: #373e47 !important;
+  border-color: #444c56 !important;
+}
+
+/* Text inputs */
+#qc-react-root input[type="text"],
+#qc-react-root input[type="number"] {
+  background: #22272e !important;
+  border: 1px solid #373e47 !important;
+  color: #adbac7 !important;
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
+}
+
+#qc-react-root input[type="text"]:focus,
+#qc-react-root input[type="number"]:focus {
+  outline: none !important;
+  border-color: #58a6ff !important;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15) !important;
+}
+
+/* Range sliders */
+#qc-react-root input[type="range"] {
+  accent-color: #58a6ff;
+}
+
+/* ===== Waveform Theme Variables ===== */
+:root {
+  --wp-bg-primary: #1c2128;
+  --wp-bg-secondary: #22272e;
+  --wp-bg-tertiary: #2d333b;
+  --wp-border: #373e47;
+  --wp-text-primary: #f0f6fc;
+  --wp-text-secondary: #c9d1d9;
+  --wp-text-muted: #8b949e;
+  --wp-accent: #58a6ff;
+  --wp-success: #238636;
+  --wp-warning: #d29922;
+  --wp-danger: #f85149;
+  --wp-waveform-fill: #58a6ff;
+  --wp-waveform-outline: #388bfd;
+  --wp-playhead: #f85149;
+}
+
+/* Apply theme to waveform-playlist internals */
+#qc-react-root {
+  --playlist-background: var(--wp-bg-primary);
+  --track-background: var(--wp-bg-secondary);
+  --track-border: var(--wp-border);
+  --waveform-color: var(--wp-waveform-fill);
+  --waveform-progress-color: var(--wp-accent);
+  --playhead-color: var(--wp-playhead);
+  --timescale-background: var(--wp-bg-tertiary);
+  --timescale-text: var(--wp-text-muted);
+}
