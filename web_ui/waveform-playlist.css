@@ -1,0 +1,272 @@
+/**
+ * Waveform Playlist Styles for QC Interface
+ * Based on waveform-playlist v4 default styles with dark theme
+ */
+
+/* Main playlist container */
+.playlist {
+    background: #1a1a2e;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.playlist .playlist-tracks {
+    background: #16162a;
+}
+
+/* Individual track styling */
+.playlist .channel {
+    background: #1e1e3f;
+    border-bottom: 1px solid #2d2d5a;
+}
+
+.playlist .channel-wrapper {
+    display: flex;
+    align-items: stretch;
+}
+
+/* Track controls panel */
+.playlist .controls {
+    background: #252550;
+    border-right: 1px solid #3d3d7a;
+    padding: 8px;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.playlist .controls .track-label {
+    color: #e0e0e0;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+}
+
+/* Volume and pan sliders */
+.playlist .controls input[type="range"] {
+    width: 100%;
+    height: 6px;
+    margin: 4px 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    background: #3d3d7a;
+    border-radius: 3px;
+}
+
+.playlist .controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #60a5fa;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* Mute/Solo buttons */
+.playlist .controls button {
+    padding: 4px 8px;
+    margin: 2px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.playlist .controls .btn-mute {
+    background: #4a4a80;
+    color: #ccc;
+}
+
+.playlist .controls .btn-mute.active {
+    background: #ef4444;
+    color: white;
+}
+
+.playlist .controls .btn-solo {
+    background: #4a4a80;
+    color: #ccc;
+}
+
+.playlist .controls .btn-solo.active {
+    background: #eab308;
+    color: #1a1a2e;
+}
+
+/* Waveform canvas area */
+.playlist .waveform {
+    background: #1a1a2e;
+}
+
+.playlist canvas {
+    display: block;
+}
+
+/* Timeline/timescale */
+.playlist .playlist-time-scale {
+    background: #252550;
+    border-bottom: 1px solid #3d3d7a;
+    height: 24px;
+}
+
+.playlist .playlist-time-scale canvas {
+    background: transparent;
+}
+
+/* Cursor/playhead line */
+.playlist .cursor {
+    position: absolute;
+    width: 2px;
+    background: #ef4444;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Selection highlight */
+.playlist .selection {
+    position: absolute;
+    background: rgba(96, 165, 250, 0.3);
+    pointer-events: none;
+}
+
+/* Track colors - Master (blue) */
+.playlist .channel.master-track,
+.playlist .channel:first-child {
+    border-left: 4px solid #3b82f6;
+}
+
+.playlist .channel.master-track .controls,
+.playlist .channel:first-child .controls {
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.2), transparent);
+}
+
+/* Track colors - Dub (green) */
+.playlist .channel.dub-track,
+.playlist .channel:nth-child(2) {
+    border-left: 4px solid #22c55e;
+}
+
+.playlist .channel.dub-track .controls,
+.playlist .channel:nth-child(2) .controls {
+    background: linear-gradient(90deg, rgba(34, 197, 94, 0.2), transparent);
+}
+
+/* Ensure waveforms are visible */
+.playlist .waveform canvas {
+    background: transparent !important;
+}
+
+/* Make sure the playlist has proper dimensions */
+.playlist {
+    min-height: 200px;
+    position: relative;
+}
+
+/* Scrollbar styling */
+.playlist ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.playlist ::-webkit-scrollbar-track {
+    background: #1a1a2e;
+}
+
+.playlist ::-webkit-scrollbar-thumb {
+    background: #4a4a80;
+    border-radius: 4px;
+}
+
+.playlist ::-webkit-scrollbar-thumb:hover {
+    background: #5a5a90;
+}
+
+/* Loading state */
+.playlist.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.playlist.loading::after {
+    content: 'Loading audio...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 16px 32px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+/* QC Interface specific styling */
+#waveform-playlist-container {
+    width: 100%;
+    height: 250px;
+    position: relative;
+    background: #1a1a2e;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#waveform-playlist-container .playlist {
+    width: 100%;
+    height: 100%;
+}
+
+/* Zoom controls */
+.waveform-zoom-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.waveform-zoom-controls button {
+    padding: 6px 12px;
+    background: #3d3d7a;
+    border: none;
+    border-radius: 4px;
+    color: #e0e0e0;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+
+.waveform-zoom-controls button:hover {
+    background: #5a5a90;
+}
+
+/* Override for dark theme compatibility */
+.playlist .playlist-overlay {
+    background: transparent;
+}
+
+.playlist .point {
+    background: #ef4444;
+}
+
+.playlist .state-cursor .point {
+    background: #60a5fa;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .playlist .controls {
+        min-width: 120px;
+        padding: 4px;
+    }
+
+    .playlist .controls .track-label {
+        font-size: 11px;
+    }
+
+    #waveform-playlist-container {
+        height: 200px;
+    }
+}

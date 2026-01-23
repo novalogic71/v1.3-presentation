@@ -135,7 +135,8 @@
 }
 
 .repair-offset-display label,
-.repair-confidence-display label {
+.repair-confidence-display label,
+.repair-offset-editor label {
   font-size: 11px;
   font-weight: 600;
   color: #8b949e;
@@ -156,6 +157,84 @@
   font-size: 24px;
   font-weight: 700;
   font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ===== Offset Editor ===== */
+.repair-offset-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.repair-offset-input-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repair-offset-input {
+  width: 140px;
+  padding: 8px 12px;
+  background: #161b22;
+  border: 1px solid #373e47;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 16px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.repair-offset-input:focus {
+  outline: none;
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}
+
+.repair-offset-input::placeholder {
+  color: #636e7b;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.repair-offset-apply-btn {
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.repair-offset-apply-btn:hover {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+}
+
+.repair-offset-apply-btn:active {
+  transform: translateY(0);
+}
+
+.repair-offset-timecode {
+  color: #f97316;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: -0.5px;
+}
+
+.repair-offset-override {
+  color: #d29922;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 8px;
 }
 
 /* ===== Editing Toolbar ===== */

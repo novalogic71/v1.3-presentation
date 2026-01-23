@@ -79,6 +79,10 @@ const RepairModal: React.FC<RepairModalProps> = ({
   const [outputPath, setOutputPath] = useState('');
   const [keepDuration, setKeepDuration] = useState(true);
 
+  // Manual offset override state
+  const [manualOffset, setManualOffset] = useState<number | null>(null);
+  const [offsetInputValue, setOffsetInputValue] = useState('');
+
   // Export functionality
   const { exportWav, isExporting, progress: exportProgress } = useExportWav();
 
@@ -184,6 +188,88 @@ const RepairModal: React.FC<RepairModalProps> = ({
       setOutputPath(generateOutputPath(syncData.dubPath, '_repaired'));
     }
   }, [showOutputDialog, syncData.dubPath]);
+
+  // Initialize offset input value from detected offset
+  useEffect(() => {
+    const initialOffset = syncData.detectedOffset || 0;
+    setOffsetInputValue(initialOffset.toFixed(3));
+    setManualOffset(null); // Reset manual override when new data loads
+  }, [syncData.detectedOffset]);
+
+  // Get the effective offset (manual override or detected)
+  const effectiveOffset = manualOffset !== null ? manualOffset : (syncData.detectedOffset || 0);
+
+  // Parse timecode input (supports HH:MM:SS:FF or seconds)
+  const parseOffsetInput = (input: string): number | null => {
+    const trimmed = input.trim();
+    
+    // Try parsing as seconds (e.g., "89.068" or "-89.068")
+    const asSeconds = parseFloat(trimmed);
+    if (!isNaN(asSeconds)) {
+      return asSeconds;
+    }
+    
+    // Try parsing as timecode HH:MM:SS:FF or HH:MM:SS.mmm
+    const tcMatch = trimmed.match(/^([+-])?(\d{1,2}):(\d{2}):(\d{2})[:.](\d{1,3})$/);
+    if (tcMatch) {
+      const sign = tcMatch[1] === '-' ? -1 : 1;
+      const hours = parseInt(tcMatch[2], 10);
+      const minutes = parseInt(tcMatch[3], 10);
+      const seconds = parseInt(tcMatch[4], 10);
+      const framesOrMs = parseInt(tcMatch[5], 10);
+      
+      // If it has 3 digits after the last separator, treat as milliseconds
+      // Otherwise treat as frames
+      let totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      if (tcMatch[5].length === 3) {
+        totalSeconds += framesOrMs / 1000;
+      } else {
+        const fps = syncData.frameRate || 23.976;
+        totalSeconds += framesOrMs / fps;
+      }
+      
+      return sign * totalSeconds;
+    }
+    
+    return null;
+  };
+
+  // Apply manual offset to the dub track
+  const handleApplyManualOffset = useCallback(() => {
+    const newOffset = parseOffsetInput(offsetInputValue);
+    if (newOffset === null) {
+      alert('Invalid offset format. Use seconds (e.g., 89.068) or timecode (e.g., 00:01:29:01)');
+      return;
+    }
+    
+    setManualOffset(newOffset);
+    
+    // Update the dub track's start position based on the new offset
+    if (tracks.length > 1 && playlistData.isReady) {
+      const dubTrack = tracks[1];
+      if (dubTrack && dubTrack.clips.length > 0) {
+        const newStartSample = Math.round(newOffset * (dubTrack.clips[0].sampleRate || sampleRate || 48000));
+        
+        const updatedTracks = tracks.map((track, index) => {
+          if (index === 1) { // Dub track
+            return {
+              ...track,
+              clips: track.clips.map((clip, clipIndex) => {
+                if (clipIndex === 0) {
+                  return { ...clip, startSample: Math.max(0, newStartSample) };
+                }
+                return clip;
+              })
+            };
+          }
+          return track;
+        });
+        
+        onTracksChange(updatedTracks);
+        console.log(`Applied manual offset: ${newOffset}s (${newStartSample} samples)`);
+      }
+    }
+  }, [offsetInputValue, tracks, playlistData.isReady, sampleRate, onTracksChange, syncData.frameRate]);
 
   // Open the output path dialog for FFmpeg repair
   const handleOpenRepairDialog = useCallback(() => {
@@ -389,7 +475,6 @@ const RepairModal: React.FC<RepairModalProps> = ({
 
   if (!isOpen) return null;
 
-  const offset = syncData.detectedOffset || 0;
   const confidence = syncData.confidence || 0;
 
   return (
@@ -418,9 +503,34 @@ const RepairModal: React.FC<RepairModalProps> = ({
             </div>
           </div>
           <div className="repair-sync-info">
-            <div className="repair-offset-display">
-              <label>Applied Offset:</label>
-              <span>{formatOffset(offset, syncData.frameRate || 23.976)}</span>
+            <div className="repair-offset-editor">
+              <label>Offset:</label>
+              <div className="repair-offset-input-group">
+                <input
+                  type="text"
+                  className="repair-offset-input"
+                  value={offsetInputValue}
+                  onChange={(e) => setOffsetInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleApplyManualOffset();
+                    }
+                  }}
+                  placeholder="Seconds or HH:MM:SS:FF"
+                  title="Enter offset in seconds (e.g., 89.068) or timecode (e.g., 00:01:29:01)"
+                />
+                <button 
+                  className="repair-offset-apply-btn"
+                  onClick={handleApplyManualOffset}
+                  title="Apply offset to dub track"
+                >
+                  <i className="fas fa-check"></i>
+                </button>
+              </div>
+              <span className="repair-offset-timecode">
+                {formatOffset(effectiveOffset, syncData.frameRate || 23.976)}
+                {manualOffset !== null && <span className="repair-offset-override"> (override)</span>}
+              </span>
             </div>
             <div className="repair-confidence-display">
               <label>Confidence:</label>

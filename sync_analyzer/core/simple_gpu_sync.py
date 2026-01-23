@@ -615,4 +615,3 @@ if __name__ == "__main__":
     print(f"   Confidence: {result['confidence']:.2%}")
     print(f"   Time: {result['processing_time']:.2f}s")
     print(f"   Device: {result['device']}")
-

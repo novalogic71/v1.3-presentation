@@ -150,6 +150,7 @@ const RepairInterface: React.FC = () => {
     <WaveformPlaylistProvider 
       key={`repair-${syncData?.analysisId || syncData?.analysis_id || 'default'}-${tracksInitialized ? 'edit' : 'load'}`}
       tracks={tracksToUse}
+      timescale={true}
       controls={{
         show: true,
         width: 200

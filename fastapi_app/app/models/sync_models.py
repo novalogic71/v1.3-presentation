@@ -576,6 +576,7 @@ class HealthStatus(BaseModel):
     status: str = Field(..., description="Overall health status")
     service: str = Field(..., description="Service name")
     version: str = Field(..., description="Service version")
+    build_id: Optional[str] = Field(default=None, description="Build identifier")
     timestamp: datetime = Field(..., description="Health check timestamp")
     components: Dict[str, Dict[str, Any]] = Field(..., description="Component health status")
     
@@ -585,6 +586,7 @@ class HealthStatus(BaseModel):
                 "status": "healthy",
                 "service": "Professional Audio Sync Analyzer API",
                 "version": "2.0.0",
+                "build_id": "20260121-001",
                 "timestamp": "2025-08-27T19:00:00Z",
                 "components": {
                     "ffmpeg": {"status": "healthy", "version": "5.1.6"},

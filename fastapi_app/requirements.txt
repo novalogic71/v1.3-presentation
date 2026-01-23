@@ -46,6 +46,7 @@ ffmpeg-python>=0.2.0
 # AI and machine learning
 torch>=2.0.0
 torchaudio>=2.0.0
+torchcodec>=0.1.0
 transformers>=4.35.0
 scikit-learn>=1.1.0
 

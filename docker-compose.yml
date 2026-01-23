@@ -19,6 +19,7 @@ services:
       - ./reports:/app/reports
       - ./sync_reports:/app/sync_reports
       - ./optimized_sync_reports:/app/optimized_sync_reports
+      - ./web_ui:/app/web_ui
       - ./web_ui/ui_sync_reports:/app/web_ui/ui_sync_reports
       - ./web_ui/proxy_cache:/app/web_ui/proxy_cache
       - ./repaired_sync_files:/app/repaired_sync_files

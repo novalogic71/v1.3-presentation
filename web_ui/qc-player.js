@@ -17,6 +17,7 @@ class QCPlayer {
         this.dubVolume = 0.8;
         this.masterMuted = false;
         this.dubMuted = false;
+        this.balanceValue = 0;
         
         // Callbacks
         this.onTimeUpdate = null;
@@ -28,33 +29,56 @@ class QCPlayer {
      * Initialize player with audio URLs
      */
     async initialize(masterUrl, dubUrl, offsetSeconds = 0) {
+        console.log('QCPlayer.initialize called:', { masterUrl, dubUrl, offsetSeconds });
+
         this.offsetSeconds = offsetSeconds;
-        
+
         // Clean up any existing elements
         this.dispose();
-        
+
         // Create audio elements
         this.masterAudio = this._createAudioElement('qc-master-audio');
         this.dubAudio = this._createAudioElement('qc-dub-audio');
-        
+
+        console.log('QCPlayer: Audio elements created:', {
+            master: this.masterAudio?.id,
+            dub: this.dubAudio?.id
+        });
+
         // Set up event listeners
         this._setupEventListeners();
-        
+
         // Load audio
         const loadPromises = [];
-        
+
         if (masterUrl) {
+            console.log('QCPlayer: Setting master src:', masterUrl);
             this.masterAudio.src = masterUrl;
             loadPromises.push(this._waitForLoadedMetadata(this.masterAudio, 'master'));
+        } else {
+            console.warn('QCPlayer: No master URL provided!');
         }
-        
+
         if (dubUrl) {
+            console.log('QCPlayer: Setting dub src:', dubUrl);
             this.dubAudio.src = dubUrl;
             loadPromises.push(this._waitForLoadedMetadata(this.dubAudio, 'dub'));
+        } else {
+            console.warn('QCPlayer: No dub URL provided!');
         }
-        
+
+        if (loadPromises.length === 0) {
+            console.error('QCPlayer: No audio URLs to load!');
+            this._updateStatus('No audio URLs provided', 'error');
+            return false;
+        }
+
         try {
             await Promise.all(loadPromises);
+            console.log('QCPlayer: All audio loaded successfully', {
+                masterDuration: this.masterAudio?.duration,
+                dubDuration: this.dubAudio?.duration
+            });
             this._updateStatus('Audio loaded - ready for playback');
             return true;
         } catch (error) {
@@ -154,84 +178,127 @@ class QCPlayer {
     }
     
     _play(startTime, corrected) {
+        console.log('QCPlayer._play called:', { startTime, corrected, hasMaster: !!this.masterAudio, hasDub: !!this.dubAudio });
+
         if (!this.masterAudio || !this.dubAudio) {
-            this._updateStatus('Audio not loaded', 'error');
+            console.error('QCPlayer: Audio elements not created!', { master: this.masterAudio, dub: this.dubAudio });
+            this._updateStatus('Audio not loaded - please wait for loading to complete', 'error');
             return;
         }
-        
+
+        // Check if audio is actually loaded
+        if (!this.masterAudio.src || !this.dubAudio.src) {
+            console.error('QCPlayer: Audio sources not set!', { masterSrc: this.masterAudio.src, dubSrc: this.dubAudio.src });
+            this._updateStatus('Audio sources not loaded', 'error');
+            return;
+        }
+
+        // Check readyState
+        console.log('QCPlayer: Audio ready states:', {
+            master: this.masterAudio.readyState,
+            dub: this.dubAudio.readyState,
+            masterDuration: this.masterAudio.duration,
+            dubDuration: this.dubAudio.duration
+        });
+
         // Stop any current playback
         this.stop();
-        
-        const masterTime = Math.max(0, startTime);
-        let dubTime = masterTime;
-        
+
+        const baseTime = Math.max(0, startTime);
+        let masterTime = baseTime;
+        let dubTime = baseTime;
+
         if (corrected && this.offsetSeconds !== 0) {
-            // Apply offset correction
-            // If offset > 0: dub content at t=0 matches master at t=offset
-            // So to align: dub should play from t+offset when master plays from t
-            dubTime = masterTime + this.offsetSeconds;
-            
-            // Clamp to valid range
-            dubTime = Math.max(0, Math.min(dubTime, (this.dubAudio.duration || 0) - 0.1));
+            // Apply offset correction (match CoreAudioEngine conventions)
+            if (this.offsetSeconds > 0) {
+                // Dub is early -> skip ahead in dub
+                dubTime = baseTime + this.offsetSeconds;
+            } else {
+                // Dub is late -> skip ahead in master
+                masterTime = baseTime + Math.abs(this.offsetSeconds);
+            }
         }
-        
+
+        const masterDuration = this.masterAudio.duration || 0;
+        const dubDuration = this.dubAudio.duration || 0;
+        if (masterDuration > 0) {
+            masterTime = Math.max(0, Math.min(masterTime, Math.max(0, masterDuration - 0.1)));
+        }
+        if (dubDuration > 0) {
+            dubTime = Math.max(0, Math.min(dubTime, Math.max(0, dubDuration - 0.1)));
+        }
+
         console.log(`QCPlayer: Playing ${corrected ? 'AFTER' : 'BEFORE'} fix - master@${masterTime.toFixed(2)}s, dub@${dubTime.toFixed(2)}s (offset: ${this.offsetSeconds}s)`);
-        
+
         // Set positions
         this.masterAudio.currentTime = masterTime;
         this.dubAudio.currentTime = dubTime;
-        
+
         // Apply volume/mute
         this._applyVolumes();
-        
-        // Start playback
-        const playMaster = this.masterAudio.play().catch(e => {
-            console.warn('QCPlayer: Master play failed:', e);
-            this._updateStatus('Master playback blocked - click to enable', 'warning');
-        });
-        
-        const playDub = this.dubAudio.play().catch(e => {
-            console.warn('QCPlayer: Dub play failed:', e);
-            this._updateStatus('Dub playback blocked - click to enable', 'warning');
-        });
-        
+
+        // Start playback - track success/failure properly
+        let masterOk = false;
+        let dubOk = false;
+
+        const playMaster = this.masterAudio.play()
+            .then(() => { masterOk = true; })
+            .catch(e => {
+                console.error('QCPlayer: Master play failed:', e.name, e.message);
+                this._updateStatus(`Master blocked: ${e.message}`, 'warning');
+            });
+
+        const playDub = this.dubAudio.play()
+            .then(() => { dubOk = true; })
+            .catch(e => {
+                console.error('QCPlayer: Dub play failed:', e.name, e.message);
+                this._updateStatus(`Dub blocked: ${e.message}`, 'warning');
+            });
+
         Promise.all([playMaster, playDub]).then(() => {
-            this.isPlaying = true;
-            this._startSyncMonitor(corrected);
-            console.log('QCPlayer: Playback started successfully');
-        }).catch(error => {
-            console.error('QCPlayer: Playback failed:', error);
-            this.isPlaying = false;
-            this._updateStatus('Playback failed - try clicking play again', 'error');
+            // Only set playing if at least one track started
+            if (masterOk || dubOk) {
+                this.isPlaying = true;
+                this._startSyncMonitor(corrected);
+                console.log('QCPlayer: Playback started -', { masterOk, dubOk });
+                if (masterOk && dubOk) {
+                    this._updateStatus(corrected ? 'Playing (After Fix)' : 'Playing (Before Fix)');
+                }
+            } else {
+                this.isPlaying = false;
+                this._updateStatus('Playback blocked - click anywhere first, then try again', 'error');
+            }
         });
     }
     
     /**
      * Keep tracks synchronized during playback (for After Fix mode)
+     * Uses gentle correction to avoid choppy playback
      */
     _startSyncMonitor(corrected) {
         this._stopSyncMonitor();
-        
+
         if (!corrected) return; // No sync needed for Before mode
-        
+
         this.syncInterval = setInterval(() => {
             if (!this.isPlaying || !this.masterAudio || !this.dubAudio) {
                 this._stopSyncMonitor();
                 return;
             }
-            
+
             // Check sync drift and correct if needed
             const masterTime = this.masterAudio.currentTime;
             const expectedDubTime = masterTime + this.offsetSeconds;
             const actualDubTime = this.dubAudio.currentTime;
             const drift = Math.abs(expectedDubTime - actualDubTime);
-            
-            // Resync if drift exceeds 100ms
-            if (drift > 0.1 && expectedDubTime > 0 && expectedDubTime < this.dubAudio.duration) {
+
+            // Only resync if drift exceeds 250ms (was 100ms - too aggressive)
+            // This prevents choppy playback from constant corrections
+            if (drift > 0.25 && expectedDubTime > 0 && expectedDubTime < this.dubAudio.duration) {
                 console.log(`QCPlayer: Resyncing - drift: ${(drift * 1000).toFixed(0)}ms`);
                 this.dubAudio.currentTime = expectedDubTime;
             }
-        }, 500); // Check every 500ms
+        }, 1000); // Check every 1000ms (was 500ms - too frequent)
     }
     
     _stopSyncMonitor() {
@@ -262,12 +329,25 @@ class QCPlayer {
      * Seek to specific time
      */
     seek(time) {
-        const masterTime = Math.max(0, time);
-        let dubTime = masterTime;
+        const baseTime = Math.max(0, time);
+        let masterTime = baseTime;
+        let dubTime = baseTime;
         
         if (this.isCorrectedMode && this.offsetSeconds !== 0) {
-            dubTime = masterTime + this.offsetSeconds;
-            dubTime = Math.max(0, Math.min(dubTime, (this.dubAudio?.duration || 0) - 0.1));
+            if (this.offsetSeconds > 0) {
+                dubTime = baseTime + this.offsetSeconds;
+            } else {
+                masterTime = baseTime + Math.abs(this.offsetSeconds);
+            }
+        }
+        
+        const masterDuration = this.masterAudio?.duration || 0;
+        const dubDuration = this.dubAudio?.duration || 0;
+        if (masterDuration > 0) {
+            masterTime = Math.max(0, Math.min(masterTime, Math.max(0, masterDuration - 0.1)));
+        }
+        if (dubDuration > 0) {
+            dubTime = Math.max(0, Math.min(dubTime, Math.max(0, dubDuration - 0.1)));
         }
         
         if (this.masterAudio) {
@@ -321,20 +401,34 @@ class QCPlayer {
         this.dubMuted = muted;
         this._applyVolumes();
     }
+
+    /**
+     * Balance between master (-1) and dub (+1)
+     */
+    setBalance(value) {
+        const v = Number(value) || 0;
+        this.balanceValue = Math.max(-1, Math.min(1, v));
+        this._applyVolumes();
+    }
     
     _applyVolumes() {
-        console.log(`QCPlayer._applyVolumes: master=${this.masterVolume} (muted=${this.masterMuted}), dub=${this.dubVolume} (muted=${this.dubMuted})`);
+        const balance = this.balanceValue ?? 0;
+        const masterScale = 1 - Math.max(0, balance);
+        const dubScale = 1 - Math.max(0, -balance);
+        console.log(`QCPlayer._applyVolumes: master=${this.masterVolume} (muted=${this.masterMuted}), dub=${this.dubVolume} (muted=${this.dubMuted}), balance=${balance}`);
         if (this.masterAudio) {
-            const masterVol = this.masterMuted ? 0 : this.masterVolume;
-            this.masterAudio.volume = masterVol;
-            console.log(`QCPlayer: Set master volume to ${masterVol}`);
+            const masterVol = this.masterMuted ? 0 : this.masterVolume * masterScale;
+            const clamped = Math.max(0, Math.min(1, masterVol));
+            this.masterAudio.volume = clamped;
+            console.log(`QCPlayer: Set master volume to ${clamped}`);
         } else {
             console.warn('QCPlayer: masterAudio not available');
         }
         if (this.dubAudio) {
-            const dubVol = this.dubMuted ? 0 : this.dubVolume;
-            this.dubAudio.volume = dubVol;
-            console.log(`QCPlayer: Set dub volume to ${dubVol}`);
+            const dubVol = this.dubMuted ? 0 : this.dubVolume * dubScale;
+            const clamped = Math.max(0, Math.min(1, dubVol));
+            this.dubAudio.volume = clamped;
+            console.log(`QCPlayer: Set dub volume to ${clamped}`);
         } else {
             console.warn('QCPlayer: dubAudio not available');
         }
@@ -396,4 +490,3 @@ class QCPlayer {
 
 // Export for use
 window.QCPlayer = QCPlayer;
-

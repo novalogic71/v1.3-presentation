@@ -98,6 +98,7 @@ async def get_health_status():
             status=overall_status,
             service=settings.APP_NAME,
             version=settings.VERSION,
+            build_id=settings.BUILD_ID,
             timestamp=datetime.utcnow(),
             components=components
         )

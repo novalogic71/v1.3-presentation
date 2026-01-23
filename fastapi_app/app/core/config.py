@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Application settings
     APP_NAME: str = "Professional Audio Sync Analyzer API"
     VERSION: str = "2.0.0"
+    BUILD_ID: Optional[str] = Field(default=None, env="BUILD_ID")
     DEBUG: bool = Field(default=False, env="DEBUG")
     
     # Server settings
@@ -34,6 +35,15 @@ class Settings(BaseSettings):
             "http://10.124.201.10:3002",
         ],
         env="ALLOWED_ORIGINS"
+    )
+    CORS_ORIGIN_REGEX: str = Field(
+        default=(
+            r"^https?://(localhost|127\.0\.0\.1|"
+            r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+            r"192\.168\.\d{1,3}\.\d{1,3}|"
+            r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$"
+        ),
+        env="CORS_ORIGIN_REGEX"
     )
     
     # File system settings

@@ -14,6 +14,7 @@ class NativeAudioPlayer {
         this.onTimeUpdate = null;
         this.onStatusChange = null;
         this.animationId = null;
+        this.balanceValue = 0;
         
         console.log('NativeAudioPlayer initialized');
     }
@@ -159,7 +160,7 @@ class NativeAudioPlayer {
             
             try {
                 track.audio.currentTime = trackTime;
-                track.audio.volume = track.muted ? 0 : track.volume;
+                this._applyTrackVolume(track);
             } catch (e) {
                 console.warn(`Failed to set time for ${track.name}:`, e.message);
             }
@@ -276,9 +277,7 @@ class NativeAudioPlayer {
         const track = this.tracks.find(t => t.id === trackId);
         if (track) {
             track.volume = Math.max(0, Math.min(1, volume));
-            if (!track.muted) {
-                track.audio.volume = track.volume;
-            }
+            this._applyTrackVolume(track);
             console.log(`NativeAudioPlayer: Volume ${trackId} = ${(track.volume * 100).toFixed(0)}%`);
         } else {
             console.warn(`NativeAudioPlayer: Track "${trackId}" not found for volume change`);
@@ -292,7 +291,7 @@ class NativeAudioPlayer {
         const track = this.tracks.find(t => t.id === trackId);
         if (track) {
             track.muted = muted;
-            track.audio.volume = muted ? 0 : track.volume;
+            this._applyTrackVolume(track);
             console.log(`NativeAudioPlayer: Mute ${trackId} = ${muted}`);
         } else {
             console.warn(`NativeAudioPlayer: Track "${trackId}" not found for mute change`);
@@ -310,21 +309,37 @@ class NativeAudioPlayer {
         }
         
         track.solo = solo;
-        
-        // Recalculate all volumes based on solo state
-        const anySolo = this.tracks.some(t => t.solo);
-        
-        this.tracks.forEach(t => {
-            if (anySolo) {
-                // If any track is soloed, only play soloed tracks
-                t.audio.volume = t.solo && !t.muted ? t.volume : 0;
-            } else {
-                // No solo - normal mute behavior
-                t.audio.volume = t.muted ? 0 : t.volume;
-            }
-        });
+        this._applyAllVolumes();
         
         console.log(`NativeAudioPlayer: Solo ${trackId} = ${solo}`);
+    }
+
+    /**
+     * Balance between master (-1) and dub (+1)
+     */
+    setBalance(value) {
+        const v = Number(value) || 0;
+        this.balanceValue = Math.max(-1, Math.min(1, v));
+        this._applyAllVolumes();
+    }
+
+    _applyTrackVolume(track) {
+        const anySolo = this.tracks.some(t => t.solo);
+        let effective = track.volume;
+
+        if (anySolo && !track.solo) effective = 0;
+        if (track.muted) effective = 0;
+
+        const balance = this.balanceValue ?? 0;
+        const masterScale = 1 - Math.max(0, balance);
+        const dubScale = 1 - Math.max(0, -balance);
+        effective *= track.id === 'master' ? masterScale : dubScale;
+
+        track.audio.volume = Math.max(0, Math.min(1, effective));
+    }
+
+    _applyAllVolumes() {
+        this.tracks.forEach(t => this._applyTrackVolume(t));
     }
     
     /**
@@ -405,4 +420,3 @@ class NativeAudioPlayer {
 
 // Export
 window.NativeAudioPlayer = NativeAudioPlayer;
-

@@ -179,6 +179,25 @@ def get_celery_info() -> Dict[str, Any]:
                 "pool": worker_stats.get('pool', {}).get('max-concurrency', 0),
                 "pid": worker_stats.get('pid', 0),
             })
+
+        # Fallback: if stats are empty, try a lightweight ping so the dashboard can still show "online"
+        if not workers:
+            try:
+                ping_results = celery_app.control.ping(timeout=1) or []
+            except Exception:
+                ping_results = []
+            for result in ping_results:
+                if isinstance(result, dict):
+                    for worker_name in result.keys():
+                        workers.append({
+                            "name": worker_name,
+                            "status": "online",
+                            "active_tasks": len(active.get(worker_name, [])),
+                            "reserved_tasks": len(reserved.get(worker_name, [])),
+                            "processed": 0,
+                            "pool": 0,
+                            "pid": 0,
+                        })
         
         # Get queue length from Redis
         queue_length = 0
@@ -206,7 +225,21 @@ def get_celery_info() -> Dict[str, Any]:
 def get_process_info() -> List[Dict[str, Any]]:
     """Get information about THIS APPLICATION's backend processes only."""
     # Only show processes from our application directory
-    app_path = "v1.3-presentation"
+    base_dir = os.environ.get(
+        "APP_ROOT",
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(
+                        os.path.dirname(
+                            os.path.dirname(__file__)
+                        )
+                    )
+                )
+            )
+        )
+    )
+    app_path = os.path.abspath(base_dir)
     
     processes = []
     
@@ -413,4 +446,3 @@ async def get_health_status() -> Dict[str, Any]:
         "issues": issues,
         "timestamp": datetime.now().isoformat(),
     }
-

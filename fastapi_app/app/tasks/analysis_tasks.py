@@ -11,8 +11,8 @@ import logging
 from typing import Dict, Any, List
 from pathlib import Path
 
-# Ensure sync_analyzer is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+# Ensure fastapi_app is importable (so "app.*" resolves reliably in workers)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.celery_app import celery_app, ProgressTask
 
@@ -237,4 +237,3 @@ def cleanup_old_results(max_age_days: int = 7):
     
     logger.info(f"Cleanup task completed, processed progress keys")
     return {"status": "completed"}
-

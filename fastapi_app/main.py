@@ -15,6 +15,7 @@ import os
 import sys
 import logging
 import socket
+from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 from pathlib import Path
@@ -117,7 +118,7 @@ def create_application() -> FastAPI:
         3) Stream proxy audio: `GET /api/v1/files/proxy-audio?path=/abs/media&format=wav`
         4) Analyze sync: `POST /api/v1/analysis/sync` with master/dub paths
         """,
-        version="2.0.0",
+        version=settings.VERSION,
         contact={
             "name": "AI Audio Engineer",
             "email": "support@sync-analyzer.com",
@@ -187,6 +188,7 @@ def create_application() -> FastAPI:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=cors_origins,
+            allow_origin_regex=settings.CORS_ORIGIN_REGEX,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -300,9 +302,10 @@ def create_application() -> FastAPI:
         """Health check endpoint for monitoring."""
         return {
             "status": "healthy",
-            "service": "Professional Audio Sync Analyzer API",
-            "version": "2.0.0",
-            "timestamp": "2025-08-27T19:00:00"
+            "service": settings.APP_NAME,
+            "version": settings.VERSION,
+            "build_id": settings.BUILD_ID,
+            "timestamp": datetime.utcnow().isoformat()
         }
     
     # API help endpoint (MUST be before wildcard route)
@@ -311,7 +314,8 @@ def create_application() -> FastAPI:
         """Get API usage information and examples."""
         return {
             "message": "Professional Audio Sync Analyzer API Help",
-            "version": "2.0.0",
+            "version": settings.VERSION,
+            "build_id": settings.BUILD_ID,
             "endpoints": {
                 "analysis": {
                     "description": "Core sync analysis operations",

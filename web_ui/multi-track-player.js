@@ -11,6 +11,7 @@ class MultiTrackPlayer {
         this.isCorrectedMode = true; // Apply offsets by default
         this.syncInterval = null;
         this.animationFrameId = null;
+        this.balanceValue = 0;
         
         // Container for audio elements
         this.container = options.container || document.body;
@@ -454,6 +455,15 @@ class MultiTrackPlayer {
             this._applyAllVolumes();
         }
     }
+
+    /**
+     * Balance between master (-1) and dub/components (+1)
+     */
+    setBalance(value) {
+        const v = Number(value) || 0;
+        this.balanceValue = Math.max(-1, Math.min(1, v));
+        this._applyAllVolumes();
+    }
     
     /**
      * Set track offset
@@ -482,6 +492,13 @@ class MultiTrackPlayer {
         if (track.muted) {
             effectiveVolume = 0;
         }
+
+        // Apply balance between master and non-master tracks
+        const balance = this.balanceValue ?? 0;
+        const masterScale = 1 - Math.max(0, balance);
+        const dubScale = 1 - Math.max(0, -balance);
+        const isMaster = track.type === 'master' || track.id === 'master';
+        effectiveVolume *= isMaster ? masterScale : dubScale;
         
         track.audio.volume = effectiveVolume;
     }
@@ -656,4 +673,3 @@ class MultiTrackPlayer {
 
 // Export for use
 window.MultiTrackPlayer = MultiTrackPlayer;
-
